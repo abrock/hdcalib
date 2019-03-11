@@ -349,4 +349,23 @@ int CornerIndexAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
     throw std::out_of_range("Dimension number " + to_string(dim) + " out of range (0-2)");
 }
 
+CornerPositionAdaptor::CornerPositionAdaptor(const CornerStore &ref) : store(ref) {
+
+}
+
+size_t CornerPositionAdaptor::kdtree_get_point_count() const {
+    return store.kdtree_get_point_count();
+}
+
+int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
+    hdmarker::Corner const& c = store.get(idx);
+    if (0 == dim) {
+        return c.p.x;
+    }
+    if (1 == dim) {
+        return c.p.y;
+    }
+    throw std::out_of_range(std::string("Requested dimension ") + to_string(dim) + " out of range (0-1)");
+}
+
 }

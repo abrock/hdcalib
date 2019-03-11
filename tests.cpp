@@ -66,10 +66,12 @@ bool point2i_eq(cv::Point2i const& a, cv::Point2i const& b) {
     return ::testing::AssertionSuccess();
 }
 
-TEST(CornerStore, IndexAdaptor) {
+TEST(CornerStore, Adaptors) {
     hdcalib::CornerStore store;
     hdcalib::CornerIndexAdaptor idx_adapt(store);
+    hdcalib::CornerPositionAdaptor pos_adapt(store);
 
+    // We create a hdmarker::Corner with a different value for each property.
     hdmarker::Corner a;
     a.p = cv::Point2f(1,2);
     a.id = cv::Point2i(3,4);
@@ -79,6 +81,7 @@ TEST(CornerStore, IndexAdaptor) {
     a.page = 11;
     a.size = 12;
 
+    // We didn't put the Corner in the CornerStore yet so this should fail.
     EXPECT_THROW({store.get(0);}, std::out_of_range);
 
     store.push_back(a);
@@ -93,6 +96,10 @@ TEST(CornerStore, IndexAdaptor) {
     EXPECT_EQ(a.id.y, idx_adapt.kdtree_get_pt(0, 1));
     EXPECT_EQ(a.page, idx_adapt.kdtree_get_pt(0, 2));
 
+    EXPECT_EQ(a.p.x, pos_adapt.kdtree_get_pt(0, 0));
+    EXPECT_EQ(a.p.y, pos_adapt.kdtree_get_pt(0, 1));
+
+    // Second Corner with different values than the first.
     hdmarker::Corner b;
     b.p = cv::Point2f(13,14);
     b.id = cv::Point2i(15,16);
@@ -112,6 +119,11 @@ TEST(CornerStore, IndexAdaptor) {
     EXPECT_EQ(b.id.x, idx_adapt.kdtree_get_pt(1, 0));
     EXPECT_EQ(b.id.y, idx_adapt.kdtree_get_pt(1, 1));
     EXPECT_EQ(b.page, idx_adapt.kdtree_get_pt(1, 2));
+
+    EXPECT_EQ(b.p.x, pos_adapt.kdtree_get_pt(1, 0));
+    EXPECT_EQ(b.p.y, pos_adapt.kdtree_get_pt(1, 1));
+    EXPECT_NE(a.p.x, pos_adapt.kdtree_get_pt(1, 0));
+    EXPECT_NE(a.p.y, pos_adapt.kdtree_get_pt(1, 1));
 
     EXPECT_THROW({idx_adapt.kdtree_get_pt(0, 3);}, std::out_of_range);
     EXPECT_THROW({idx_adapt.kdtree_get_pt(1, 3);}, std::out_of_range);

@@ -77,6 +77,39 @@ public:
     }
 };
 
+class CornerPositionAdaptor {
+    CornerStore const & store;
+
+public:
+    CornerPositionAdaptor(CornerStore const& ref);
+
+    /**
+     * @brief kdtree_get_point_count returns corners.size()
+     * @return corners.size()
+     */
+    size_t kdtree_get_point_count() const;
+
+    /**
+     * @brief kdtree_get_pt returns the dim'th component of the corner position in the image.
+     * The two components are the x and y value of the "p" property of the hdmarker::Corner.
+     *
+     * @param idx index of the corner in the corner storage vector.
+     * @param dim number of the dimension [0-1]
+     * @return value of the requested component.
+     */
+    int kdtree_get_pt(const size_t idx, int dim) const;
+
+    template <class BBOX>
+    /**
+     * @brief kdtree_get_bbox could optionally return a pre-computed bounding box, but at the moment no such bounding box is computed so it just returns false.
+     * @param[out] bb bounding box.
+     * @return false
+     */
+    bool kdtree_get_bbox(BBOX &bb) const {
+        return false;
+    }
+};
+
 class CornerStore {
 private:
     typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
