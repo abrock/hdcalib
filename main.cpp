@@ -86,6 +86,21 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    std::ofstream duplicate_markers("duplicate-markers.log");
+    for (auto const& it : detected_markers) {
+        for (size_t ii = 0; ii < it.second.size(); ++ii) {
+            for (size_t jj = ii+1; jj < it.second.size(); ++jj) {
+                cv::Point2f residual = it.second[ii].p - it.second[jj].p;
+                double const dist = std::sqrt(residual.dot(residual));
+                if (dist < (it.second[ii].size + it.second[jj].size)/20) {
+                    duplicate_markers << it.first << ": "
+                                      << it.second[ii].id << ", p. " << it.second[ii].page << " vs. "
+                                      << it.second[jj].id << ", p. " << it.second[jj].page << std::endl;
+                }
+            }
+        }
+    }
+
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
