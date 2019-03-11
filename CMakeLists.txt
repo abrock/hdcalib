@@ -11,6 +11,8 @@ find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
 add_library(hdcalib calib.cpp)
 
+include_directories("/usr/local/include/hdmarker")
+
 target_link_libraries(hdcalib
   hdmarker
   ${Boost_FILESYSTEM_LIBRARY}
@@ -22,3 +24,11 @@ target_link_libraries(hdcalib
 
 add_executable(hdcalib-tool "main.cpp")
 target_link_libraries(hdcalib-tool hdcalib)
+
+find_package(GTest REQUIRED)
+add_executable(tests tests.cpp)
+target_link_libraries(tests
+  hdmarker
+  hdcalib
+  ${GTEST_BOTH_LIBRARIES}
+  )
