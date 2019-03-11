@@ -9,7 +9,7 @@ INCLUDE_DIRECTORIES(${OpenCV_Include_Dirs})
 
 find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
-add_library(hdcalib calib.cpp)
+add_library(hdcalib hdcalib.cpp)
 
 include_directories("/usr/local/include/hdmarker")
 

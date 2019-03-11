@@ -10,7 +10,7 @@
 
 #include <tclap/CmdLine.h>
 
-#include "calib.h"
+#include "hdcalib.h"
 
 int main(int argc, char* argv[]) {
 

@@ -1,5 +1,5 @@
-#ifndef CALIB_H
-#define CALIB_H
+#ifndef HDCALIB_H
+#define HDCALIB_H
 
 #include <stdio.h>
 #include <map>
@@ -181,4 +181,4 @@ public:
 
 }
 
-#endif // CALIB_H
+#endif // HDCALIB_H
