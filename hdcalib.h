@@ -39,9 +39,9 @@ std::vector<hdmarker::Corner> filter_duplicate_markers(std::vector<hdmarker::Cor
 class CornerStore;
 
 class CornerIndexAdaptor {
-    CornerStore const & store;
-
+    CornerStore const& store;
 public:
+
     CornerIndexAdaptor(CornerStore const& ref);
 
     /**
@@ -78,7 +78,7 @@ public:
 };
 
 class CornerPositionAdaptor {
-    CornerStore const & store;
+    CornerStore const& store;
 
 public:
     CornerPositionAdaptor(CornerStore const& ref);
@@ -112,51 +112,39 @@ public:
 
 class CornerStore {
 private:
-    typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
-            nanoflann::L2_Simple_Adaptor<int, CornerStore > ,
-            CornerStore,
-            3 /* dim */
-    > CornerTree;
+    /**
+     * @brief corners contains the hdmarker::Corner objects.
+     * It is important that this member is initialized first since
+     * the initialization of other members depend on it.
+     */
     std::vector<hdmarker::Corner> corners;
 
-    CornerTree index;
+    CornerIndexAdaptor idx_adapt;
+    CornerPositionAdaptor pos_adapt;
+
+    typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
+    nanoflann::L2_Simple_Adaptor<int, CornerIndexAdaptor > ,
+    CornerIndexAdaptor,
+    3 /* dim */
+    > CornerIndexTree;
+
+    CornerIndexTree idx_tree;
+
+    typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
+    nanoflann::L2_Simple_Adaptor<int, CornerPositionAdaptor > ,
+    CornerPositionAdaptor,
+    3 /* dim */
+    > CornerPositionTree;
+
+    CornerPositionTree pos_tree;
 
 public:
+    CornerStore();
+
+
+    size_t size() const;
 
     const hdmarker::Corner & get(size_t index) const;
-
-    /**
-     * @brief kdtree_get_point_count returns corners.size()
-     * @return corners.size()
-     */
-    size_t kdtree_get_point_count() const;
-
-    /**
-     * @brief kdtree_get_pt returns the dim'th component of the corner id.
-     * The first two components are the x and y value of the id property, the third component is the page.
-     *
-     * @param idx index of the corner in the corner storage vector.
-     * @param dim number of the dimension [0-2]
-     * @return value of the requested component.
-     */
-    int kdtree_get_pt(const size_t idx, int dim) const;
-
-    template <class BBOX>
-    /**
-     * @brief kdtree_get_bbox could optionally return a pre-computed bounding box, but at the moment no such bounding box is computed so it just returns false.
-     * @param[out] bb bounding box.
-     * @return false
-     */
-    bool kdtree_get_bbox(BBOX &bb) const {
-        return false;
-        /*
-        bb[0].low = 0; bb[0].high = 32;  // 0th dimension limits
-        bb[1].low = 0; bb[1].high = 32;  // 1st dimension limits
-        bb[2].low = 0; bb[2].high = 512;  // 1st dimension limits
-        return true;
-        // */
-    }
-
 
     /**
      * @brief push_back adds a single hdcalib::Corner to the stored corners.
@@ -170,32 +158,31 @@ public:
      */
     void add(std::vector<hdcalib::Corner> const& vec);
 
-    CornerStore();
 
 };
 
 class Calib
 {
-  bool verbose = true;
-  std::vector<std::string> input_images;
-  int grid_width = 1;
-  int grid_height = 1;
+    bool verbose = true;
+    std::vector<std::string> input_images;
+    int grid_width = 1;
+    int grid_height = 1;
 
-  bool use_rgb = false;
+    bool use_rgb = false;
 public:
-  Calib();
+    Calib();
 
-  void setInputImages(std::vector<std::string> const& files) {
+    void setInputImages(std::vector<std::string> const& files) {
 
-  }
+    }
 
-  cv::Mat normalize_raw_per_channel(cv::Mat const& input);
+    cv::Mat normalize_raw_per_channel(cv::Mat const& input);
 
-  void normalize_raw_per_channel_inplace(cv::Mat & input);
+    void normalize_raw_per_channel_inplace(cv::Mat & input);
 
-  cv::Mat read_raw(std::string const& filename);
+    cv::Mat read_raw(std::string const& filename);
 
-  /**
+    /**
    * @brief getCorners
    * @param input_file
    * @param effort
@@ -204,12 +191,12 @@ public:
    * @param raw
    * @return
    */
-  vector<Corner> getCorners(
-      const std::string input_file,
-      const float effort,
-      const bool demosaic,
-      const int recursion_depth,
-      const bool raw);
+    vector<Corner> getCorners(
+            const std::string input_file,
+            const float effort,
+            const bool demosaic,
+            const int recursion_depth,
+            const bool raw);
 };
 
 }

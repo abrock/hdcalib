@@ -114,10 +114,10 @@ Mat Calib::read_raw(const string &filename) {
 }
 
 vector<Corner> Calib::getCorners(const std::string input_file,
-        const float effort,
-        const bool demosaic,
-        const int recursion_depth,
-        const bool raw) {
+                                 const float effort,
+                                 const bool demosaic,
+                                 const int recursion_depth,
+                                 const bool raw) {
     std::string pointcache_file = input_file + "-pointcache.yaml";
     vector<Corner> corners;
     bool read_cache_success = false;
@@ -281,6 +281,10 @@ std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {
     return result;
 }
 
+size_t CornerStore::size() const {
+    return corners.size();
+}
+
 const Corner &CornerStore::get(size_t index) const {
     if (index >= corners.size()) {
         throw std::out_of_range(std::string("Index ") + to_string(index) + " too large for current size of corners vector (" + to_string(corners.size()) + ")");
@@ -288,29 +292,10 @@ const Corner &CornerStore::get(size_t index) const {
     return corners[index];
 }
 
-size_t CornerStore::kdtree_get_point_count() const {
-    return corners.size();
-}
-
-int CornerStore::kdtree_get_pt(const size_t idx, int dim) const {
-    if (dim > 2 || dim < 0) {
-        throw std::runtime_error(std::string("Requested dimension out of bounds: ") + to_string(dim));
-    }
-    if (idx >= corners.size()) {
-        throw std::runtime_error(std::string("Requested idx out of bounds: ") + to_string(idx) + " >= " + to_string(corners.size()));
-    }
-    if (0 == dim) {
-        return corners[idx].id.x;
-    }
-    if (1 == dim) {
-        return corners[idx].id.y;
-    }
-    return corners[idx].page;
-}
-
 void CornerStore::push_back(const Corner x) {
     corners.push_back(x);
-    index.addPoints(corners.size()-1, corners.size()-1);
+
+    idx_tree.addPoints(corners.size()-1, corners.size()-1);
 }
 
 void CornerStore::add(const std::vector<Corner> &vec) {
@@ -318,12 +303,22 @@ void CornerStore::add(const std::vector<Corner> &vec) {
         return;
     }
     corners.insert(corners.end(), vec.begin(), vec.end());
-    index.addPoints(corners.size() - vec.size(), corners.size()-1);
+    idx_tree.addPoints(corners.size() - vec.size(), corners.size()-1);
 }
 
-CornerStore::CornerStore() : index(3 /*dim*/,
-                                   *this,
-                                   nanoflann::KDTreeSingleIndexAdaptorParams(10 /* max leaf */)) {
+CornerStore::CornerStore() :
+    idx_adapt(*this),
+    pos_adapt(*this),
+    idx_tree(
+        3 /*dim*/,
+        idx_adapt,
+        nanoflann::KDTreeSingleIndexAdaptorParams(10 /* max leaf */)
+        ),
+    pos_tree(
+        2 /*dim*/,
+        pos_adapt,
+        nanoflann::KDTreeSingleIndexAdaptorParams(10 /* max leaf */)
+        ) {
 
 }
 
@@ -332,7 +327,7 @@ CornerIndexAdaptor::CornerIndexAdaptor(const CornerStore &ref) : store(ref){
 }
 
 size_t CornerIndexAdaptor::kdtree_get_point_count() const {
-    return store.kdtree_get_point_count();
+    return store.size();
 }
 
 int CornerIndexAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
@@ -349,12 +344,12 @@ int CornerIndexAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
     throw std::out_of_range("Dimension number " + to_string(dim) + " out of range (0-2)");
 }
 
-CornerPositionAdaptor::CornerPositionAdaptor(const CornerStore &ref) : store(ref) {
+CornerPositionAdaptor::CornerPositionAdaptor(CornerStore const& ref) : store(ref) {
 
 }
 
 size_t CornerPositionAdaptor::kdtree_get_point_count() const {
-    return store.kdtree_get_point_count();
+    return store.size();
 }
 
 int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {

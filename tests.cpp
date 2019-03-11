@@ -136,6 +136,26 @@ TEST(CornerStore, Adaptors) {
 
 int main(int argc, char** argv)
 {
+    /* Use this code if the tests fail with unexpected exceptions.
+    hdcalib::CornerStore store;
+    hdcalib::CornerIndexAdaptor idx_adapt(store);
+    hdcalib::CornerPositionAdaptor pos_adapt(store);
+
+    // We create a hdmarker::Corner with a different value for each property.
+    hdmarker::Corner a;
+    a.p = cv::Point2f(1,2);
+    a.id = cv::Point2i(3,4);
+    a.pc[0] = cv::Point2f(5,6);
+    a.pc[1] = cv::Point2f(7,8);
+    a.pc[2] = cv::Point2f(9,10);
+    a.page = 11;
+    a.size = 12;
+
+    store.push_back(a);
+
+    return 0;
+    // */
+
     testing::InitGoogleTest(&argc, argv);
     std::cout << "RUN_ALL_TESTS return value: " << RUN_ALL_TESTS() << std::endl;
 
