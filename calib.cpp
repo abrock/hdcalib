@@ -99,11 +99,12 @@ Mat Calib::read_raw(const string &filename) {
                     + " seems to have a different pattern.\n");
     }
 
-    cv::Mat result(S.raw_height, S.raw_width, CV_16UC1);
+    cv::Mat result(S.height, S.width, CV_16UC1);
 
-    for (int jj = 0, global_counter = 0; jj < S.raw_height ; jj++) {
+    for (int jj = 0, global_counter = 0; jj < S.height ; jj++) {
         unsigned short * row = result.ptr<unsigned short>(jj);
-        for (int ii = 0; ii < S.raw_width; ++ii, ++global_counter) {
+        global_counter = jj * S.raw_width;
+        for (int ii = 0; ii < S.width; ++ii, ++global_counter) {
             row[ii] = RawProcessor.imgdata.rawdata.raw_image[global_counter];
         }
     }
@@ -150,8 +151,8 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
 
     if (read_cache_success) {
+        corners = filter_duplicate_markers(corners);
         std::cout << "Got corners from pointcache file" << std::endl;
-        return corners;
     }
 
 
@@ -188,20 +189,38 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     Marker::init();
 
-    detect(img, corners,use_rgb,0,10, effort, 3);
+    if (!read_cache_success) {
+        detect(img, corners,use_rgb,0,10, effort, 3);
+        corners = filter_duplicate_markers(corners);
+    }
 
     printf("final score %zu corners\n", corners.size());
 
-    for(Corner const& c : corners) {
+    std::vector<cv::Scalar> const color_circle = {
+        cv::Scalar(255,255,255),
+        cv::Scalar(255,0,0),
+        cv::Scalar(0,255,0),
+        cv::Scalar(0,0,255),
+        cv::Scalar(255,255,0),
+        cv::Scalar(0,255,255),
+        cv::Scalar(255,0,255),
+    };
+    for(size_t ii = 0; ii < corners.size(); ++ii) {
+        Corner const& c = corners[ii];
         Point2f p1, p2;
+        cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
 
-        //if (c.page != 256) continue;
-        char buf[256];
-        sprintf(buf, "%d/%d", c.id.x, c.id.y);
+        std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
         circle(paint, c.p, 1, Scalar(0,0,0,0), 2);
         circle(paint, c.p, 1, Scalar(0,255,0,0));
-        putText(paint, buf, c.p, FONT_HERSHEY_PLAIN, 0.5, Scalar(0,0,0,0), 2, CV_AA);
-        putText(paint, buf, c.p, FONT_HERSHEY_PLAIN, 0.5, Scalar(255,255,255,0), 1, CV_AA);
+        putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, Scalar(0,0,0,0), 2, CV_AA);
+        putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, font_color, 1, CV_AA);
+
+        std::string const text_page = to_string(c.page);
+        double font_size = 2;
+        cv::Point2f const point_page = c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5);
+        putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, CV_AA);
+        putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, CV_AA);
     }
     imwrite(input_file + "-1.png", paint);
 
@@ -216,7 +235,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         std::cout << "Drawing sub-markers" << std::endl;
         vector<Corner> corners_sub;
         double msize = 1.0;
-        hdmarker::refine_recursive(gray, corners, corners_sub, 3, &msize);
+        if (!read_cache_success) {
+            hdmarker::refine_recursive(gray, corners, corners_sub, 3, &msize);
+        }
 
         vector<Corner> corners_f2;
 
@@ -236,6 +257,96 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     return corners;
 
+}
+
+std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {
+    std::vector<hdmarker::Corner> result;
+    result.reserve(in.size());
+    for (size_t ii = 0; ii < in.size(); ++ii) {
+        bool has_duplicate = false;
+        const hdmarker::Corner& a = in[ii];
+        if (a.id.x == 32 || a.id.y == 32) {
+            for (size_t jj = 0; jj < in.size(); ++jj) {
+                const hdmarker::Corner& b = in[jj];
+                if (cv::norm(a.p-b.p) < (a.size + b.size)/20) {
+                    has_duplicate = true;
+                    break;
+                }
+            }
+        }
+        if (!has_duplicate) {
+            result.push_back(a);
+        }
+    }
+    return result;
+}
+
+const Corner &CornerStore::get(size_t index) const {
+    if (index >= corners.size()) {
+        throw std::out_of_range(std::string("Index ") + to_string(index) + " too large for current size of corners vector (" + to_string(corners.size()) + ")");
+    }
+    return corners[index];
+}
+
+size_t CornerStore::kdtree_get_point_count() const {
+    return corners.size();
+}
+
+int CornerStore::kdtree_get_pt(const size_t idx, int dim) const {
+    if (dim > 2 || dim < 0) {
+        throw std::runtime_error(std::string("Requested dimension out of bounds: ") + to_string(dim));
+    }
+    if (idx >= corners.size()) {
+        throw std::runtime_error(std::string("Requested idx out of bounds: ") + to_string(idx) + " >= " + to_string(corners.size()));
+    }
+    if (0 == dim) {
+        return corners[idx].id.x;
+    }
+    if (1 == dim) {
+        return corners[idx].id.y;
+    }
+    return corners[idx].page;
+}
+
+void CornerStore::push_back(const Corner x) {
+    corners.push_back(x);
+    index.addPoints(corners.size()-1, corners.size()-1);
+}
+
+void CornerStore::add(const std::vector<Corner> &vec) {
+    if (vec.empty()) {
+        return;
+    }
+    corners.insert(corners.end(), vec.begin(), vec.end());
+    index.addPoints(corners.size() - vec.size(), corners.size()-1);
+}
+
+CornerStore::CornerStore() : index(3 /*dim*/,
+                                   *this,
+                                   nanoflann::KDTreeSingleIndexAdaptorParams(10 /* max leaf */)) {
+
+}
+
+CornerIndexAdaptor::CornerIndexAdaptor(const CornerStore &ref) : store(ref){
+
+}
+
+size_t CornerIndexAdaptor::kdtree_get_point_count() const {
+    return store.kdtree_get_point_count();
+}
+
+int CornerIndexAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
+    hdmarker::Corner const& c = store.get(idx);
+    if (0 == dim) {
+        return c.id.x;
+    }
+    if (1 == dim) {
+        return c.id.y;
+    }
+    if (2 == dim) {
+        return c.page;
+    }
+    throw std::out_of_range("Dimension number " + to_string(dim) + " out of range (0-2)");
 }
 
 }

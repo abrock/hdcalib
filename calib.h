@@ -18,11 +18,128 @@
 
 #include <libraw/libraw.h>
 
+#include "nanoflann.hpp"
+
 namespace hdcalib {
 using namespace std;
 using namespace hdmarker;
 using namespace cv;
 namespace fs = boost::filesystem;
+
+/**
+ * @brief remove_duplicate_markers purges duplicate markers from a vector of markers.
+ * These occur when a target has a with and/or height of 33 or more since different
+ * "pages" are used on those larger targets and markers are identified as belonging
+ * to both pages at the edges.
+ *
+ * @param in
+ */
+std::vector<hdmarker::Corner> filter_duplicate_markers(std::vector<hdmarker::Corner> const& in);
+
+class CornerStore;
+
+class CornerIndexAdaptor {
+    CornerStore const & store;
+
+public:
+    CornerIndexAdaptor(CornerStore const& ref);
+
+    /**
+     * @brief kdtree_get_point_count returns corners.size()
+     * @return corners.size()
+     */
+    size_t kdtree_get_point_count() const;
+
+    /**
+     * @brief kdtree_get_pt returns the dim'th component of the corner id.
+     * The first two components are the x and y value of the id property, the third component is the page.
+     *
+     * @param idx index of the corner in the corner storage vector.
+     * @param dim number of the dimension [0-2]
+     * @return value of the requested component.
+     */
+    int kdtree_get_pt(const size_t idx, int dim) const;
+
+    template <class BBOX>
+    /**
+     * @brief kdtree_get_bbox could optionally return a pre-computed bounding box, but at the moment no such bounding box is computed so it just returns false.
+     * @param[out] bb bounding box.
+     * @return false
+     */
+    bool kdtree_get_bbox(BBOX &bb) const {
+        return false;
+        /*
+        bb[0].low = 0; bb[0].high = 32;  // 0th dimension limits
+        bb[1].low = 0; bb[1].high = 32;  // 1st dimension limits
+        bb[2].low = 0; bb[2].high = 512;  // 1st dimension limits
+        return true;
+        // */
+    }
+};
+
+class CornerStore {
+private:
+    typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
+            nanoflann::L2_Simple_Adaptor<int, CornerStore > ,
+            CornerStore,
+            3 /* dim */
+    > CornerTree;
+    std::vector<hdmarker::Corner> corners;
+
+    CornerTree index;
+
+public:
+
+    const hdmarker::Corner & get(size_t index) const;
+
+    /**
+     * @brief kdtree_get_point_count returns corners.size()
+     * @return corners.size()
+     */
+    size_t kdtree_get_point_count() const;
+
+    /**
+     * @brief kdtree_get_pt returns the dim'th component of the corner id.
+     * The first two components are the x and y value of the id property, the third component is the page.
+     *
+     * @param idx index of the corner in the corner storage vector.
+     * @param dim number of the dimension [0-2]
+     * @return value of the requested component.
+     */
+    int kdtree_get_pt(const size_t idx, int dim) const;
+
+    template <class BBOX>
+    /**
+     * @brief kdtree_get_bbox could optionally return a pre-computed bounding box, but at the moment no such bounding box is computed so it just returns false.
+     * @param[out] bb bounding box.
+     * @return false
+     */
+    bool kdtree_get_bbox(BBOX &bb) const {
+        return false;
+        /*
+        bb[0].low = 0; bb[0].high = 32;  // 0th dimension limits
+        bb[1].low = 0; bb[1].high = 32;  // 1st dimension limits
+        bb[2].low = 0; bb[2].high = 512;  // 1st dimension limits
+        return true;
+        // */
+    }
+
+
+    /**
+     * @brief push_back adds a single hdcalib::Corner to the stored corners.
+     * @param x
+     */
+    void push_back(hdmarker::Corner const x);
+
+    /**
+     * @brief add adds a vector of hdcalib::Corner to the stored corners.
+     * @param vec
+     */
+    void add(std::vector<hdcalib::Corner> const& vec);
+
+    CornerStore();
+
+};
 
 class Calib
 {
