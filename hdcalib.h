@@ -123,7 +123,7 @@ private:
     CornerPositionAdaptor pos_adapt;
 
     typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
-    nanoflann::L2_Simple_Adaptor<int, CornerIndexAdaptor > ,
+    nanoflann::L2_Simple_Adaptor<double, CornerIndexAdaptor > ,
     CornerIndexAdaptor,
     3 /* dim */
     > CornerIndexTree;
@@ -131,15 +131,17 @@ private:
     CornerIndexTree idx_tree;
 
     typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
-    nanoflann::L2_Simple_Adaptor<int, CornerPositionAdaptor > ,
+    nanoflann::L2_Simple_Adaptor<double, CornerPositionAdaptor > ,
     CornerPositionAdaptor,
-    3 /* dim */
+    2 /* dim */
     > CornerPositionTree;
 
     CornerPositionTree pos_tree;
 
 public:
     CornerStore();
+
+    std::vector<hdmarker::Corner> findByID(hdmarker::Corner const& ref);
 
 
     size_t size() const;

@@ -132,6 +132,90 @@ TEST(CornerStore, Adaptors) {
     EXPECT_THROW({idx_adapt.kdtree_get_pt(2, 2);}, std::out_of_range);
     EXPECT_THROW({idx_adapt.kdtree_get_pt(2, 3);}, std::out_of_range);
 
+    size_t const num_markers = 10;
+    for (size_t ii = store.size(); ii < num_markers; ++ii) {
+        hdmarker::Corner x;
+        x.p = cv::Point2f(ii*12+1,ii*12+2);
+        x.id = cv::Point2i(ii*12+3,ii*12+4);
+        x.pc[0] = cv::Point2f(ii*12+5,ii*12+6);
+        x.pc[1] = cv::Point2f(ii*12+7,ii*12+8);
+        x.pc[2] = cv::Point2f(ii*12+9,ii*12+10);
+        x.page = ii*12+11;
+        x.size = ii*12+12;
+
+        store.push_back(x);
+        EXPECT_THROW({store.get(store.size());}, std::out_of_range);
+
+        hdmarker::Corner const& x_copy = store.get(ii);
+
+        EXPECT_TRUE(CornersEqual(x, x_copy));
+
+        EXPECT_EQ(x.id.x, idx_adapt.kdtree_get_pt(ii, 0));
+        EXPECT_EQ(x.id.y, idx_adapt.kdtree_get_pt(ii, 1));
+        EXPECT_EQ(x.page, idx_adapt.kdtree_get_pt(ii, 2));
+
+        EXPECT_EQ(x.p.x, pos_adapt.kdtree_get_pt(ii, 0));
+        EXPECT_EQ(x.p.y, pos_adapt.kdtree_get_pt(ii, 1));
+
+        EXPECT_THROW({idx_adapt.kdtree_get_pt(0, 3);}, std::out_of_range);
+        EXPECT_THROW({idx_adapt.kdtree_get_pt(1, 3);}, std::out_of_range);
+        EXPECT_THROW({idx_adapt.kdtree_get_pt(ii+1, 0);}, std::out_of_range);
+        EXPECT_THROW({idx_adapt.kdtree_get_pt(ii+1, 1);}, std::out_of_range);
+        EXPECT_THROW({idx_adapt.kdtree_get_pt(ii+1, 2);}, std::out_of_range);
+        EXPECT_THROW({idx_adapt.kdtree_get_pt(ii+1, 3);}, std::out_of_range);
+    }
+
+}
+
+
+TEST(CornerStore, findByID) {
+    hdcalib::CornerStore store;
+    hdcalib::CornerIndexAdaptor idx_adapt(store);
+    hdcalib::CornerPositionAdaptor pos_adapt(store);
+
+    // We create a hdmarker::Corner with a different value for each property.
+    hdmarker::Corner a, b;
+    a.p = cv::Point2f(1,2);
+    a.id = cv::Point2i(3,4);
+    a.pc[0] = cv::Point2f(5,6);
+    a.pc[1] = cv::Point2f(7,8);
+    a.pc[2] = cv::Point2f(9,10);
+    a.page = 11;
+    a.size = 12;
+
+    store.push_back(a);
+
+    b.p = cv::Point2f(13,14);
+    b.id = cv::Point2i(15,16);
+    b.pc[0] = cv::Point2f(17,18);
+    b.pc[1] = cv::Point2f(19,20);
+    b.pc[2] = cv::Point2f(21,22);
+    b.page = 23;
+    b.size = 24;
+
+    std::vector<hdmarker::Corner> search_res = store.findByID(a);
+    search_res = store.findByID(b);
+    EXPECT_GE(search_res.size(), 1);
+    EXPECT_TRUE(CornersEqual(a, search_res[0]));
+
+    store.push_back(b);
+
+    search_res = store.findByID(a);
+    EXPECT_GE(search_res.size(), 1);
+    EXPECT_TRUE(CornersEqual(a, search_res[0]));
+
+    store.push_back(b);
+
+    search_res = store.findByID(a);
+    EXPECT_GE(search_res.size(), 1);
+    EXPECT_TRUE(CornersEqual(a, search_res[0]));
+
+    store.push_back(b);
+
+    search_res = store.findByID(a);
+    EXPECT_GE(search_res.size(), 1);
+    EXPECT_TRUE(CornersEqual(a, search_res[0]));
+
 }
 
 int main(int argc, char** argv)
