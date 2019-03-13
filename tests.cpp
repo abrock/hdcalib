@@ -15,6 +15,22 @@ std::random_device rd;
 std::default_random_engine engine(rd());
 std::normal_distribution<double> dist;
 
+void getCornerGrid(
+        hdcalib::CornerStore & store,
+        size_t const grid_width = 50,
+        size_t const grid_height = 50) {
+    hdmarker::Corner a;
+    for (size_t ii = 0; ii < grid_width; ++ii) {
+        for (size_t jj = 0; jj < grid_height; ++jj) {
+            a.id = cv::Point2i(ii, jj);
+            a.page = 0;
+            a.p = cv::Point2f(ii, jj);
+            a.size = 1;
+            store.push_back(a);
+        }
+    }
+}
+
 cv::Point2d randomPoint() {
     return cv::Point2d(dist(engine), dist(engine));
 }
@@ -201,7 +217,7 @@ TEST(CornerStore, findByID) {
 
     std::vector<hdmarker::Corner> search_res = store.findByID(a);
     search_res = store.findByID(b);
-    EXPECT_GE(search_res.size(), 1);
+    ASSERT_GE(search_res.size(), 1);
     EXPECT_TRUE(CornersEqual(a, search_res[0]));
 
     store.push_back(b);
@@ -210,7 +226,7 @@ TEST(CornerStore, findByID) {
 
 
     search_res = store.findByID(a);
-    EXPECT_GE(search_res.size(), 1);
+    ASSERT_GE(search_res.size(), 1);
     EXPECT_TRUE(CornersEqual(a, search_res[0]));
 
     store.push_back(b);
@@ -218,7 +234,7 @@ TEST(CornerStore, findByID) {
     EXPECT_TRUE(store.hasID(b));
 
     search_res = store.findByID(a);
-    EXPECT_GE(search_res.size(), 1);
+    ASSERT_GE(search_res.size(), 1);
     EXPECT_TRUE(CornersEqual(a, search_res[0]));
 
     store.push_back(b);
@@ -226,14 +242,94 @@ TEST(CornerStore, findByID) {
     EXPECT_TRUE(store.hasID(b));
 
     search_res = store.findByID(a);
-    EXPECT_GE(search_res.size(), 1);
+    ASSERT_GE(search_res.size(), 1);
     EXPECT_TRUE(CornersEqual(a, search_res[0]));
 
 }
 
+TEST(CornerStore, find) {
+    hdcalib::CornerStore store;
+    hdmarker::Corner a;
+
+    size_t const grid_width = 50;
+    size_t const grid_height = 50;
+
+    getCornerGrid(store, grid_width, grid_height);
+    for (size_t ii = 0; ii < grid_width; ++ii) {
+        for (size_t jj = 0; jj < grid_height; ++jj) {
+            a.id = cv::Point2i(ii, jj);
+            a.page = 0;
+            a.p = cv::Point2f(ii, jj);
+            a.size = 1;
+            std::vector<hdmarker::Corner> res = store.findByPos(a, 1);
+            ASSERT_EQ(1, res.size());
+            EXPECT_TRUE(CornersEqual(a, res[0]));
+
+            store.findByID(a, 1);
+            ASSERT_EQ(1, res.size());
+            EXPECT_TRUE(CornersEqual(a, res[0]));
+            EXPECT_TRUE(store.hasID(a));
+        }
+    }
+
+    std::uniform_real_distribution<float> dist_x(-.4, grid_width - .6);
+    std::uniform_real_distribution<float> dist_y(-.4, grid_height - .6);
+    for (size_t ii = 0; ii < 10*1000; ++ii) {
+        float const x = dist_x(engine);
+        float const y = dist_y(engine);
+        cv::Point2i id(std::round(x), std::round(y));
+        std::vector<hdmarker::Corner> res = store.findByPos(x, y, 1);
+        ASSERT_EQ(1, res.size());
+        hdmarker::Corner const& r = res[0];
+        EXPECT_NEAR(x, r.p.x, .50001);
+        EXPECT_NEAR(y, r.p.y, .50001);
+        EXPECT_EQ(id.x, r.id.x);
+        EXPECT_EQ(id.y, r.id.y);
+    }
+
+    size_t const old_size = store.size();
+    { // Insert an unlikely Corner into the database
+        a.page = 150;
+        a.id.x = 32;
+        store.push_back(a);
+    }
+    store.purgeUnlikely();
+    EXPECT_EQ(store.size(), old_size);
+
+    for (size_t ii = 0; ii < grid_width; ++ii) {
+        for (size_t jj = 0; jj < grid_height; ++jj) {
+            a.id = cv::Point2i(ii, jj);
+            a.page = 0;
+            a.p = cv::Point2f(ii, jj);
+            a.size = 1;
+            std::vector<hdmarker::Corner> res = store.findByPos(a, 1);
+            ASSERT_EQ(1, res.size());
+            EXPECT_TRUE(CornersEqual(a, res[0]));
+
+            store.findByID(a, 1);
+            ASSERT_EQ(1, res.size());
+            EXPECT_TRUE(CornersEqual(a, res[0]));
+            EXPECT_TRUE(store.hasID(a));
+        }
+    }
+
+    for (size_t ii = 0; ii < 10*1000; ++ii) {
+        float const x = dist_x(engine);
+        float const y = dist_y(engine);
+        cv::Point2i id(std::round(x), std::round(y));
+        std::vector<hdmarker::Corner> res = store.findByPos(x, y, 1);
+        ASSERT_EQ(1, res.size());
+        hdmarker::Corner const& r = res[0];
+        EXPECT_NEAR(x, r.p.x, .50001);
+        EXPECT_NEAR(y, r.p.y, .50001);
+        EXPECT_EQ(id.x, r.id.x);
+        EXPECT_EQ(id.y, r.id.y);
+    }
+}
+
 int main(int argc, char** argv)
 {
-    /* Use this code if the tests fail with unexpected exceptions.
+    //* Use this code if the tests fail with unexpected exceptions.
     hdcalib::CornerStore store;
     hdcalib::CornerIndexAdaptor idx_adapt(store);
     hdcalib::CornerPositionAdaptor pos_adapt(store);
@@ -250,7 +346,11 @@ int main(int argc, char** argv)
 
     store.push_back(a);
 
-    return 0;
+    getCornerGrid(store, 10, 10);
+
+    store.purgeUnlikely();
+
+    //return 0;
     // */
 
     testing::InitGoogleTest(&argc, argv);

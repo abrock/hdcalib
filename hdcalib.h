@@ -128,7 +128,7 @@ private:
     3 /* dim */
     > CornerIndexTree;
 
-    CornerIndexTree idx_tree;
+    std::shared_ptr<CornerIndexTree> idx_tree;
 
     typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<
     nanoflann::L2_Simple_Adaptor<double, CornerPositionAdaptor > ,
@@ -136,19 +136,65 @@ private:
     2 /* dim */
     > CornerPositionTree;
 
-    CornerPositionTree pos_tree;
+    std::shared_ptr<CornerPositionTree> pos_tree;
 
 public:
     CornerStore();
 
+    /**
+     * @brief getCorners returns a copy of the stored corners.
+     * @return
+     */
+    std::vector<hdmarker::Corner> getCorners() const;
+
+    /**
+     * @brief findByID does a nearest-neighbour search for the num_results closest hdmarker::Corner to a given marker. Distance is the L2 distance of the triples given by (id.x, id.y, page) of the corners.
+     * @param ref hdmarker::Corner we are searching.
+     * @param num_results maximum number of results we want. The result set might be smaller.
+     * @return A vector of results, ordered by distance to ref ascending.
+     */
     std::vector<hdmarker::Corner> findByID(hdmarker::Corner const& ref, size_t const num_results = 1);
 
+    /**
+     * @brief findByPos does a nearest-neighbour search for the num_results closest hdmarker::Corner to a given marker. Distance is the L2 distance of the pixel positions.
+     * @param ref hdmarker::Corner we are searching.
+     * @param num_results maximum number of results we want. The result set might be smaller.
+     * @return A vector of results, ordered by distance to ref ascending.
+     */
+    std::vector<hdmarker::Corner> findByPos(hdmarker::Corner const& ref, size_t const num_results = 1);
 
+    /**
+     * @brief findByPos does a nearest-neighbour search for the num_results closest hdmarker::Corner to a given marker. Distance is the L2 distance of the pixel positions.
+     * @param x-position we are searching.
+     * @param y-position we are searching.
+     * @param num_results maximum number of results we want. The result set might be smaller.
+     * @return A vector of results, ordered by distance to ref ascending.
+     */
+    std::vector<hdmarker::Corner> findByPos(double const x, double const y, size_t const num_results = 1);
+
+    /**
+     * @brief purgeUnlikely searches for likely mis-detections and removes them from the store.
+     */
+    void purgeUnlikely();
+
+    /**
+     * @brief hasID checks if a given hdmarker::Corner (identified by id and page) exists in the CornerStore.
+     * @param ref corner we search.
+     * @return true if the corner exists.
+     */
     bool hasID(hdmarker::Corner const& ref);
 
-
+    /**
+     * @brief size returns the number of elements currently stored.
+     * @return
+     */
     size_t size() const;
 
+    /**
+     * @brief get returns a const reference a stored corner.
+     * @param index
+     * @return
+     */
     const hdmarker::Corner & get(size_t index) const;
 
     /**

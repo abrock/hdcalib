@@ -294,8 +294,8 @@ const Corner &CornerStore::get(size_t index) const {
 
 void CornerStore::push_back(const Corner x) {
     corners.push_back(x);
-
-    idx_tree.addPoints(corners.size()-1, corners.size()-1);
+    idx_tree->addPoints(corners.size()-1, corners.size()-1);
+    pos_tree->addPoints(corners.size()-1, corners.size()-1);
 }
 
 void CornerStore::add(const std::vector<Corner> &vec) {
@@ -303,23 +303,28 @@ void CornerStore::add(const std::vector<Corner> &vec) {
         return;
     }
     corners.insert(corners.end(), vec.begin(), vec.end());
-    idx_tree.addPoints(corners.size() - vec.size(), corners.size()-1);
+    idx_tree->addPoints(corners.size() - vec.size(), corners.size()-1);
+    pos_tree->addPoints(corners.size() - vec.size(), corners.size()-1);
 }
 
 CornerStore::CornerStore() :
     idx_adapt(*this),
     pos_adapt(*this),
-    idx_tree(
+    idx_tree(new CornerIndexTree(
         3 /*dim*/,
         idx_adapt,
         nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
-        ),
-    pos_tree(
+        )),
+    pos_tree(new CornerPositionTree (
         2 /*dim*/,
         pos_adapt,
         nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
-        ) {
+        )) {
 
+}
+
+std::vector<Corner> CornerStore::getCorners() const {
+    return corners;
 }
 
 std::vector<Corner> CornerStore::findByID(const Corner &ref, const size_t num_results) {
@@ -332,16 +337,89 @@ std::vector<Corner> CornerStore::findByID(const Corner &ref, const size_t num_re
 
     // do a knn search
     std::unique_ptr<size_t[]> res_indices(new size_t[num_results]);
-    std::unique_ptr<double> res_dist_sqr( new double[num_results]);
+    std::unique_ptr<double[]> res_dist_sqr( new double[num_results]);
     nanoflann::KNNResultSet<double> resultSet(num_results);
     resultSet.init(res_indices.get(), res_dist_sqr.get());
-    idx_tree.findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+    idx_tree->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
 
     for (size_t ii = 0; ii < resultSet.size(); ++ii) {
         result.push_back(corners[res_indices[ii]]);
     }
 
     return result;
+}
+
+std::vector<Corner> CornerStore::findByPos(const Corner &ref, const size_t num_results) {
+    return findByPos(ref.p.x, ref.p.y, num_results);
+}
+
+std::vector<Corner> CornerStore::findByPos(const double x, const double y, const size_t num_results) {
+    std::vector<hdmarker::Corner> result;
+    double query_pt[2] = {
+        static_cast<double>(x),
+        static_cast<double>(y)
+    };
+
+    // do a knn search
+    std::unique_ptr<size_t[]> res_indices(new size_t[num_results]);
+    std::unique_ptr<double[]> res_dist_sqr( new double[num_results]);
+    nanoflann::KNNResultSet<double> resultSet(num_results);
+    resultSet.init(res_indices.get(), res_dist_sqr.get());
+    pos_tree->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+
+    for (size_t ii = 0; ii < resultSet.size(); ++ii) {
+        result.push_back(corners[res_indices[ii]]);
+    }
+
+    return result;
+}
+
+void CornerStore::purgeUnlikely() {
+    std::vector<hdmarker::Corner> keep;
+    keep.reserve(size());
+
+    for (size_t ii = 0; ii < size(); ++ii) {
+        hdmarker::Corner const& candidate = get(ii);
+        std::vector<hdmarker::Corner> const res = findByPos(candidate, 5);
+        size_t neighbours = 0;
+        for (hdmarker::Corner const& neighbour : res) {
+            if (neighbour.page != candidate.page) {
+                continue;
+            }
+            if (neighbour.id == candidate.id) {
+                continue;
+            }
+            cv::Point2i residual = candidate.id - neighbour.id;
+            if (std::abs(residual.x) <= 1 && std::abs(residual.y) <= 1) {
+                neighbours++;
+                if (neighbours > 1) {
+                    keep.push_back(candidate);
+                    break;
+                }
+            }
+        }
+    }
+    //    if (size() != keep.size()) {
+    corners = keep;
+    {
+        std::shared_ptr<CornerIndexTree> idx_tree_replacement(new CornerIndexTree(
+                    3 /*dim*/,
+                    idx_adapt,
+                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
+        idx_tree.swap(idx_tree_replacement);
+    }
+    {
+        std::shared_ptr<CornerPositionTree> pos_tree_replacement(new CornerPositionTree(
+                    2 /*dim*/,
+                    pos_adapt,
+                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
+        pos_tree.swap(pos_tree_replacement);
+    }
+    if (keep.size() > 0) {
+        idx_tree->addPoints(0, keep.size() - 1);
+        pos_tree->addPoints(0, keep.size() - 1);
+    }
+    //    }
 }
 
 bool CornerStore::hasID(const Corner &ref) {
@@ -354,7 +432,7 @@ bool CornerStore::hasID(const Corner &ref) {
     double res_dist_sqr;
     nanoflann::KNNResultSet<double> resultSet(1);
     resultSet.init(&res_index, &res_dist_sqr);
-    idx_tree.findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+    idx_tree->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
 
     if (resultSet.size() < 1) {
         return false;
