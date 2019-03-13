@@ -322,56 +322,45 @@ CornerStore::CornerStore() :
 
 }
 
-std::vector<Corner> CornerStore::findByID(const Corner &ref) {
+std::vector<Corner> CornerStore::findByID(const Corner &ref, const size_t num_results) {
     std::vector<hdmarker::Corner> result;
-    typedef double num_t;
     double query_pt[3] = {
         static_cast<double>(ref.id.x),
         static_cast<double>(ref.id.y),
         static_cast<double>(ref.page)
     };
 
-    /*
-    size_t num_results = 5;
-    std::vector<size_t> ret_index(num_results);
-    std::vector<double> out_dist_sqr(num_results);
-
-    //idx_tree.findNeighbors
-    using namespace nanoflann;
-    num_results = idx_tree.knnSearch(&query_pt[0], num_results, &ret_index[0], &out_dist_sqr[0]);
-    std::vector<hdmarker::Corner> result;
-    for (size_t ii = 0; ii < num_results; ++ii) {
-        result.push_back(corners[ret_index[ii]]);
-    }
-    return result;
-
-    */
-    /*
-    const size_t num_results = 1;
-    size_t ret_index;
-    double out_dist_sqr;
-    nanoflann::KNNResultSet<double> resultSet(num_results);
-    resultSet.init(&ret_index, &out_dist_sqr );
-    idx_tree.findNeighbors(resultSet, &query_pt[0], nanoflann::SearchParams(10));
-
-    std::cout << "knnSearch(nn="<<num_results<<"): \n";
-    std::cout << "ret_index=" << ret_index << " out_dist_sqr=" << out_dist_sqr << endl;
-    // */
-
     // do a knn search
-    const size_t num_results = 10;
-    size_t res_indices[num_results];
-    num_t res_dist_sqr[num_results];
-    nanoflann::KNNResultSet<num_t> resultSet(num_results);
-    resultSet.init(res_indices, res_dist_sqr);
+    std::unique_ptr<size_t[]> res_indices(new size_t[num_results]);
+    std::unique_ptr<double> res_dist_sqr( new double[num_results]);
+    nanoflann::KNNResultSet<double> resultSet(num_results);
+    resultSet.init(res_indices.get(), res_dist_sqr.get());
     idx_tree.findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
 
     for (size_t ii = 0; ii < resultSet.size(); ++ii) {
         result.push_back(corners[res_indices[ii]]);
     }
 
-
     return result;
+}
+
+bool CornerStore::hasID(const Corner &ref) {
+    double query_pt[3] = {
+        static_cast<double>(ref.id.x),
+        static_cast<double>(ref.id.y),
+        static_cast<double>(ref.page)
+    };
+    size_t res_index;
+    double res_dist_sqr;
+    nanoflann::KNNResultSet<double> resultSet(1);
+    resultSet.init(&res_index, &res_dist_sqr);
+    idx_tree.findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+
+    if (resultSet.size() < 1) {
+        return false;
+    }
+    hdmarker::Corner const& result = corners[res_index];
+    return result.id == ref.id && result.page == ref.page;
 }
 
 CornerIndexAdaptor::CornerIndexAdaptor(const CornerStore &ref) : store(ref){

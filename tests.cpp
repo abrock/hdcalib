@@ -173,6 +173,7 @@ TEST(CornerStore, findByID) {
     hdcalib::CornerIndexAdaptor idx_adapt(store);
     hdcalib::CornerPositionAdaptor pos_adapt(store);
 
+
     // We create a hdmarker::Corner with a different value for each property.
     hdmarker::Corner a, b;
     a.p = cv::Point2f(1,2);
@@ -183,7 +184,12 @@ TEST(CornerStore, findByID) {
     a.page = 11;
     a.size = 12;
 
+    EXPECT_FALSE(store.hasID(a));
+    EXPECT_FALSE(store.hasID(b));
+
     store.push_back(a);
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_FALSE(store.hasID(b));
 
     b.p = cv::Point2f(13,14);
     b.id = cv::Point2i(15,16);
@@ -199,18 +205,25 @@ TEST(CornerStore, findByID) {
     EXPECT_TRUE(CornersEqual(a, search_res[0]));
 
     store.push_back(b);
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_TRUE(store.hasID(b));
+
 
     search_res = store.findByID(a);
     EXPECT_GE(search_res.size(), 1);
     EXPECT_TRUE(CornersEqual(a, search_res[0]));
 
     store.push_back(b);
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_TRUE(store.hasID(b));
 
     search_res = store.findByID(a);
     EXPECT_GE(search_res.size(), 1);
     EXPECT_TRUE(CornersEqual(a, search_res[0]));
 
     store.push_back(b);
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_TRUE(store.hasID(b));
 
     search_res = store.findByID(a);
     EXPECT_GE(search_res.size(), 1);

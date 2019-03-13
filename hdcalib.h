@@ -141,7 +141,10 @@ private:
 public:
     CornerStore();
 
-    std::vector<hdmarker::Corner> findByID(hdmarker::Corner const& ref);
+    std::vector<hdmarker::Corner> findByID(hdmarker::Corner const& ref, size_t const num_results = 1);
+
+
+    bool hasID(hdmarker::Corner const& ref);
 
 
     size_t size() const;
