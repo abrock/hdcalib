@@ -25,7 +25,7 @@ void getCornerGrid(
             a.id = cv::Point2i(ii, jj);
             a.page = 0;
             a.p = cv::Point2f(ii, jj);
-            a.size = 1;
+            a.size = .5;
             store.push_back(a);
         }
     }
@@ -260,7 +260,7 @@ TEST(CornerStore, find) {
             a.id = cv::Point2i(ii, jj);
             a.page = 0;
             a.p = cv::Point2f(ii, jj);
-            a.size = 1;
+            a.size = .5;
             std::vector<hdmarker::Corner> res = store.findByPos(a, 1);
             ASSERT_EQ(1, res.size());
             EXPECT_TRUE(CornersEqual(a, res[0]));
@@ -301,7 +301,7 @@ TEST(CornerStore, find) {
             a.id = cv::Point2i(ii, jj);
             a.page = 0;
             a.p = cv::Point2f(ii, jj);
-            a.size = 1;
+            a.size = .5;
             std::vector<hdmarker::Corner> res = store.findByPos(a, 1);
             ASSERT_EQ(1, res.size());
             EXPECT_TRUE(CornersEqual(a, res[0]));
@@ -325,6 +325,42 @@ TEST(CornerStore, find) {
         EXPECT_EQ(id.x, r.id.x);
         EXPECT_EQ(id.y, r.id.y);
     }
+}
+
+TEST(CornerStore, purgeDuplicates) {
+    hdcalib::CornerStore store;
+    hdmarker::Corner a;
+
+    size_t const grid_width = 50;
+    size_t const grid_height = 50;
+
+    getCornerGrid(store, grid_width, grid_height);
+    size_t const grid_size = store.size();
+
+    EXPECT_FALSE(store.purgeDuplicates());
+    EXPECT_EQ(store.size(), grid_size);
+
+    getCornerGrid(store, 5, 5);
+
+    EXPECT_TRUE(store.purgeDuplicates());
+    EXPECT_EQ(store.size(), grid_size);
+
+    getCornerGrid(store);
+
+    EXPECT_TRUE(store.purgeDuplicates());
+    EXPECT_EQ(store.size(), grid_size);
+
+    hdcalib::CornerStore store2;
+    getCornerGrid(store2, grid_width, grid_height);
+
+    EXPECT_EQ(store.size(), store2.size());
+
+    for (size_t ii = 0; ii < store2.size(); ++ii) {
+        EXPECT_TRUE(store.hasID(store2.get(ii)));
+    }
+
+    hdcalib::CornerStore store3;
+    store3 = store;
 }
 
 int main(int argc, char** argv)

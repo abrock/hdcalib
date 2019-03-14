@@ -39,10 +39,10 @@ std::vector<hdmarker::Corner> filter_duplicate_markers(std::vector<hdmarker::Cor
 class CornerStore;
 
 class CornerIndexAdaptor {
-    CornerStore const& store;
+    CornerStore const * store;
 public:
 
-    CornerIndexAdaptor(CornerStore const& ref);
+    CornerIndexAdaptor(CornerStore &ref);
 
     /**
      * @brief kdtree_get_point_count returns corners.size()
@@ -78,10 +78,10 @@ public:
 };
 
 class CornerPositionAdaptor {
-    CornerStore const& store;
+    CornerStore * store;
 
 public:
-    CornerPositionAdaptor(CornerStore const& ref);
+    CornerPositionAdaptor(CornerStore & ref);
 
     /**
      * @brief kdtree_get_point_count returns corners.size()
@@ -141,6 +141,8 @@ private:
 public:
     CornerStore();
 
+    void replaceCorners(std::vector<hdmarker::Corner> const& _corners);
+
     /**
      * @brief getCorners returns a copy of the stored corners.
      * @return
@@ -175,7 +177,14 @@ public:
     /**
      * @brief purgeUnlikely searches for likely mis-detections and removes them from the store.
      */
-    void purgeUnlikely();
+    bool purgeUnlikely();
+
+    /**
+     * @brief purgeDuplicates removes duplicate markers.
+     *
+     * @return true if duplicates were found.
+     */
+    bool purgeDuplicates();
 
     /**
      * @brief hasID checks if a given hdmarker::Corner (identified by id and page) exists in the CornerStore.

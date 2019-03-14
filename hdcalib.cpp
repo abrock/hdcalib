@@ -323,6 +323,28 @@ CornerStore::CornerStore() :
 
 }
 
+void CornerStore::replaceCorners(const std::vector<Corner> &_corners) {
+    corners = _corners;
+    {
+        std::shared_ptr<CornerIndexTree> idx_tree_replacement(new CornerIndexTree(
+                    3 /*dim*/,
+                    idx_adapt,
+                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
+        idx_tree.swap(idx_tree_replacement);
+    }
+    {
+        std::shared_ptr<CornerPositionTree> pos_tree_replacement(new CornerPositionTree(
+                    2 /*dim*/,
+                    pos_adapt,
+                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
+        pos_tree.swap(pos_tree_replacement);
+    }
+    if (corners.size() > 0) {
+        idx_tree->addPoints(0, corners.size() - 1);
+        pos_tree->addPoints(0, corners.size() - 1);
+    }
+}
+
 std::vector<Corner> CornerStore::getCorners() const {
     return corners;
 }
@@ -374,7 +396,7 @@ std::vector<Corner> CornerStore::findByPos(const double x, const double y, const
     return result;
 }
 
-void CornerStore::purgeUnlikely() {
+bool CornerStore::purgeUnlikely() {
     std::vector<hdmarker::Corner> keep;
     keep.reserve(size());
 
@@ -399,27 +421,57 @@ void CornerStore::purgeUnlikely() {
             }
         }
     }
-    //    if (size() != keep.size()) {
-    corners = keep;
-    {
-        std::shared_ptr<CornerIndexTree> idx_tree_replacement(new CornerIndexTree(
-                    3 /*dim*/,
-                    idx_adapt,
-                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
-        idx_tree.swap(idx_tree_replacement);
+
+    if (size() != keep.size()) {
+        replaceCorners(keep);
+        return true;
     }
-    {
-        std::shared_ptr<CornerPositionTree> pos_tree_replacement(new CornerPositionTree(
-                    2 /*dim*/,
-                    pos_adapt,
-                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
-        pos_tree.swap(pos_tree_replacement);
+    return false;
+}
+
+bool CornerStore::purgeDuplicates() {
+    std::vector<hdmarker::Corner> keep;
+    keep.reserve(size());
+
+    for (size_t ii = 0; ii < size(); ++ii) {
+        hdmarker::Corner const& candidate = get(ii);
+        size_t const num_results = 16;
+        double query_pt[2] = {
+            static_cast<double>(candidate.p.x),
+            static_cast<double>(candidate.p.y)
+        };
+
+        // do a knn search
+        std::unique_ptr<size_t[]> res_indices(new size_t[num_results]);
+        std::unique_ptr<double[]> res_dist_sqr( new double[num_results]);
+        nanoflann::KNNResultSet<double> resultSet(num_results);
+        resultSet.init(res_indices.get(), res_dist_sqr.get());
+        pos_tree->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+
+        bool is_duplicate = false;
+        for (size_t jj = 0; jj < resultSet.size(); ++jj) {
+            if (ii <= res_indices[jj]) {
+                continue;
+            }
+            hdmarker::Corner const& b = get(res_indices[jj]);
+            cv::Point2f residual = candidate.p - b.p;
+            double const dist = std::sqrt(residual.dot(residual));
+            if (dist < (candidate.size + b.size)/20) {
+                is_duplicate = true;
+                break;
+            }
+            break;
+        }
+        if (!is_duplicate) {
+            keep.push_back(candidate);
+        }
     }
-    if (keep.size() > 0) {
-        idx_tree->addPoints(0, keep.size() - 1);
-        pos_tree->addPoints(0, keep.size() - 1);
+
+    if (size() != keep.size()) {
+        replaceCorners(keep);
+        return true;
     }
-    //    }
+    return false;
 }
 
 bool CornerStore::hasID(const Corner &ref) {
@@ -441,16 +493,16 @@ bool CornerStore::hasID(const Corner &ref) {
     return result.id == ref.id && result.page == ref.page;
 }
 
-CornerIndexAdaptor::CornerIndexAdaptor(const CornerStore &ref) : store(ref){
+CornerIndexAdaptor::CornerIndexAdaptor(CornerStore &ref) : store(&ref){
 
 }
 
 size_t CornerIndexAdaptor::kdtree_get_point_count() const {
-    return store.size();
+    return store->size();
 }
 
 int CornerIndexAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
-    hdmarker::Corner const& c = store.get(idx);
+    hdmarker::Corner const& c = store->get(idx);
     if (0 == dim) {
         return c.id.x;
     }
@@ -463,16 +515,16 @@ int CornerIndexAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
     throw std::out_of_range("Dimension number " + to_string(dim) + " out of range (0-2)");
 }
 
-CornerPositionAdaptor::CornerPositionAdaptor(CornerStore const& ref) : store(ref) {
+CornerPositionAdaptor::CornerPositionAdaptor(CornerStore &ref) : store(&ref) {
 
 }
 
 size_t CornerPositionAdaptor::kdtree_get_point_count() const {
-    return store.size();
+    return store->size();
 }
 
 int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
-    hdmarker::Corner const& c = store.get(idx);
+    hdmarker::Corner const& c = store->get(idx);
     if (0 == dim) {
         return c.p.x;
     }
