@@ -363,6 +363,57 @@ TEST(CornerStore, purgeDuplicates) {
     store3 = store;
 }
 
+TEST(CornerStore, copyConstructor) {
+    hdcalib::CornerStore store;
+    hdmarker::Corner a, b;
+
+    a.p = cv::Point2f(1,2);
+    a.id = cv::Point2i(3,4);
+    a.pc[0] = cv::Point2f(5,6);
+    a.pc[1] = cv::Point2f(7,8);
+    a.pc[2] = cv::Point2f(9,10);
+    a.page = 11;
+    a.size = 12;
+
+    b.p = cv::Point2f(1,2);
+    b.id = cv::Point2i(3,4);
+    b.pc[0] = cv::Point2f(5,6);
+    b.pc[1] = cv::Point2f(7,8);
+    b.pc[2] = cv::Point2f(9,10);
+    b.page = 42;
+    b.size = 12;
+
+    size_t const grid_width = 50;
+    size_t const grid_height = 50;
+
+    getCornerGrid(store, grid_width, grid_height);
+    size_t const grid_size = store.size();
+
+    hdcalib::CornerStore copy = store;
+
+    EXPECT_EQ(copy.size(), store.size());
+
+    EXPECT_FALSE(store.hasID(a));
+    EXPECT_FALSE(copy.hasID(a));
+
+    EXPECT_FALSE(store.hasID(b));
+    EXPECT_FALSE(copy.hasID(b));
+
+    store.push_back(a);
+
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_FALSE(copy.hasID(a));
+    EXPECT_FALSE(store.hasID(b));
+    EXPECT_FALSE(copy.hasID(b));
+
+    copy.push_back(b);
+
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_FALSE(copy.hasID(a));
+    EXPECT_FALSE(store.hasID(b));
+    EXPECT_TRUE(copy.hasID(b));
+}
+
 int main(int argc, char** argv)
 {
     //* Use this code if the tests fail with unexpected exceptions.
