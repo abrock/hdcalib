@@ -298,6 +298,12 @@ void CornerStore::push_back(const Corner x) {
     pos_tree->addPoints(corners.size()-1, corners.size()-1);
 }
 
+void CornerStore::push_conditional(const Corner x) {
+    if (!hasID(x)) {
+        push_back(x);
+    }
+}
+
 void CornerStore::add(const std::vector<Corner> &vec) {
     if (vec.empty()) {
         return;

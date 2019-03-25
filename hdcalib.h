@@ -213,6 +213,12 @@ public:
     void push_back(hdmarker::Corner const x);
 
     /**
+     * @brief push_conditional adds the corner to the data if not a Corner with the same id is already present.
+     * @param x
+     */
+    void push_conditional(hdmarker::Corner const x);
+
+    /**
      * @brief add adds a vector of hdcalib::Corner to the stored corners.
      * @param vec
      */

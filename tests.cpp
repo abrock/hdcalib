@@ -18,15 +18,33 @@ std::normal_distribution<double> dist;
 void getCornerGrid(
         hdcalib::CornerStore & store,
         size_t const grid_width = 50,
-        size_t const grid_height = 50) {
+        size_t const grid_height = 50,
+        int const page = 0) {
     hdmarker::Corner a;
     for (size_t ii = 0; ii < grid_width; ++ii) {
         for (size_t jj = 0; jj < grid_height; ++jj) {
             a.id = cv::Point2i(ii, jj);
-            a.page = 0;
+            a.page = page;
             a.p = cv::Point2f(ii, jj);
             a.size = .5;
             store.push_back(a);
+        }
+    }
+}
+
+void getCornerGridConditional(
+        hdcalib::CornerStore & store,
+        size_t const grid_width = 50,
+        size_t const grid_height = 50,
+        int const page = 0) {
+    hdmarker::Corner a;
+    for (size_t ii = 0; ii < grid_width; ++ii) {
+        for (size_t jj = 0; jj < grid_height; ++jj) {
+            a.id = cv::Point2i(ii, jj);
+            a.page = page;
+            a.p = cv::Point2f(ii, jj);
+            a.size = .5;
+            store.push_conditional(a);
         }
     }
 }
@@ -395,7 +413,6 @@ TEST(CornerStore, copyConstructor) {
 
     EXPECT_FALSE(store.hasID(a));
     EXPECT_FALSE(copy.hasID(a));
-
     EXPECT_FALSE(store.hasID(b));
     EXPECT_FALSE(copy.hasID(b));
 
@@ -412,6 +429,27 @@ TEST(CornerStore, copyConstructor) {
     EXPECT_FALSE(copy.hasID(a));
     EXPECT_FALSE(store.hasID(b));
     EXPECT_TRUE(copy.hasID(b));
+}
+
+TEST(CornerStore, push_conditional) {
+    hdcalib::CornerStore c;
+
+    EXPECT_EQ(0, c.size());
+
+    getCornerGridConditional(c, 20, 20, 0);
+    EXPECT_EQ(400, c.size());
+
+    getCornerGridConditional(c, 20, 20, 0);
+    EXPECT_EQ(400, c.size());
+
+    getCornerGridConditional(c, 30, 30, 0);
+    EXPECT_EQ(900, c.size());
+
+    getCornerGridConditional(c, 10, 10, 1);
+    EXPECT_EQ(1000, c.size());
+
+    getCornerGridConditional(c, 20, 20, 1);
+    EXPECT_EQ(1300, c.size());
 }
 
 int main(int argc, char** argv)
