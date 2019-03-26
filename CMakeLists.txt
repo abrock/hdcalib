@@ -32,3 +32,10 @@ target_link_libraries(tests
   hdcalib
   ${GTEST_BOTH_LIBRARIES}
   )
+
+add_executable(valgrind-tests valgrind-tests.cpp)
+target_link_libraries(valgrind-tests
+  hdmarker
+  hdcalib
+  ${GTEST_BOTH_LIBRARIES}
+)
