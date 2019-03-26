@@ -276,6 +276,8 @@ public:
 
     void keepCommonCorners_intersect();
 
+    void keepCommonCorners();
+
     void addInputImage(std::string const filename, std::vector<hdmarker::Corner> const& corners);
 
     void addInputImage(std::string const filename, CornerStore const& corners);

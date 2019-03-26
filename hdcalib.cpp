@@ -70,6 +70,10 @@ void Calib::keepCommonCorners_intersect() {
     }
 }
 
+void Calib::keepCommonCorners() {
+    keepCommonCorners_intersect();
+}
+
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners) {
     data[filename].replaceCorners(corners);
     CornerStore & ref = data[filename];

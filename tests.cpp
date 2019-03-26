@@ -569,7 +569,31 @@ TEST(CornerStore, intersect) {
     a.intersect(b);
     EXPECT_EQ(a.size(), 2500);
     EXPECT_EQ(b.size(), 2500);
+}
 
+TEST(CornerStore, purge2) {
+    hdcalib::CornerStore a;
+
+    getCornerGrid(a, 50, 50, 0);
+    EXPECT_EQ(a.size(), 2500);
+
+    getCornerGrid(a, 50, 50, 0);
+    EXPECT_EQ(a.size(), 5000);
+
+    a.purgeUnlikely();
+    EXPECT_EQ(a.size(), 5000);
+
+    a.purgeDuplicates();
+    EXPECT_EQ(a.size(), 2500);
+
+    getCornerGrid(a, 10, 10, 1, cv::Point2f(50, 50));
+    EXPECT_EQ(a.size(), 2600);
+
+    a.purgeUnlikely();
+    EXPECT_EQ(a.size(), 2600);
+
+    a.purgeDuplicates();
+    EXPECT_EQ(a.size(), 2600);
 }
 
 TEST(CornerStore, assignment) {
@@ -589,6 +613,84 @@ TEST(CornerStore, assignment) {
     EXPECT_EQ(a.size(), 400+900);
     EXPECT_EQ(b.size(), 400+225);
 
+}
+
+class KeepCornersDelete {
+public:
+    static void keepCorners(hdcalib::Calib & c) {
+        c.keepCommonCorners_delete();
+    }
+};
+
+class KeepCornersIntersect {
+public:
+    static void keepCorners(hdcalib::Calib & c) {
+        c.keepCommonCorners_intersect();
+    }
+};
+
+template <typename T>
+class KeepCornersTest : public ::testing::Test {};
+using MyTypes = ::testing::Types<
+KeepCornersDelete,
+KeepCornersIntersect
+>;
+
+TYPED_TEST_CASE(KeepCornersTest, MyTypes);
+
+TYPED_TEST(KeepCornersTest, empty_intersection) {
+    hdcalib::CornerStore a, b;
+
+    getCornerGrid(a, 30, 30, 0);
+    getCornerGrid(b, 40, 40, 1);
+    hdcalib::Calib c;
+    c.addInputImage("a", a);
+    c.addInputImage("b", b);
+
+    EXPECT_EQ(c.get("a").size(), 900);
+    EXPECT_EQ(c.get("b").size(), 1600);
+
+    TypeParam::keepCorners(c);
+    EXPECT_EQ(c.get("a").size(), 0);
+    EXPECT_EQ(c.get("b").size(), 0);
+}
+
+
+TYPED_TEST(KeepCornersTest, identical) {
+    hdcalib::CornerStore a, b;
+
+    getCornerGrid(a, 30, 30, 0);
+    getCornerGrid(b, 30, 30, 0);
+    hdcalib::Calib c;
+    c.addInputImage("a", a);
+    c.addInputImage("b", b);
+
+    EXPECT_EQ(c.get("a").size(), 900);
+    EXPECT_EQ(c.get("b").size(), 900);
+
+    TypeParam::keepCorners(c);
+    EXPECT_EQ(c.get("a").size(), 900);
+    EXPECT_EQ(c.get("b").size(), 900);
+}
+
+TYPED_TEST(KeepCornersTest, non_identical) {
+    hdcalib::CornerStore a, b;
+
+    getCornerGrid(a, 30, 30, 0);
+    getCornerGrid(b, 30, 30, 0);
+
+    getCornerGrid(a, 10, 10, 1, cv::Point2f(30, 30));
+    getCornerGrid(b, 5, 5, 1, cv::Point2f(30, 30));
+    hdcalib::Calib c;
+    c.addInputImage("a", a);
+    c.addInputImage("b", b);
+
+    EXPECT_EQ(c.get("a").size(), 1000);
+    EXPECT_EQ(c.get("b").size(), 925);
+
+    TypeParam::keepCorners(c);
+    EXPECT_EQ(c.get("a").size(), 925);
+    EXPECT_EQ(c.get("b").size(), 925);
 }
 
 int main(int argc, char** argv)
