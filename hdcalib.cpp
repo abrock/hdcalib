@@ -9,6 +9,89 @@ Calib::Calib()
 
 }
 
+Point3f Calib::getInitial3DCoord(const Corner &c, const double z) {
+    cv::Point3f res(c.id.x, c.id.y, z);
+    switch (c.page) {
+    case 1: res.x+= 32; break;
+    case 2: res.x += 64; break;
+
+    case 3: res.y += 32; break;
+    case 4: res.y += 32; res.x += 32; break;
+    case 5: res.y += 32; res.x += 64; break;
+    }
+
+    return res;
+}
+
+void Calib::keepCommonCorners_delete() {
+    CornerStore _delete;
+    CornerStore _union = getUnion();
+
+    for (size_t ii = 0; ii < _union.size(); ++ii) {
+        hdmarker::Corner const c = _union.get(ii);
+        for (auto const& it : data) {
+            if (!(it.second.hasID(c))) {
+                _delete.push_conditional(c);
+                break;
+            }
+        }
+    }
+
+    for (auto& it : data) {
+        bool found_delete = false;
+        CornerStore replacement;
+        for (size_t ii = 0; ii < it.second.size(); ++ii) {
+            if (_delete.hasID(it.second.get(ii))) {
+                found_delete = true;
+            }
+            else {
+                replacement.push_conditional(it.second.get(ii));
+            }
+        }
+        if (found_delete) {
+            it.second = replacement;
+        }
+    }
+}
+
+void Calib::keepCommonCorners_intersect() {
+    if (data.empty() || data.size() < 2) {
+        return;
+    }
+    std::string prev = std::prev(data.end())->first;
+    for (auto& it : data) {
+         it.second.intersect(data[prev]);
+         prev = it.first;
+    }
+    prev = std::prev(data.end())->first;
+    for (auto& it : data) {
+        it.second.intersect(data[prev]);
+        prev = it.first;
+    }
+}
+
+void Calib::addInputImage(const string filename, const std::vector<Corner> &corners) {
+    data[filename].replaceCorners(corners);
+    CornerStore & ref = data[filename];
+    ref.purgeDuplicates();
+    ref.purgeUnlikely();
+}
+
+void Calib::addInputImage(const string filename, const CornerStore &corners) {
+    data[filename] = corners;
+    CornerStore & ref = data[filename];
+    ref.purgeDuplicates();
+    ref.purgeUnlikely();
+}
+
+CornerStore Calib::get(const string filename) const {
+    Store_T::const_iterator it = data.find(filename);
+    if (it != data.end()) {
+        return it->second;
+    }
+    return CornerStore();
+}
+
 Mat Calib::normalize_raw_per_channel(const Mat &input) {
     cv::Mat result = input.clone();
 
@@ -111,6 +194,16 @@ Mat Calib::read_raw(const string &filename) {
 
 
     return result;
+}
+
+CornerStore Calib::getUnion() const {
+    CornerStore res;
+    for (const auto& it : data) {
+        for (size_t ii = 0; ii < it.second.size(); ++ii) {
+            res.push_conditional(it.second.get(ii));
+        }
+    }
+    return res;
 }
 
 vector<Corner> Calib::getCorners(const std::string input_file,
@@ -317,32 +410,77 @@ CornerStore::CornerStore() :
     idx_adapt(*this),
     pos_adapt(*this),
     idx_tree(new CornerIndexTree(
-        3 /*dim*/,
-        idx_adapt,
-        nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
-        )),
+                 3 /*dim*/,
+                 idx_adapt,
+                 nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
+                 )),
     pos_tree(new CornerPositionTree (
-        2 /*dim*/,
-        pos_adapt,
-        nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
-        )) {
+                 2 /*dim*/,
+                 pos_adapt,
+                 nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
+                 )) {
 
+}
+
+CornerStore::CornerStore(const CornerStore &c) :
+    idx_adapt(*this),
+    pos_adapt(*this),
+    idx_tree(new CornerIndexTree(
+                 3 /*dim*/,
+                 idx_adapt,
+                 nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
+                 )),
+    pos_tree(new CornerPositionTree (
+                 2 /*dim*/,
+                 pos_adapt,
+                 nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
+                 )) {
+    replaceCorners(c.getCorners());
+}
+
+CornerStore &CornerStore::operator=(const CornerStore &other) {
+    if (this != &other) { // protect against invalid self-assignment
+        replaceCorners(other.getCorners());
+    }
+    // by convention, always return *this
+    return *this;
+}
+
+void CornerStore::clean() {
+    purgeDuplicates();
+    purgeUnlikely();
+}
+
+void CornerStore::intersect(const CornerStore &b) {
+    bool found_delete = false;
+    std::vector<hdmarker::Corner> replacement;
+    for (size_t ii = 0; ii < size(); ++ii) {
+        if (b.hasID(get(ii))) {
+            replacement.push_back(get(ii));
+        }
+        else {
+            found_delete = true;
+        }
+    }
+    if (found_delete) {
+        replaceCorners(replacement);
+    }
 }
 
 void CornerStore::replaceCorners(const std::vector<Corner> &_corners) {
     corners = _corners;
     {
         std::shared_ptr<CornerIndexTree> idx_tree_replacement(new CornerIndexTree(
-                    3 /*dim*/,
-                    idx_adapt,
-                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
+                                                                  3 /*dim*/,
+                                                                  idx_adapt,
+                                                                  nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
         idx_tree.swap(idx_tree_replacement);
     }
     {
         std::shared_ptr<CornerPositionTree> pos_tree_replacement(new CornerPositionTree(
-                    2 /*dim*/,
-                    pos_adapt,
-                    nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
+                                                                     2 /*dim*/,
+                                                                     pos_adapt,
+                                                                     nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)));
         pos_tree.swap(pos_tree_replacement);
     }
     if (corners.size() > 0) {
@@ -391,12 +529,18 @@ std::vector<Corner> CornerStore::findByPos(const double x, const double y, const
     // do a knn search
     std::unique_ptr<size_t[]> res_indices(new size_t[num_results]);
     std::unique_ptr<double[]> res_dist_sqr( new double[num_results]);
+    for (size_t ii = 0; ii < num_results; ++ii) {
+        res_indices[ii] = 0;
+        res_dist_sqr[ii] = std::numeric_limits<double>::max();
+    }
     nanoflann::KNNResultSet<double> resultSet(num_results);
     resultSet.init(res_indices.get(), res_dist_sqr.get());
     pos_tree->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
 
     for (size_t ii = 0; ii < resultSet.size(); ++ii) {
-        result.push_back(corners[res_indices[ii]]);
+        size_t const index = res_indices[ii];
+        hdmarker::Corner const& c = corners[index];
+        result.push_back(c);
     }
 
     return result;
@@ -480,7 +624,7 @@ bool CornerStore::purgeDuplicates() {
     return false;
 }
 
-bool CornerStore::hasID(const Corner &ref) {
+bool CornerStore::hasID(const Corner &ref) const {
     double query_pt[3] = {
         static_cast<double>(ref.id.x),
         static_cast<double>(ref.id.y),

@@ -19,13 +19,14 @@ void getCornerGrid(
         hdcalib::CornerStore & store,
         size_t const grid_width = 50,
         size_t const grid_height = 50,
-        int const page = 0) {
+        int const page = 0,
+        cv::Point2f offset = cv::Point2f(0,0)) {
     hdmarker::Corner a;
     for (size_t ii = 0; ii < grid_width; ++ii) {
         for (size_t jj = 0; jj < grid_height; ++jj) {
             a.id = cv::Point2i(ii, jj);
             a.page = page;
-            a.p = cv::Point2f(ii, jj);
+            a.p = cv::Point2f(ii, jj) + offset;
             a.size = .5;
             store.push_back(a);
         }
@@ -410,6 +411,8 @@ TEST(CornerStore, copyConstructor) {
     hdcalib::CornerStore copy = store;
 
     EXPECT_EQ(copy.size(), store.size());
+    EXPECT_EQ(copy.size(), 2500);
+    EXPECT_EQ(store.size(), 2500);
 
     EXPECT_FALSE(store.hasID(a));
     EXPECT_FALSE(copy.hasID(a));
@@ -418,6 +421,9 @@ TEST(CornerStore, copyConstructor) {
 
     store.push_back(a);
 
+    EXPECT_EQ(copy.size(), 2500);
+    EXPECT_EQ(store.size(), 2501);
+
     EXPECT_TRUE(store.hasID(a));
     EXPECT_FALSE(copy.hasID(a));
     EXPECT_FALSE(store.hasID(b));
@@ -425,10 +431,69 @@ TEST(CornerStore, copyConstructor) {
 
     copy.push_back(b);
 
+    EXPECT_EQ(copy.size(), 2501);
+    EXPECT_EQ(store.size(), 2501);
+
     EXPECT_TRUE(store.hasID(a));
     EXPECT_FALSE(copy.hasID(a));
     EXPECT_FALSE(store.hasID(b));
     EXPECT_TRUE(copy.hasID(b));
+
+    std::map<std::string, hdcalib::CornerStore> map;
+    map["store"] = store;
+    map["copy"] = copy;
+
+    EXPECT_EQ(map["store"].size(), 2501);
+    EXPECT_EQ(map["copy"].size(), 2501);
+
+    map["store"].intersect(map["copy"]);
+    EXPECT_EQ(map["store"].size(), 2500);
+    EXPECT_EQ(map["copy"].size(), 2501);
+
+    map["copy"].intersect(map["store"]);
+    EXPECT_EQ(map["store"].size(), 2500);
+    EXPECT_EQ(map["copy"].size(), 2500);
+
+    map["copy"].intersect(map["copy"]);
+    map["store"].intersect(map["store"]);
+    EXPECT_EQ(map["store"].size(), 2500);
+    EXPECT_EQ(map["copy"].size(), 2500);
+
+    {
+        hdcalib::Calib c;
+        c.addInputImage("store", map["store"]);
+        c.addInputImage("copy", map["copy"]);
+
+        EXPECT_EQ(c.get("store").size(), 2500);
+        EXPECT_EQ(c.get("copy").size(), 2500);
+
+
+
+        c.keepCommonCorners_intersect();
+        EXPECT_EQ(c.get("store").size(), 2500);
+        EXPECT_EQ(c.get("copy").size(), 2500);
+    }
+}
+
+TEST(CornerStore, purge) {
+    hdcalib::CornerStore s;
+    getCornerGrid(s, 30, 30, 0);
+    EXPECT_EQ(s.size(), 900);
+
+    s.purgeUnlikely();
+    EXPECT_EQ(s.size(), 900);
+
+    s.purgeDuplicates();
+    EXPECT_EQ(s.size(), 900);
+
+    getCornerGrid(s, 10, 10, 1, cv::Point2f(32,0));
+    EXPECT_EQ(s.size(), 1000);
+
+    s.purgeUnlikely();
+    EXPECT_EQ(s.size(), 1000);
+
+    s.purgeDuplicates();
+    EXPECT_EQ(s.size(), 1000);
 }
 
 TEST(CornerStore, push_conditional) {
@@ -452,8 +517,83 @@ TEST(CornerStore, push_conditional) {
     EXPECT_EQ(1300, c.size());
 }
 
+TEST(Calib, keepCommonCorners_delete) {
+    std::vector<std::string> names = {"a.png", "b.png"};
+    hdcalib::Calib c;
+    for (auto& name : names) {
+        hdcalib::CornerStore s;
+        getCornerGrid(s, 50, 50, 0);
+        c.addInputImage(name, s);
+        EXPECT_EQ(c.get(name).size(), 2500);
+    }
+
+    hdcalib::CornerStore _union = c.getUnion();
+
+    EXPECT_EQ(_union.size(), 2500);
+
+    for (auto const& name : names) {
+        EXPECT_EQ(c.get(name).size(), 2500);
+    }
+
+    c.keepCommonCorners_intersect();
+
+    for (const auto& name : names) {
+        EXPECT_EQ(c.get(name).size(), 2500);
+    }
+}
+
+TEST(CornerStore, intersect) {
+    hdcalib::CornerStore a,b;
+
+    getCornerGrid(a, 50, 50, 0);
+    getCornerGrid(b, 50, 50, 0);
+
+    EXPECT_EQ(a.size(), 2500);
+    EXPECT_EQ(b.size(), 2500);
+
+    a.intersect(b);
+    EXPECT_EQ(a.size(), 2500);
+    EXPECT_EQ(b.size(), 2500);
+
+    a.intersect(a);
+    EXPECT_EQ(a.size(), 2500);
+    EXPECT_EQ(b.size(), 2500);
+
+    b.intersect(a);
+    EXPECT_EQ(a.size(), 2500);
+    EXPECT_EQ(b.size(), 2500);
+
+    getCornerGrid(a, 10, 10, 1);
+    EXPECT_EQ(a.size(), 2600);
+
+    a.intersect(b);
+    EXPECT_EQ(a.size(), 2500);
+    EXPECT_EQ(b.size(), 2500);
+
+}
+
+TEST(CornerStore, assignment) {
+    hdcalib:: CornerStore a, b;
+
+    getCornerGrid(a, 10, 10, 0);
+    getCornerGrid(b, 20, 20, 1);
+
+    a=b;
+
+    EXPECT_EQ(a.size(), 400);
+    EXPECT_EQ(b.size(), 400);
+
+    getCornerGrid(a, 30, 30, 0);
+    getCornerGrid(b, 15, 15, 1);
+
+    EXPECT_EQ(a.size(), 400+900);
+    EXPECT_EQ(b.size(), 400+225);
+
+}
+
 int main(int argc, char** argv)
 {
+    {
     //* Use this code if the tests fail with unexpected exceptions.
     hdcalib::CornerStore store;
     hdcalib::CornerIndexAdaptor idx_adapt(store);
@@ -474,6 +614,87 @@ int main(int argc, char** argv)
     getCornerGrid(store, 10, 10);
 
     store.purgeUnlikely();
+
+}
+
+    {
+        hdcalib::CornerStore store;
+        hdmarker::Corner a, b;
+
+        a.p = cv::Point2f(1,2);
+        a.id = cv::Point2i(3,4);
+        a.pc[0] = cv::Point2f(5,6);
+        a.pc[1] = cv::Point2f(7,8);
+        a.pc[2] = cv::Point2f(9,10);
+        a.page = 11;
+        a.size = 12;
+
+        b.p = cv::Point2f(1,2);
+        b.id = cv::Point2i(3,4);
+        b.pc[0] = cv::Point2f(5,6);
+        b.pc[1] = cv::Point2f(7,8);
+        b.pc[2] = cv::Point2f(9,10);
+        b.page = 42;
+        b.size = 12;
+
+        size_t const grid_width = 50;
+        size_t const grid_height = 50;
+
+        getCornerGrid(store, grid_width, grid_height);
+        size_t const grid_size = store.size();
+
+        hdcalib::CornerStore copy = store;
+
+        EXPECT_EQ(copy.size(), store.size());
+        EXPECT_EQ(copy.size(), 2500);
+        EXPECT_EQ(store.size(), 2500);
+
+        EXPECT_FALSE(store.hasID(a));
+        EXPECT_FALSE(copy.hasID(a));
+        EXPECT_FALSE(store.hasID(b));
+        EXPECT_FALSE(copy.hasID(b));
+
+        store.push_back(a);
+
+        EXPECT_EQ(copy.size(), 2500);
+        EXPECT_EQ(store.size(), 2501);
+
+        EXPECT_TRUE(store.hasID(a));
+        EXPECT_FALSE(copy.hasID(a));
+        EXPECT_FALSE(store.hasID(b));
+        EXPECT_FALSE(copy.hasID(b));
+
+        copy.push_back(b);
+
+        EXPECT_EQ(copy.size(), 2501);
+        EXPECT_EQ(store.size(), 2501);
+
+        EXPECT_TRUE(store.hasID(a));
+        EXPECT_FALSE(copy.hasID(a));
+        EXPECT_FALSE(store.hasID(b));
+        EXPECT_TRUE(copy.hasID(b));
+
+        std::map<std::string, hdcalib::CornerStore> map;
+        map["store"] = store;
+        map["copy"] = copy;
+
+        EXPECT_EQ(map["store"].size(), 2501);
+        EXPECT_EQ(map["copy"].size(), 2501);
+
+        map["store"].intersect(map["copy"]);
+        EXPECT_EQ(map["store"].size(), 2500);
+        EXPECT_EQ(map["copy"].size(), 2501);
+
+        map["copy"].intersect(map["store"]);
+        EXPECT_EQ(map["store"].size(), 2500);
+        EXPECT_EQ(map["copy"].size(), 2500);
+
+        map["copy"].intersect(map["copy"]);
+        map["store"].intersect(map["store"]);
+        EXPECT_EQ(map["store"].size(), 2500);
+        EXPECT_EQ(map["copy"].size(), 2500);
+
+    }
 
     //return 0;
     // */

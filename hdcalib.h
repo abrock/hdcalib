@@ -141,6 +141,31 @@ private:
 public:
     CornerStore();
 
+    /**
+     * @brief CornerStore explicit copy constructor
+     * @param c
+     */
+    CornerStore(const CornerStore& c);
+
+    /**
+     * @brief operator = a better copy operator for avoiding memory problems.
+     * @param other
+     * @return
+     */
+    CornerStore& operator=(const CornerStore& other);
+
+    /**
+     * @brief clean first calls purgeDuplicates and then purgeUnlikely;
+     */
+    void clean();
+
+    /**
+     * @brief intersect calculates the intersection between this store and another store
+     * and replaces this store's corners by the intersection.
+     * @param b
+     */
+    void intersect(CornerStore const& b);
+
     void replaceCorners(std::vector<hdmarker::Corner> const& _corners);
 
     /**
@@ -191,7 +216,7 @@ public:
      * @param ref corner we search.
      * @return true if the corner exists.
      */
-    bool hasID(hdmarker::Corner const& ref);
+    bool hasID(hdmarker::Corner const& ref) const;
 
     /**
      * @brief size returns the number of elements currently stored.
@@ -230,23 +255,40 @@ public:
 class Calib
 {
     bool verbose = true;
-    std::vector<std::string> input_images;
     int grid_width = 1;
     int grid_height = 1;
 
     bool use_rgb = false;
+
+    typedef std::map<std::string, CornerStore> Store_T;
+    Store_T data;
 public:
     Calib();
 
-    void setInputImages(std::vector<std::string> const& files) {
+    cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0);
 
-    }
+    /**
+     * @brief keepCommonCorners Removes all corners from the data which are not present
+     * in all detected images. This is needed for the OpenCV calibration which assumes
+     * checkerboard-like targets where the whole target is visible in each image.
+     */
+    void keepCommonCorners_delete();
+
+    void keepCommonCorners_intersect();
+
+    void addInputImage(std::string const filename, std::vector<hdmarker::Corner> const& corners);
+
+    void addInputImage(std::string const filename, CornerStore const& corners);
+
+    CornerStore get(std::string const filename) const;
 
     cv::Mat normalize_raw_per_channel(cv::Mat const& input);
 
     void normalize_raw_per_channel_inplace(cv::Mat & input);
 
     cv::Mat read_raw(std::string const& filename);
+
+    CornerStore getUnion() const;
 
     /**
    * @brief getCorners

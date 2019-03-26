@@ -101,6 +101,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    hdcalib::Calib c;
+    for (auto const& it : detected_markers) {
+        c.addInputImage(it.first, it.second);
+    }
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
