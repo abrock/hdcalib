@@ -58,7 +58,11 @@ void Calib::keepCommonCorners_intersect() {
     if (data.empty() || data.size() < 2) {
         return;
     }
-    std::string prev = std::prev(data.end())->first;
+    std::string const last = std::prev(data.end())->first;
+    if (data.size() == 2) {
+        CornerStore::intersect(data.begin()->second, data[last]);
+    }
+    std::string prev = last;
     for (auto& it : data) {
          it.second.intersect(data[prev]);
          prev = it.first;
@@ -471,6 +475,13 @@ void CornerStore::intersect(const CornerStore &b) {
     }
 }
 
+void CornerStore::intersect(CornerStore &a, CornerStore &b) {
+    a.intersect(b);
+    if (a.size() != b.size()) {
+        b.intersect(a);
+    }
+}
+
 void CornerStore::replaceCorners(const std::vector<Corner> &_corners) {
     corners = _corners;
     {
@@ -623,6 +634,34 @@ bool CornerStore::purgeDuplicates() {
 
     if (size() != keep.size()) {
         replaceCorners(keep);
+        return true;
+    }
+    return false;
+}
+
+bool CornerStore::purge32() {
+    std::vector<hdmarker::Corner> res;
+    res.reserve(size());
+    for (size_t ii = 0; ii < size(); ++ii) {
+        hdmarker::Corner const& candidate = get(ii);
+        if (candidate.id.x != 32 && candidate.id.y != 32) {
+            res.push_back(candidate);
+            continue;
+        }
+        auto const search_res = findByPos(candidate, 2);
+        if (search_res.size() < 2) {
+            res.push_back(candidate);
+            continue;
+        }
+        hdmarker::Corner const& second = search_res[1];
+        cv::Point2f const diff = candidate.p - second.p;
+        double const dist = std::sqrt(diff.dot(diff));
+        if (dist > (candidate.size + second.size)/20) {
+            res.push_back(candidate);
+        }
+    }
+    if (res.size() != size()) {
+        replaceCorners(res);
         return true;
     }
     return false;

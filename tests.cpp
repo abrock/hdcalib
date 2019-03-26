@@ -693,31 +693,138 @@ TYPED_TEST(KeepCornersTest, non_identical) {
     EXPECT_EQ(c.get("b").size(), 925);
 }
 
+/**
+ * @brief getNames generates an array of different strings.
+ * @param num number of strings we want.
+ * @return
+ */
+std::vector<std::string> getNames(size_t const num) {
+    std::vector<std::string> res;
+    for (size_t ii = 0; ii < num; ++ii) {
+        res.push_back(std::to_string(ii));
+    }
+    return res;
+}
+
+TYPED_TEST(KeepCornersTest, identical_different_sizes) {
+    for (size_t num = 3; num < 10; ++num) {
+        auto const names = getNames(num);
+        hdcalib::Calib c;
+        for (auto const& name : names) {
+            hdcalib::CornerStore s;
+            getCornerGrid(s, 5, 5, 0);
+            c.addInputImage(name, s);
+        }
+        for (auto const& name : names) {
+            EXPECT_EQ(c.get(name).size(), 25);
+        }
+        TypeParam::keepCorners(c);
+        for (auto const& name : names) {
+            EXPECT_EQ(c.get(name).size(), 25);
+        }
+    }
+}
+
+TYPED_TEST(KeepCornersTest, empty_intersection_different_sizes) {
+    for (size_t num = 3; num < 10; ++num) {
+        auto const names = getNames(num);
+        hdcalib::Calib c;
+        int page = 0;
+        for (auto const& name : names) {
+            hdcalib::CornerStore s;
+            getCornerGrid(s, 5, 5, page);
+            c.addInputImage(name, s);
+            page++;
+        }
+        for (auto const& name : names) {
+            EXPECT_EQ(c.get(name).size(), 25);
+        }
+        TypeParam::keepCorners(c);
+        for (auto const& name : names) {
+            EXPECT_EQ(c.get(name).size(), 0);
+        }
+    }
+}
+
+TYPED_TEST(KeepCornersTest, non_empty_intersection_different_sizes) {
+    for (size_t num = 1; num < 10; ++num) {
+        auto const names = getNames(num);
+        hdcalib::Calib c;
+        size_t extension_size = 3;
+        for (auto const& name : names) {
+            hdcalib::CornerStore s;
+            getCornerGrid(s, 5, 5, 0);
+            getCornerGrid(s, 3, extension_size, 1, cv::Point2f(6,0));
+            c.addInputImage(name, s);
+            extension_size++;
+        }
+        extension_size = 3;
+        for (auto const& name : names) {
+            EXPECT_EQ(c.get(name).size(), 25 + extension_size*3);
+            extension_size++;
+        }
+        TypeParam::keepCorners(c);
+        for (auto const& name : names) {
+            EXPECT_EQ(c.get(name).size(), 25 + 3*3);
+        }
+    }
+}
+
+TEST(CornerStore, purge32) {
+    {
+        hdcalib::CornerStore s;
+        getCornerGrid(s, 15, 15);
+        EXPECT_EQ(s.size(), 225);
+        EXPECT_FALSE(s.purge32());
+        EXPECT_EQ(s.size(), 225);
+    }
+    {
+        hdcalib::CornerStore s;
+        getCornerGrid(s, 40, 40);
+        EXPECT_EQ(s.size(), 1600);
+        EXPECT_FALSE(s.purge32());
+        EXPECT_EQ(s.size(), 1600);
+    }
+    {
+        hdcalib::CornerStore s;
+        getCornerGrid(s, 33, 33);
+        EXPECT_EQ(s.size(), 33*33);
+        EXPECT_FALSE(s.purge32());
+        EXPECT_EQ(s.size(), 33*33);
+        getCornerGrid(s, 3, 32, 1, cv::Point2f(32, 0));
+        EXPECT_EQ(s.size(), 33*33 + 3*32);
+        EXPECT_TRUE(s.purge32());
+        EXPECT_EQ(s.size(), 33*33 + 2*32);
+
+    }
+
+}
+
 int main(int argc, char** argv)
 {
     {
-    //* Use this code if the tests fail with unexpected exceptions.
-    hdcalib::CornerStore store;
-    hdcalib::CornerIndexAdaptor idx_adapt(store);
-    hdcalib::CornerPositionAdaptor pos_adapt(store);
+        //* Use this code if the tests fail with unexpected exceptions.
+        hdcalib::CornerStore store;
+        hdcalib::CornerIndexAdaptor idx_adapt(store);
+        hdcalib::CornerPositionAdaptor pos_adapt(store);
 
-    // We create a hdmarker::Corner with a different value for each property.
-    hdmarker::Corner a;
-    a.p = cv::Point2f(1,2);
-    a.id = cv::Point2i(3,4);
-    a.pc[0] = cv::Point2f(5,6);
-    a.pc[1] = cv::Point2f(7,8);
-    a.pc[2] = cv::Point2f(9,10);
-    a.page = 11;
-    a.size = 12;
+        // We create a hdmarker::Corner with a different value for each property.
+        hdmarker::Corner a;
+        a.p = cv::Point2f(1,2);
+        a.id = cv::Point2i(3,4);
+        a.pc[0] = cv::Point2f(5,6);
+        a.pc[1] = cv::Point2f(7,8);
+        a.pc[2] = cv::Point2f(9,10);
+        a.page = 11;
+        a.size = 12;
 
-    store.push_back(a);
+        store.push_back(a);
 
-    getCornerGrid(store, 10, 10);
+        getCornerGrid(store, 10, 10);
 
-    store.purgeUnlikely();
+        store.purgeUnlikely();
 
-}
+    }
 
     {
         hdcalib::CornerStore store;

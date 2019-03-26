@@ -166,6 +166,8 @@ public:
      */
     void intersect(CornerStore const& b);
 
+    static void intersect(CornerStore & a, CornerStore & b);
+
     void replaceCorners(std::vector<hdmarker::Corner> const& _corners);
 
     /**
@@ -210,6 +212,13 @@ public:
      * @return true if duplicates were found.
      */
     bool purgeDuplicates();
+
+    /**
+     * @brief purge32 removes markers where the id's x or y component is 32 and where a second
+     * marker is present at the same location.
+     * @return
+     */
+    bool purge32();
 
     /**
      * @brief hasID checks if a given hdmarker::Corner (identified by id and page) exists in the CornerStore.
