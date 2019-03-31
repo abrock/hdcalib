@@ -14,12 +14,13 @@
 
 int main(int argc, char* argv[]) {
 
-    hdcalib::Calib cal;
+    hdcalib::Calib calib;
     std::vector<std::string> input_files;
     int recursion_depth = -1;
     float effort = 0.5;
     bool demosaic = false;
     bool libraw = false;
+    bool plot_markers = false;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -43,9 +44,11 @@ int main(int argc, char* argv[]) {
                                       false);
         cmd.add(read_raw_arg);
 
+        TCLAP::SwitchArg plot_markers_arg("", "plot", "Use this flag if the detected markers should be painted into the input images", false);
+        cmd.add(plot_markers_arg);
+
         TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input", "Input images, should contain markers", true, "string");
         cmd.add(input_img_arg);
-
 
         cmd.parse(argc, argv);
 
@@ -55,13 +58,17 @@ int main(int argc, char* argv[]) {
         effort = effort_arg.getValue();
         libraw = read_raw_arg.getValue();
         demosaic = demosaic_arg.getValue() || libraw;
+        plot_markers = plot_markers_arg.getValue();
 
         std::cout << "Parameters: " << std::endl
                   << "Number of input files: " << input_files.size() << std::endl
                   << "recursion depth: " << recursion_depth << std::endl
                   << "effort: " << effort << std::endl
                   << "demosaic: " << (demosaic ? "true" : "false") << std::endl
-                  << "use libraw: " << (libraw ? "true" : "false") << std::endl;
+                  << "use libraw: " << (libraw ? "true" : "false") << std::endl
+                  << "plot markers: " << (plot_markers ? "true" : "false") << std::endl;
+
+        calib.plotMarkers(plot_markers);
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
@@ -78,7 +85,7 @@ int main(int argc, char* argv[]) {
     for (size_t ii = 0; ii < input_files.size(); ++ii) {
         std::string const& input_file = input_files[ii];
         try {
-            detected_markers[input_file] = cal.getCorners(input_file, effort, demosaic, recursion_depth, libraw);
+            detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, recursion_depth, libraw);
         }
         catch (const std::exception &e) {
             std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
@@ -101,10 +108,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    hdcalib::Calib c;
     for (auto const& it : detected_markers) {
-        c.addInputImage(it.first, it.second);
+        calib.addInputImage(it.first, it.second);
     }
+
+    hdcalib::CalibrationResult res;
+    calib.openCVCalib(res);
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

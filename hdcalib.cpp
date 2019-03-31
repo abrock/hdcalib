@@ -64,8 +64,8 @@ void Calib::keepCommonCorners_intersect() {
     }
     std::string prev = last;
     for (auto& it : data) {
-         it.second.intersect(data[prev]);
-         prev = it.first;
+        it.second.intersect(data[prev]);
+        prev = it.first;
     }
     prev = std::prev(data.end())->first;
     for (auto& it : data) {
@@ -79,17 +79,15 @@ void Calib::keepCommonCorners() {
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners) {
-    data[filename].replaceCorners(corners);
     CornerStore & ref = data[filename];
-    ref.purgeDuplicates();
-    ref.purgeUnlikely();
+    ref.replaceCorners(corners);
+    ref.clean();
 }
 
 void Calib::addInputImage(const string filename, const CornerStore &corners) {
-    data[filename] = corners;
     CornerStore & ref = data[filename];
-    ref.purgeDuplicates();
-    ref.purgeUnlikely();
+    ref = corners;
+    ref.clean();
 }
 
 CornerStore Calib::get(const string filename) const {
@@ -264,27 +262,31 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     Mat img, paint;
 
 
-    if (demosaic) {
-        if (raw) {
-            img = read_raw(input_file);
+    if (plot_markers || !resolution_known) {
+        if (demosaic) {
+            if (raw) {
+                img = read_raw(input_file);
+            }
+            else {
+                img = cv::imread(input_file, CV_LOAD_IMAGE_GRAYSCALE);
+            }
+            setImageSize(img);
+            normalize_raw_per_channel_inplace(img);
+            double min_val = 0, max_val = 0;
+            cv::minMaxIdx(img, &min_val, &max_val);
+            std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
+            img = img * (255.0 / max_val);
+            img.convertTo(img, CV_8UC1);
+            //cv::normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
+            cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
+            cv::imwrite(input_file + "-demosaiced-normalized.png", img);
+            paint = img.clone();
         }
         else {
-            img = cv::imread(input_file, CV_LOAD_IMAGE_GRAYSCALE);
+            img = cv::imread(input_file);
+            setImageSize(img);
+            paint = img.clone();
         }
-        normalize_raw_per_channel_inplace(img);
-        double min_val = 0, max_val = 0;
-        cv::minMaxIdx(img, &min_val, &max_val);
-        std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
-        img = img * (255.0 / max_val);
-        img.convertTo(img, CV_8UC1);
-        //cv::normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
-        cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
-        cv::imwrite(input_file + "-demosaiced-normalized.png", img);
-        paint = img.clone();
-    }
-    else {
-        img = cv::imread(input_file);
-        paint = img.clone();
     }
     std::cout << "Input image size: " << img.size << std::endl;
 
@@ -297,6 +299,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     printf("final score %zu corners\n", corners.size());
 
+
     std::vector<cv::Scalar> const color_circle = {
         cv::Scalar(255,255,255),
         cv::Scalar(255,0,0),
@@ -306,31 +309,34 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         cv::Scalar(0,255,255),
         cv::Scalar(255,0,255),
     };
-    for(size_t ii = 0; ii < corners.size(); ++ii) {
-        Corner const& c = corners[ii];
-        Point2f p1, p2;
-        cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
+    if (plot_markers) {
+        for(size_t ii = 0; ii < corners.size(); ++ii) {
+            Corner const& c = corners[ii];
+            Point2f p1, p2;
+            cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
 
-        std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
-        circle(paint, c.p, 1, Scalar(0,0,0,0), 2);
-        circle(paint, c.p, 1, Scalar(0,255,0,0));
-        putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, Scalar(0,0,0,0), 2, CV_AA);
-        putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, font_color, 1, CV_AA);
+            std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
+            circle(paint, c.p, 1, Scalar(0,0,0,0), 2);
+            circle(paint, c.p, 1, Scalar(0,255,0,0));
+            putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, Scalar(0,0,0,0), 2, CV_AA);
+            putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, font_color, 1, CV_AA);
 
-        std::string const text_page = to_string(c.page);
-        double font_size = 2;
-        cv::Point2f const point_page = c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5);
-        putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, CV_AA);
-        putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, CV_AA);
+            std::string const text_page = to_string(c.page);
+            double font_size = 2;
+            cv::Point2f const point_page = c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5);
+            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, CV_AA);
+            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, CV_AA);
+        }
+        imwrite(input_file + "-1.png", paint);
     }
-    imwrite(input_file + "-1.png", paint);
 
-    //
     Mat gray;
-    if (img.channels() != 1)
+    if (img.channels() != 1) {
         cvtColor(img, gray, CV_BGR2GRAY);
-    else
+    }
+    else {
         gray = img;
+    }
 
     if (recursion_depth > 0) {
         std::cout << "Drawing sub-markers" << std::endl;
@@ -341,12 +347,13 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
 
         vector<Corner> corners_f2;
-
-        cv::Mat paint2 = paint.clone();
-        for (hdmarker::Corner const& c : corners_f2) {
-            circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
+        if (plot_markers) {
+            cv::Mat paint2 = paint.clone();
+            for (hdmarker::Corner const& c : corners_f2) {
+                circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
+            }
+            imwrite(input_file + "-2.png", paint2);
         }
-        imwrite(input_file + "-2.png", paint2);
     }
 
     FileStorage pointcache(pointcache_file, FileStorage::WRITE);
@@ -414,6 +421,18 @@ void CornerStore::add(const std::vector<Corner> &vec) {
     pos_tree->addPoints(corners.size() - vec.size(), corners.size()-1);
 }
 
+void CornerStore::getPoints(std::vector<Point2f> &imagePoints, std::vector<cv::Point3f> &objectPoints) const {
+    imagePoints.clear();
+    imagePoints.reserve(size());
+
+    objectPoints.clear();
+    objectPoints.reserve(size());
+    for (size_t ii = 0; ii < size(); ++ii) {
+        imagePoints.push_back(get(ii).p);
+        objectPoints.push_back(Calib::getInitial3DCoord(get(ii)));
+    }
+}
+
 CornerStore::CornerStore() :
     idx_adapt(*this),
     pos_adapt(*this),
@@ -455,6 +474,7 @@ CornerStore &CornerStore::operator=(const CornerStore &other) {
 }
 
 void CornerStore::clean() {
+    //purge32();
     purgeDuplicates();
     purgeUnlikely();
 }
@@ -665,6 +685,86 @@ bool CornerStore::purge32() {
         return true;
     }
     return false;
+}
+
+double Calib::openCVCalib(CalibrationResult& result) {
+    result.imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
+    result.objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
+
+    result.imageSize = imageSize;
+
+    size_t ii = 0;
+    for (auto const& it : data) {
+        it.second.getPoints(result.imagePoints[ii], result.objectPoints[ii]);
+        ++ii;
+    }
+
+    double result_err = cv::calibrateCamera (
+                result.objectPoints,
+                result.imagePoints,
+                imageSize,
+                result.cameraMatrix,
+                result.distCoeffs,
+                result.rvecs,
+                result.tvecs,
+                result.stdDevIntrinsics,
+                result.stdDevExtrinsics,
+                result.perViewErrors,
+                cv::CALIB_RATIONAL_MODEL |
+                CALIB_THIN_PRISM_MODEL |
+                cv::CALIB_TILTED_MODEL
+                );
+
+    std::cout << "Camera Matrix: " << std::endl << result.cameraMatrix << std::endl;
+    std::cout << "distCoeffs: " << std::endl << result.distCoeffs << std::endl;
+    std::cout << "stdDevIntrinsics: " << std::endl << result.stdDevIntrinsics << std::endl;
+    std::cout << "stdDevExtrinsics: " << std::endl << result.stdDevExtrinsics << std::endl;
+    std::cout << "perViewErrors: " << std::endl << result.perViewErrors << std::endl;
+
+    double apertureWidth = 36; // We are assuming a full frame sensor.
+    double apertureHeight = 24;
+    double fovx = 0;
+    double fovy = 0;
+    double focalLength = 0;
+    Point2d principalPoint;
+    double aspectRatio = 0;
+    cv::calibrationMatrixValues (
+                result.cameraMatrix,
+                imageSize,
+                apertureWidth,
+                apertureHeight,
+                fovx,
+                fovy,
+                focalLength,
+                principalPoint,
+                aspectRatio
+                );
+
+    double const pixel_size = apertureWidth / imageSize.width;
+    std::cout << "calibrationMatrixValues: " << std::endl
+              << "fovx: " << fovx << std::endl
+              << "fovy: " << fovy << std::endl
+              << "focalLength: " << focalLength << std::endl
+              << "principalPoint: " << principalPoint << std::endl
+              << "aspectRatio: " << aspectRatio << std::endl
+              << "input image size: " << imageSize << std::endl
+              << "pixel size (um): " << pixel_size * 1000 << std::endl << std::endl;
+
+    cv::Point2d principal_point_offset = principalPoint - cv::Point2d(apertureWidth/2, apertureHeight/2);
+    std::cout << "principal point offset: " << principal_point_offset << "mm; ~" << principal_point_offset/pixel_size << "px" << std::endl;
+
+    std::cout << "focal length factor: " << result.cameraMatrix(0,0) / focalLength << std::endl;
+
+    return result_err;
+}
+
+void Calib::plotMarkers(bool plot) {
+    plot_markers = plot;
+}
+
+void Calib::setImageSize(const Mat &img) {
+    imageSize = cv::Size(img.size());
+    resolution_known = true;
 }
 
 bool CornerStore::hasID(const Corner &ref) const {

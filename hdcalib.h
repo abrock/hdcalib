@@ -220,6 +220,7 @@ public:
      */
     bool purge32();
 
+
     /**
      * @brief hasID checks if a given hdmarker::Corner (identified by id and page) exists in the CornerStore.
      * @param ref corner we search.
@@ -258,7 +259,65 @@ public:
      */
     void add(std::vector<hdcalib::Corner> const& vec);
 
+    void getPoints(std::vector<cv::Point2f>& imagePoints, std::vector<cv::Point3f> & objectPoints) const;
 
+};
+
+class CalibrationResult {
+public:
+    /**
+     * @brief imageFiles vector of image filenames.
+     */
+    std::vector<std::string> imageFiles;
+
+    /**
+     * @brief imagePoints storage for image points. The outer vector contains one inner vector per image file.
+     * The inner vectors contain one cv::Point2f for each detected hdmarker::Corner.
+     */
+    std::vector<std::vector<cv::Point2f> > imagePoints;
+
+    /**
+     * @brief objectPoints storage for 3D points of Corners on the target.
+     */
+    std::vector<std::vector<cv::Point3f> > objectPoints;
+
+    /**
+     * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
+     */
+    cv::Mat_<double> cameraMatrix;
+
+    /**
+     * @brief distCoeffs distortion coefficients
+     */
+    cv::Mat_<double> distCoeffs;
+
+    /**
+     * @brief stdDevIntrinsics standard deviations of the intrinsiv parameters.
+     * From the OpenCV documentation: Order of deviations values: \((f_x, f_y, c_x, c_y, k_1, k_2, p_1, p_2, k_3, k_4, k_5, k_6 , s_1, s_2, s_3, s_4, \tau_x, \tau_y)\) If one of parameters is not estimated, it's deviation is equals to zero.
+     */
+    cv::Mat_<double> stdDevIntrinsics;
+
+    /**
+     * @brief stdDevExtrinsics standard deviations of the extrinsic parameters (= position and rotation of the targets)
+     * From the OpenCV documentation: Order of deviations values: (R1,T1,…,RM,TM) where M is number of pattern views, Ri,Ti are concatenated 1x3 vectors.
+     */
+    cv::Mat_<double> stdDevExtrinsics;
+
+    /**
+     * @brief perViewErrors RMS of the projection error for each view.
+     */
+    cv::Mat_<double> perViewErrors;
+
+    /**
+     * @brief rvecs
+     */
+    std::vector<cv::Mat> rvecs;
+    std::vector<cv::Mat> tvecs;
+
+    /**
+     * @brief imageSize Resolution of the input images.
+     */
+    cv::Size imageSize;
 };
 
 class Calib
@@ -271,10 +330,29 @@ class Calib
 
     typedef std::map<std::string, CornerStore> Store_T;
     Store_T data;
+
+    cv::Size imageSize = cv::Size(1000, 1000);
+
+    bool plot_markers = false;
+
+    /**
+     * @brief size_known false if the resolution of the input images is not (yet) known.
+     */
+    bool resolution_known = false;
 public:
     Calib();
 
-    cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0);
+    static cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0);
+
+    double openCVCalib(CalibrationResult &result);
+
+    void plotMarkers(bool plot = true);
+
+    /**
+     * @brief setImageSize set the size of the captured images.
+     * @param img
+     */
+    void setImageSize(cv::Mat const& img);
 
     /**
      * @brief keepCommonCorners Removes all corners from the data which are not present
