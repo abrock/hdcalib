@@ -318,6 +318,42 @@ public:
      * @brief imageSize Resolution of the input images.
      */
     cv::Size imageSize;
+
+    /**
+     * @brief apertureWidth width of the image sensor in mm
+     */
+    double apertureWidth = 36; // We are assuming a full frame sensor.
+
+    /**
+     * @brief apertureHeight height of the image sensor in mm
+     */
+    double apertureHeight = 24;
+
+
+    /**
+     * @brief fovx horizontal field of view in degrees.
+     */
+    double fovx;
+
+    /**
+     * @brief fovy vertical field of view in degrees.
+     */
+    double fovy;
+
+    /**
+     * @brief focalLength Focal length in mm.
+     */
+    double focalLength;
+
+    /**
+     * @brief principalPoint in mm
+     */
+    cv::Point2d principalPoint;
+
+    /**
+     * @brief aspectRatio f_y/f_x
+     */
+    double aspectRatio;
 };
 
 class Calib

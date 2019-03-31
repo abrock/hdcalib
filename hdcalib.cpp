@@ -721,39 +721,32 @@ double Calib::openCVCalib(CalibrationResult& result) {
     std::cout << "stdDevExtrinsics: " << std::endl << result.stdDevExtrinsics << std::endl;
     std::cout << "perViewErrors: " << std::endl << result.perViewErrors << std::endl;
 
-    double apertureWidth = 36; // We are assuming a full frame sensor.
-    double apertureHeight = 24;
-    double fovx = 0;
-    double fovy = 0;
-    double focalLength = 0;
-    Point2d principalPoint;
-    double aspectRatio = 0;
     cv::calibrationMatrixValues (
                 result.cameraMatrix,
                 imageSize,
-                apertureWidth,
-                apertureHeight,
-                fovx,
-                fovy,
-                focalLength,
-                principalPoint,
-                aspectRatio
+                result.apertureWidth,
+                result.apertureHeight,
+                result.fovx,
+                result.fovy,
+                result.focalLength,
+                result.principalPoint,
+                result.aspectRatio
                 );
 
-    double const pixel_size = apertureWidth / imageSize.width;
+    double const pixel_size = result.apertureWidth / imageSize.width;
     std::cout << "calibrationMatrixValues: " << std::endl
-              << "fovx: " << fovx << std::endl
-              << "fovy: " << fovy << std::endl
-              << "focalLength: " << focalLength << std::endl
-              << "principalPoint: " << principalPoint << std::endl
-              << "aspectRatio: " << aspectRatio << std::endl
+              << "fovx: " << result.fovx << std::endl
+              << "fovy: " << result.fovy << std::endl
+              << "focalLength: " << result.focalLength << std::endl
+              << "principalPoint: " << result.principalPoint << std::endl
+              << "aspectRatio: " << result.aspectRatio << std::endl
               << "input image size: " << imageSize << std::endl
               << "pixel size (um): " << pixel_size * 1000 << std::endl << std::endl;
 
-    cv::Point2d principal_point_offset = principalPoint - cv::Point2d(apertureWidth/2, apertureHeight/2);
+    cv::Point2d principal_point_offset = result.principalPoint - cv::Point2d(result.apertureWidth/2, result.apertureHeight/2);
     std::cout << "principal point offset: " << principal_point_offset << "mm; ~" << principal_point_offset/pixel_size << "px" << std::endl;
 
-    std::cout << "focal length factor: " << result.cameraMatrix(0,0) / focalLength << std::endl;
+    std::cout << "focal length factor: " << result.cameraMatrix(0,0) / result.focalLength << std::endl;
 
     return result_err;
 }
