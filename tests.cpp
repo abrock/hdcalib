@@ -787,6 +787,13 @@ TEST(CornerStore, purge32) {
     }
     {
         hdcalib::CornerStore s;
+        getCornerGrid(s, 50, 50);
+        EXPECT_EQ(s.size(), 2500);
+        EXPECT_FALSE(s.purge32());
+        EXPECT_EQ(s.size(), 2500);
+    }
+    {
+        hdcalib::CornerStore s;
         getCornerGrid(s, 33, 33);
         EXPECT_EQ(s.size(), 33*33);
         EXPECT_FALSE(s.purge32());
