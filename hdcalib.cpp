@@ -1,5 +1,6 @@
 #include "hdcalib.h"
 
+#include <gnuplot-iostream.h>
 
 namespace hdcalib {
 
@@ -202,6 +203,25 @@ Mat Calib::read_raw(const string &filename) {
     return result;
 }
 
+cv::Size Calib::read_raw_imagesize(const string &filename) {
+    LibRaw RawProcessor;
+
+    auto& S = RawProcessor.imgdata.sizes;
+
+    int ret;
+    if ((ret = RawProcessor.open_file(filename.c_str())) != LIBRAW_SUCCESS)
+    {
+        throw std::runtime_error(std::string("Cannot open file ") + filename + ", "
+                                 + libraw_strerror(ret) + "\r\n");
+    }
+    if (verbose) {
+        printf("Image size: %dx%d\nRaw size: %dx%d\n", S.width, S.height, S.raw_width, S.raw_height);
+        printf("Margins: top=%d, left=%d\n", S.top_margin, S.left_margin);
+    }
+
+    return cv::Size(S.width, S.height);
+}
+
 CornerStore Calib::getUnion() const {
     CornerStore res;
     for (const auto& it : data) {
@@ -261,8 +281,18 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     Mat img, paint;
 
+    if (!resolution_known) {
+        if (raw) {
+            imageSize = read_raw_imagesize(input_file);
+            resolution_known = true;
+        }
+        else {
+            img = cv::imread(input_file, CV_LOAD_IMAGE_GRAYSCALE);
+            setImageSize(img);
+        }
+    }
 
-    if (plot_markers || !resolution_known) {
+    if (plot_markers) {
         if (demosaic) {
             if (raw) {
                 img = read_raw(input_file);
@@ -690,12 +720,13 @@ bool CornerStore::purge32() {
 double Calib::openCVCalib(CalibrationResult& result) {
     result.imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     result.objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
-
+    result.imageFiles.resize(data.size());
     result.imageSize = imageSize;
 
     size_t ii = 0;
     for (auto const& it : data) {
         it.second.getPoints(result.imagePoints[ii], result.objectPoints[ii]);
+        result.imageFiles[ii] = it.first;
         ++ii;
     }
 
@@ -820,12 +851,94 @@ int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
     throw std::out_of_range(std::string("Requested dimension ") + to_string(dim) + " out of range (0-1)");
 }
 
+template<class T>
+void vec2arr(T arr[3], cv::Point3d const& p) {
+    arr[0] = p.x;
+    arr[1] = p.y;
+    arr[2] = p.z;
+}
+
+template<class T>
+void vec2arr(T arr[2], cv::Point2d const& p) {
+    arr[0] = p.x;
+    arr[1] = p.y;
+}
+
 void CalibrationResult::plotReprojectionErrors(const size_t ii) {
     auto const& imgPoints = imagePoints[ii];
     auto const& objPoints = objectPoints[ii];
     std::string const& filename = imageFiles[ii];
     cv::Mat const& rvec = rvecs[ii];
     cv::Mat const& tvec = tvecs[ii];
+
+    double p[3], r[3], t[3], R[9];
+
+    double result[2];
+
+    cv::Point3d r_point(rvec);
+    cv::Point3d t_point(tvec);
+
+    vec2arr(r, r_point);
+    vec2arr(t, t_point);
+
+    rot_vec2mat(r, R);
+
+    double dist[14];
+    for (size_t jj = 0; jj < 14; ++jj) {
+        dist[jj] = distCoeffs(jj);
+    }
+
+    double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
+    double principal[2] = {cameraMatrix(0,2), cameraMatrix(1,2)};
+
+    std::stringstream plot_command;
+    gnuplotio::Gnuplot plot;
+
+    std::string plot_name = filename + ".marker-residuals";
+
+    std::vector<double> errors;
+
+    double error_sum = 0;
+
+    std::vector<std::vector<double> > data;
+    for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
+        vec2arr(p, objPoints[jj]);
+        cv::Point2d marker_pos(imgPoints[jj]);
+        project(p, result, focal, principal, R, t, dist);
+        cv::Point2d res(result[0], result[1]);
+        cv::Point2d residual = marker_pos - res;
+        double error = std::sqrt(residual.dot(residual));
+        data.push_back({marker_pos.x, marker_pos.y, res.x, res.y, error});
+        errors.push_back(error);
+        error_sum += error;
+    }
+
+    std::cout << "Mean error for image " << filename << ": " << error_sum/ errors.size() << std::endl;
+
+    std::sort(errors.begin(), errors.end());
+
+    plot_command << "set term svg enhanced background rgb \"white\";\n"
+                 << "set output \"" << plot_name << ".residuals.svg\";\n"
+                 << "set title 'Reprojection Residuals';\n"
+                 << "plot " << plot.file1d(data, plot_name + ".residuals.data")
+                 << " u ($1-$3):($2-$4) w p notitle;\n"
+                 << "set output \"" << plot_name + ".vectors.svg\";\n"
+                 << "set title 'Reprojection Residuals';\n"
+                 << "plot " << plot.file1d(data, plot_name + ".residuals.data")
+                 << " w vectors notitle;\n"
+                 << "set output \"" << plot_name + ".error-dist.svg\";\n"
+                 << "set title 'CDF of the Reprojection Error';\n"
+                 << "set xlabel 'error';\n"
+                 << "set ylabel 'CDF';\n"
+                 << "plot " << plot.file1d(errors, plot_name + ".errors.data") << " u 1:($0/" << errors.size()-1 << ") w l notitle;\n"
+                 << "set logscale x;\n"
+                 << "set output \"" << plot_name + ".error-dist-log.svg\";\n"
+                 << "replot;";
+
+    plot << plot_command.str();
+
+    std::ofstream out(plot_name + ".gpl");
+    out << plot_command.str();
 
 }
 

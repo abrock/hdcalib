@@ -115,6 +115,8 @@ int main(int argc, char* argv[]) {
     hdcalib::CalibrationResult res;
     calib.openCVCalib(res);
 
+    res.plotReprojectionErrors();
+
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
 }

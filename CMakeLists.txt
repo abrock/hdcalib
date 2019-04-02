@@ -16,12 +16,17 @@ include_directories("/usr/local/include/hdmarker")
 find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 
+find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
+
 target_link_libraries(hdcalib
   hdmarker
   ${Boost_FILESYSTEM_LIBRARY}
   ${Boost_SYSTEM_LIBRARY}
   ${OpenCV_LIBS}
   ${CERES_LIBRARIES}
+  ${Boost_FILESYSTEM_LIBRARY}
+  ${Boost_SYSTEM_LIBRARY}
+  ${Boost_IOSTREAMS_LIBRARY}
   raw
 )
 

@@ -359,6 +359,9 @@ public:
 
     void plotReprojectionErrors(size_t const ii);
 
+    /**
+     * @brief plotReprojectionErrors plots all reprojection errors of all input images.
+     */
     void plotReprojectionErrors();
 
     template<class F, class T>
@@ -460,6 +463,8 @@ public:
             const bool demosaic,
             const int recursion_depth,
             const bool raw);
+
+    cv::Size read_raw_imagesize(const string &filename);
 };
 
 }
