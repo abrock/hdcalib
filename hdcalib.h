@@ -18,6 +18,8 @@
 
 #include <libraw/libraw.h>
 
+#include <ceres/ceres.h>
+
 #include "nanoflann.hpp"
 
 namespace hdcalib {
@@ -354,6 +356,34 @@ public:
      * @brief aspectRatio f_y/f_x
      */
     double aspectRatio;
+
+    void plotReprojectionErrors(size_t const ii);
+
+    void plotReprojectionErrors();
+
+    template<class F, class T>
+    static void project(
+            F const p[3],
+    T result[2],
+    const T focal[2],
+    const T principal[2],
+    const T R[9],
+    const T t[3]
+    );
+
+    template<class F, class T>
+    static void project(
+            F const p[3],
+    T result[2],
+    const T focal[2],
+    const T principal[2],
+    const T R[9],
+    const T t[3],
+    const T dist[14]
+    );
+
+    template<class T>
+    static void rot_vec2mat(T const vec[3], T mat[9]);
 };
 
 class Calib

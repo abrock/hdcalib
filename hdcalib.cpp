@@ -820,4 +820,159 @@ int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
     throw std::out_of_range(std::string("Requested dimension ") + to_string(dim) + " out of range (0-1)");
 }
 
+void CalibrationResult::plotReprojectionErrors(const size_t ii) {
+    auto const& imgPoints = imagePoints[ii];
+    auto const& objPoints = objectPoints[ii];
+    std::string const& filename = imageFiles[ii];
+    cv::Mat const& rvec = rvecs[ii];
+    cv::Mat const& tvec = tvecs[ii];
+
+}
+
+void CalibrationResult::plotReprojectionErrors() {
+    for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
+        plotReprojectionErrors(ii);
+    }
+}
+
+template<class F, class T>
+void CalibrationResult::project(
+        F const p[3],
+T result[2],
+const T focal[2],
+const T principal[2],
+const T R[9],
+const T t[3]
+) {
+    T const X(p[0]), Y(p[1]), Z(p[2]);
+    T& x = result[0];
+    T& y = result[1];
+    T z;
+    z = R[6]*X + R[7]*Y + R[8]*Z + t[2];
+    if (0 == z) {
+        z = 1;
+    }
+    x = (R[0]*X + R[1]*Y + R[2]*Z + t[0])/z;
+    y = (R[3]*X + R[4]*Y + R[5]*Z + t[1])/z;
+
+    x = x * focal[0] + principal[0];
+    y = y * focal[1] + principal[1];
+}
+
+template void CalibrationResult::project(
+double const p[3],
+double result[2],
+const double focal[2],
+const double principal[2],
+const double R[9],
+const double t[3]
+);
+
+template<typename T>
+void applySensorTilt(
+        T& x, T& y,
+        T const& tau_x, T const& tau_y
+        ) {
+    T const s_x = ceres::sin(tau_x);
+    T const s_y = ceres::sin(tau_y);
+    T const c_x = ceres::cos(tau_x);
+    T const c_y = ceres::cos(tau_y);
+
+    T const x1 = c_y*x + s_x*s_y*y - s_y*c_x;
+    T const y1 = c_x*y + s_x;
+    T const z1 = s_y*x - c_y*s_x*y + c_y*c_x;
+
+    x = (c_y*c_x*x1 + s_y*c_x*z1)/z1;
+    y = (c_y*c_x*y1 - s_x*z1)/z1;
+}
+
+template<class F, class T>
+void CalibrationResult::project(
+        F const p[3],
+T result[2],
+const T focal[2],
+const T principal[2],
+const T R[9],
+const T t[3],
+const T dist[14]
+) {
+    T const X(p[0]), Y(p[1]), Z(p[2]);
+    T& x = result[0];
+    T& y = result[1];
+    T z;
+    z = R[6]*X + R[7]*Y + R[8]*Z + t[2];
+    if (0 == z) {
+        z = 1;
+    }
+    x = (R[0]*X + R[1]*Y + R[2]*Z + t[0])/z;
+    y = (R[3]*X + R[4]*Y + R[5]*Z + t[1])/z;
+
+    //(k1,k2,p1,p2[,k3[,k4,k5,k6[,s1,s2,s3,s4[,τx,τy]]]])
+    T const& k1 = dist[0];
+    T const& k2 = dist[1];
+    T const& p1 = dist[2];
+    T const& p2 = dist[3];
+    T const& k3 = dist[4];
+    T const& k4 = dist[5];
+    T const& k5 = dist[6];
+    T const& k6 = dist[7];
+    T const& s1 = dist[8];
+    T const& s2 = dist[9];
+    T const& s3 = dist[10];
+    T const& s4 = dist[11];
+    T const& tau_x = dist[12];
+    T const& tau_y = dist[13];
+
+    T const r2 = x*x + y*y;
+    T const r4 = r2*r2;
+    T const r6 = r4*r2;
+
+    T x2 = x*(T(1) + k1*r2 + k2*r4 + k3*r6)/(T(1) + k4*r2 + k5*r4 + k6*r6)
+             + 2*x*y*p1 + p2*(r2 + 2*x*x) + s1*r2 + s2*r4;
+
+    T y2 = y*(T(1) + k1*r2 + k2*r4 + k3*r6)/(T(1) + k4*r2 + k5*r4 + k6*r6)
+             + 2*x*y*p2 + p1*(r2 + 2*y*y) + s3*r2 + s4*r4;
+
+    applySensorTilt(x2, y2, tau_x, tau_y);
+
+    x = x2 * focal[0] + principal[0];
+    y = y2 * focal[1] + principal[1];
+}
+
+template void CalibrationResult::project(
+double const p[3],
+double result[2],
+const double focal[2],
+const double principal[2],
+const double R[9],
+const double t[3],
+const double dist[14]
+);
+
+template<class T>
+void CalibrationResult::rot_vec2mat(const T vec[], T mat[]) {
+    T const theta = ceres::sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
+    T const c = ceres::cos(theta);
+    T const s = ceres::sin(theta);
+    T c1 = T(1) - c;
+
+    // Calculate normalized vector.
+    T const factor = (T(0) != theta ? T(1)/theta : 1);
+    T const vec_norm[3] = {factor * vec[0], factor * vec[1], factor * vec[2]};
+
+    mat[0] = c + c1*vec_norm[0]*vec_norm[0];
+    mat[1] = c1*vec_norm[0]*vec_norm[1] - s*vec_norm[2];
+    mat[2] = c1*vec_norm[0]*vec_norm[2] + s*vec_norm[1];
+
+    mat[3] = c1*vec_norm[0]*vec_norm[1] + s*vec_norm[2];
+    mat[4] = c + c1*vec_norm[1]*vec_norm[1];
+    mat[5] = c1*vec_norm[1]*vec_norm[2] - s*vec_norm[0];
+
+    mat[6] = c1*vec_norm[0]*vec_norm[2] - s*vec_norm[1];
+    mat[7] = c1*vec_norm[1]*vec_norm[2] + s*vec_norm[0];
+    mat[8] = c + c1*vec_norm[2]*vec_norm[2];
+}
+
+template void CalibrationResult::rot_vec2mat(const double vec[], double mat[]);
+
 }

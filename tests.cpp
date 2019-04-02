@@ -15,6 +15,17 @@ std::random_device rd;
 std::default_random_engine engine(rd());
 std::normal_distribution<double> dist;
 
+::testing::AssertionResult RelativeNear(const double a, const double b, double delta) {
+    double const diff = std::abs(a-b);
+    double const relative_diff = 2*diff/(std::abs(a) + std::abs(b));
+    if (relative_diff < delta)
+        return ::testing::AssertionSuccess();
+    else
+        return ::testing::AssertionFailure() << "The absolute difference is " << diff
+                                             << ", the relative difference is " << relative_diff
+                                             << " which exceeds " << delta;
+}
+
 void getCornerGrid(
         hdcalib::CornerStore & store,
         size_t const grid_width = 50,
@@ -807,8 +818,219 @@ TEST(CornerStore, purge32) {
 
 }
 
+double square_p1(double const in) {
+    return in*in+1;
+}
+
+TEST(CalibrationResult, project_simple) {
+    for (size_t ii = 0; ii < 3000; ++ii) {
+        double const X = dist(engine), Y = dist(engine), Z = square_p1(dist(engine)),
+                f_x = square_p1(dist(engine)), f_y = square_p1(dist(engine)),
+                p_x = dist(engine), p_y = dist(engine),
+                t_x = dist(engine), t_y = dist(engine), t_z = square_p1(dist(engine)),
+                r_a = dist(engine), r_b = dist(engine), r_c = dist(engine);
+
+        cv::Mat_<double> camera_matrix = {f_x,0,p_x,   0,f_y,p_y,   0,0,1};
+        camera_matrix = camera_matrix.reshape(3,3);
+
+        double const p[3] = {X, Y, Z};
+        double result[2] = {0,0};
+        const double focal[2] = {f_x, f_y};
+        const double principal[2] = {p_x, p_y};
+
+        const double R[9] = {1,0,0,   0,1,0,   0,0,1};
+
+        const double t[3] = {t_x, t_y, t_z};
+
+        cv::Mat_<double> mat_p = {X, Y, Z};
+        mat_p = mat_p.reshape(3);
+        cv::Mat_<double> mat_r = {R[0], R[1], R[2], R[3], R[4], R[5], R[6], R[7], R[8]};
+        mat_r = mat_r.reshape(3,3);
+        cv::Mat_<double> mat_t = {t_x, t_y, t_z};
+        cv::Mat mat_result;
+
+        cv::projectPoints(mat_p, mat_r, mat_t, camera_matrix, cv::noArray(), mat_result);
+
+        cv::Mat_<double> mat_result2(mat_result);
+
+        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t);
+        EXPECT_NEAR(result[0], mat_result2(0,0), 1e-8);
+        EXPECT_NEAR(result[1], mat_result2(0,1), 1e-8);
+    }
+}
+
+TEST(CalibrationResult, project_simple_rotate) {
+    for (size_t ii = 0; ii < 3000; ++ii) {
+        double const X = dist(engine), Y = dist(engine), Z = square_p1(dist(engine)),
+                f_x = square_p1(dist(engine)), f_y = square_p1(dist(engine)),
+                p_x = dist(engine), p_y = dist(engine),
+                t_x = dist(engine), t_y = dist(engine), t_z = square_p1(dist(engine)),
+                r_a = dist(engine), r_b = dist(engine), r_c = dist(engine);
+
+        cv::Mat_<double> camera_matrix = {f_x,0,p_x,   0,f_y,p_y,   0,0,1};
+        camera_matrix = camera_matrix.reshape(3,3);
+
+        double const p[3] = {X, Y, Z};
+        double result[2] = {0,0};
+        const double focal[2] = {f_x, f_y};
+        const double principal[2] = {p_x, p_y};
+
+        const double rot[3] = {r_a, r_b, r_c};
+        double R[9] = {1,0,0,   0,1,0,   0,0,1};
+        hdcalib::CalibrationResult::rot_vec2mat(rot, R);
+
+        const double t[3] = {t_x, t_y, t_z};
+
+        cv::Mat_<double> mat_p = {X, Y, Z};
+        mat_p = mat_p.reshape(3);
+        cv::Mat_<double> mat_rot = {r_a, r_b, r_c};
+        mat_rot = mat_rot.reshape(3);
+        cv::Mat mat_r;
+        cv::Rodrigues(mat_rot, mat_r);
+        cv::Mat_<double> mat_t = {t_x, t_y, t_z};
+        cv::Mat mat_result;
+
+        cv::projectPoints(mat_p, mat_r, mat_t, camera_matrix, cv::noArray(), mat_result);
+
+        cv::Mat_<double> mat_result2(mat_result);
+
+        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t);
+        EXPECT_NEAR(result[0], mat_result2(0,0), 1e-8);
+        EXPECT_NEAR(result[1], mat_result2(0,1), 1e-8);
+    }
+}
+
+TEST(CalibrationResult, project_distorted_12) {
+    for (size_t ii = 0; ii < 3000; ++ii) {
+        double const X = dist(engine), Y = dist(engine), Z = square_p1(dist(engine)),
+                f_x = square_p1(dist(engine)), f_y = square_p1(dist(engine)),
+                p_x = dist(engine), p_y = dist(engine),
+                t_x = dist(engine), t_y = dist(engine), t_z = square_p1(dist(engine)),
+                r_a = dist(engine), r_b = dist(engine), r_c = dist(engine);
+
+        double const d1 = dist(engine), d2 = dist(engine), d3 = dist(engine), d4 = dist(engine), d5 = dist(engine), d6 = dist(engine), d7 = dist(engine), d8 = dist(engine), d9 = dist(engine), d10 = dist(engine), d11 = dist(engine), d12 = dist(engine);
+
+        double dist[14] = {d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,0,0};
+        cv::Mat_<double> mat_dist = {d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,0,0};
+
+        // Example dist coeffficients: 0.1137881268110966, -4.528681803108614, -0.004664257015838463, 0.02662626040742514, -32.1431298587843, -0.1532152732065023, -3.824127654198806, -29.8193079302472, -0.02567031702230461, -0.003698057248079691, 0.001242341955761071, 0.004512906522158435, -0.002542875752550364, 0.05120483952668687
+
+        cv::Mat_<double> camera_matrix = {f_x,0,p_x,   0,f_y,p_y,   0,0,1};
+        camera_matrix = camera_matrix.reshape(3,3);
+
+        double const p[3] = {X, Y, Z};
+        double result[2] = {0,0};
+        const double focal[2] = {f_x, f_y};
+        const double principal[2] = {p_x, p_y};
+
+        const double rot[3] = {r_a, r_b, r_c};
+        double R[9] = {1,0,0,   0,1,0,   0,0,1};
+        hdcalib::CalibrationResult::rot_vec2mat(rot, R);
+
+        const double t[3] = {t_x, t_y, t_z};
+
+        cv::Mat_<double> mat_p = {X, Y, Z};
+        mat_p = mat_p.reshape(3);
+        cv::Mat_<double> mat_rot = {r_a, r_b, r_c};
+        mat_rot = mat_rot.reshape(3);
+        cv::Mat mat_r;
+        cv::Rodrigues(mat_rot, mat_r);
+        cv::Mat_<double> mat_t = {t_x, t_y, t_z};
+        cv::Mat mat_result;
+
+        cv::projectPoints(mat_p, mat_r, mat_t, camera_matrix, mat_dist, mat_result);
+
+        cv::Mat_<double> mat_result2(mat_result);
+
+        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t, dist);
+        EXPECT_TRUE(RelativeNear(result[0], mat_result2(0,0), 1e-8));
+        EXPECT_TRUE(RelativeNear(result[1], mat_result2(0,1), 1e-8));
+    }
+}
+
+TEST(CalibrationResult, project_distorted_14) {
+    for (size_t ii = 0; ii < 3000; ++ii) {
+        double const X = dist(engine), Y = dist(engine), Z = square_p1(dist(engine)),
+                f_x = square_p1(dist(engine)), f_y = square_p1(dist(engine)),
+                p_x = dist(engine), p_y = dist(engine),
+                t_x = dist(engine), t_y = dist(engine), t_z = square_p1(dist(engine)),
+                r_a = dist(engine), r_b = dist(engine), r_c = dist(engine);
+
+        double const d1 = dist(engine), d2 = dist(engine), d3 = dist(engine), d4 = dist(engine), d5 = dist(engine), d6 = dist(engine), d7 = dist(engine), d8 = dist(engine), d9 = dist(engine), d10 = dist(engine), d11 = dist(engine), d12 = dist(engine), d13 = dist(engine), d14 = dist(engine);
+
+        double dist[14] = {d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14};
+        cv::Mat_<double> mat_dist = {d1,d2,d3,d4,d5,d6,d7,d8,d9,d10,d11,d12,d13,d14};
+
+        // Example dist coeffficients: 0.1137881268110966, -4.528681803108614, -0.004664257015838463, 0.02662626040742514, -32.1431298587843, -0.1532152732065023, -3.824127654198806, -29.8193079302472, -0.02567031702230461, -0.003698057248079691, 0.001242341955761071, 0.004512906522158435, -0.002542875752550364, 0.05120483952668687
+
+        cv::Mat_<double> camera_matrix = {f_x,0,p_x,   0,f_y,p_y,   0,0,1};
+        camera_matrix = camera_matrix.reshape(3,3);
+
+        double const p[3] = {X, Y, Z};
+        double result[2] = {0,0};
+        const double focal[2] = {f_x, f_y};
+        const double principal[2] = {p_x, p_y};
+
+        const double rot[3] = {r_a, r_b, r_c};
+        double R[9] = {1,0,0,   0,1,0,   0,0,1};
+        hdcalib::CalibrationResult::rot_vec2mat(rot, R);
+
+        const double t[3] = {t_x, t_y, t_z};
+
+        cv::Mat_<double> mat_p = {X, Y, Z};
+        mat_p = mat_p.reshape(3);
+        cv::Mat_<double> mat_rot = {r_a, r_b, r_c};
+        mat_rot = mat_rot.reshape(3);
+        cv::Mat mat_r;
+        cv::Rodrigues(mat_rot, mat_r);
+        cv::Mat_<double> mat_t = {t_x, t_y, t_z};
+        cv::Mat mat_result;
+
+        cv::projectPoints(mat_p, mat_r, mat_t, camera_matrix, mat_dist, mat_result);
+
+        cv::Mat_<double> mat_result2(mat_result);
+
+        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t, dist);
+        EXPECT_TRUE(RelativeNear(result[0], mat_result2(0,0), 1e-10));
+        EXPECT_TRUE(RelativeNear(result[1], mat_result2(0,1), 1e-10));
+    }
+}
+
+TEST(CalibrationResult, rot_vec2mat) {
+    for (size_t ii = 0; ii < 10000; ++ii) {
+        double const r_a = dist(engine), r_b = dist(engine), r_c = dist(engine);
+
+        double r[3] = {r_a, r_b, r_c};
+        double result[9];
+
+
+        cv::Mat_<double> mat_r = {r_a, r_b, r_c};
+
+        cv::Mat mat_result;
+        cv::Rodrigues(mat_r, mat_result);
+
+
+        cv::Mat_<double> mat_result2(mat_result);
+
+        hdcalib::CalibrationResult::rot_vec2mat(r, result);
+        EXPECT_NEAR(result[0], mat_result2(0,0), 1e-8);
+        EXPECT_NEAR(result[1], mat_result2(0,1), 1e-8);
+        EXPECT_NEAR(result[2], mat_result2(0,2), 1e-8);
+
+        EXPECT_NEAR(result[3], mat_result2(1,0), 1e-8);
+        EXPECT_NEAR(result[4], mat_result2(1,1), 1e-8);
+        EXPECT_NEAR(result[5], mat_result2(1,2), 1e-8);
+
+        EXPECT_NEAR(result[6], mat_result2(2,0), 1e-8);
+        EXPECT_NEAR(result[7], mat_result2(2,1), 1e-8);
+        EXPECT_NEAR(result[8], mat_result2(2,2), 1e-8);
+    }
+}
+
 int main(int argc, char** argv)
 {
+
+
     {
         //* Use this code if the tests fail with unexpected exceptions.
         hdcalib::CornerStore store;
