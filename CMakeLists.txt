@@ -18,6 +18,9 @@ include_directories(${CERES_INCLUDE_DIRS})
 
 find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
+find_package(RunningStats REQUIRED)
+include_directories(${RUNNINGSTATS_INCLUDE_DIRS})
+
 target_link_libraries(hdcalib
   hdmarker
   ${Boost_FILESYSTEM_LIBRARY}
@@ -27,6 +30,7 @@ target_link_libraries(hdcalib
   ${Boost_FILESYSTEM_LIBRARY}
   ${Boost_SYSTEM_LIBRARY}
   ${Boost_IOSTREAMS_LIBRARY}
+  ${RUNNINGSTATS_LIBRARIES}
   raw
 )
 

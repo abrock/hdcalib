@@ -2,6 +2,8 @@
 
 #include <gnuplot-iostream.h>
 
+#include <runningstats/runningstats.h>
+
 namespace hdcalib {
 
 
@@ -898,7 +900,7 @@ void CalibrationResult::plotReprojectionErrors(const size_t ii) {
 
     std::vector<double> errors;
 
-    double error_sum = 0;
+    RunningStats error_stats;
 
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
@@ -910,10 +912,11 @@ void CalibrationResult::plotReprojectionErrors(const size_t ii) {
         double error = std::sqrt(residual.dot(residual));
         data.push_back({marker_pos.x, marker_pos.y, res.x, res.y, error});
         errors.push_back(error);
-        error_sum += error;
+        error_stats.push(error);
     }
 
-    std::cout << "Mean error for image " << filename << ": " << error_sum/ errors.size() << std::endl;
+    std::cout << "Error stats for image " << filename << ": "
+              << std::endl << error_stats.printBoth() << std::endl << std::endl;
 
     std::sort(errors.begin(), errors.end());
 
