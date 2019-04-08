@@ -167,8 +167,7 @@ Mat Calib::read_raw(const string &filename) {
     auto& OUT = RawProcessor.imgdata.params;
 
     int ret;
-    if ((ret = RawProcessor.open_file(filename.c_str())) != LIBRAW_SUCCESS)
-    {
+    if ((ret = RawProcessor.open_file(filename.c_str())) != LIBRAW_SUCCESS) {
         throw std::runtime_error(std::string("Cannot open file ") + filename + ", "
                                  + libraw_strerror(ret) + "\r\n");
     }
@@ -182,8 +181,9 @@ Mat Calib::read_raw(const string &filename) {
                                  + libraw_strerror(ret) + "\r\n");
     }
 
-    if (verbose)
+    if (verbose) {
         printf("Unpacked....\n");
+    }
 
     if (!(RawProcessor.imgdata.idata.filters || RawProcessor.imgdata.idata.colors == 1)) {
         throw std::runtime_error(
