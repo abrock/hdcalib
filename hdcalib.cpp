@@ -1,6 +1,6 @@
 #include "hdcalib.h"
 
-#include <gnuplot-iostream.h>
+#include "gnuplot-iostream.h"
 
 #include <runningstats/runningstats.h>
 
@@ -900,7 +900,7 @@ void CalibrationResult::plotReprojectionErrors(const size_t ii) {
 
     std::vector<double> errors;
 
-    RunningStats error_stats;
+    runningstats::Histogram error_hist(.1);
 
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
@@ -912,19 +912,26 @@ void CalibrationResult::plotReprojectionErrors(const size_t ii) {
         double error = std::sqrt(residual.dot(residual));
         data.push_back({marker_pos.x, marker_pos.y, res.x, res.y, error});
         errors.push_back(error);
-        error_stats.push(error);
+        error_hist.push(error);
     }
 
     std::cout << "Error stats for image " << filename << ": "
-              << std::endl << error_stats.printBoth() << std::endl << std::endl;
+              << std::endl << error_hist.printBoth() << std::endl << std::endl;
 
     std::sort(errors.begin(), errors.end());
 
+    plot_command << std::setprecision(16);
     plot_command << "set term svg enhanced background rgb \"white\";\n"
                  << "set output \"" << plot_name << ".residuals.svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
                  << "plot " << plot.file1d(data, plot_name + ".residuals.data")
                  << " u ($1-$3):($2-$4) w p notitle;\n"
+                 << "set output \"" << plot_name << ".residuals-log.svg\";\n"
+                 << "set title 'Reprojection Residuals';\n"
+                 << "set logscale xy;\n"
+                 << "plot " << plot.file1d(data, plot_name + ".residuals.data")
+                 << " u (abs($1-$3)):(abs($2-$4)) w p notitle;\n"
+                 << "reset;\n"
                  << "set output \"" << plot_name + ".vectors.svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
                  << "plot " << plot.file1d(data, plot_name + ".residuals.data")
@@ -936,7 +943,18 @@ void CalibrationResult::plotReprojectionErrors(const size_t ii) {
                  << "plot " << plot.file1d(errors, plot_name + ".errors.data") << " u 1:($0/" << errors.size()-1 << ") w l notitle;\n"
                  << "set logscale x;\n"
                  << "set output \"" << plot_name + ".error-dist-log.svg\";\n"
-                 << "replot;";
+                 << "replot;\n"
+                 << "reset;\n"
+                 << "set output \"" << plot_name + ".error-hist.svg\";\n"
+                 << "set title 'Reprojection Error Histogram';\n"
+                 << "set xlabel 'error';\n"
+                 << "set ylabel 'absolute frequency';\n"
+                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist.data")
+                 << " w boxes notitle;\n"
+                 << "set output \"" << plot_name + ".error-hist-log.svg\";\n"
+                 << "set logscale xy;\n"
+                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist.data")
+                 << "w boxes notitle;\n";
 
     plot << plot_command.str();
 
