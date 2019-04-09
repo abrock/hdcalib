@@ -112,10 +112,9 @@ int main(int argc, char* argv[]) {
         calib.addInputImage(it.first, it.second);
     }
 
-    hdcalib::CalibrationResult res;
-    calib.openCVCalib(res);
+    calib.openCVCalib();
 
-    res.plotReprojectionErrors();
+    calib.plotReprojectionErrors();
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

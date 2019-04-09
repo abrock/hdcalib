@@ -853,7 +853,7 @@ TEST(CalibrationResult, project_simple) {
 
         cv::Mat_<double> mat_result2(mat_result);
 
-        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t);
+        hdcalib::Calib::project(p, result, focal, principal, R, t);
         EXPECT_NEAR(result[0], mat_result2(0,0), 1e-8);
         EXPECT_NEAR(result[1], mat_result2(0,1), 1e-8);
     }
@@ -877,7 +877,7 @@ TEST(CalibrationResult, project_simple_rotate) {
 
         const double rot[3] = {r_a, r_b, r_c};
         double R[9] = {1,0,0,   0,1,0,   0,0,1};
-        hdcalib::CalibrationResult::rot_vec2mat(rot, R);
+        hdcalib::Calib::rot_vec2mat(rot, R);
 
         const double t[3] = {t_x, t_y, t_z};
 
@@ -894,7 +894,7 @@ TEST(CalibrationResult, project_simple_rotate) {
 
         cv::Mat_<double> mat_result2(mat_result);
 
-        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t);
+        hdcalib::Calib::project(p, result, focal, principal, R, t);
         EXPECT_NEAR(result[0], mat_result2(0,0), 1e-8);
         EXPECT_NEAR(result[1], mat_result2(0,1), 1e-8);
     }
@@ -925,7 +925,7 @@ TEST(CalibrationResult, project_distorted_12) {
 
         const double rot[3] = {r_a, r_b, r_c};
         double R[9] = {1,0,0,   0,1,0,   0,0,1};
-        hdcalib::CalibrationResult::rot_vec2mat(rot, R);
+        hdcalib::Calib::rot_vec2mat(rot, R);
 
         const double t[3] = {t_x, t_y, t_z};
 
@@ -942,7 +942,7 @@ TEST(CalibrationResult, project_distorted_12) {
 
         cv::Mat_<double> mat_result2(mat_result);
 
-        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t, dist);
+        hdcalib::Calib::project(p, result, focal, principal, R, t, dist);
         EXPECT_TRUE(RelativeNear(result[0], mat_result2(0,0), 1e-8));
         EXPECT_TRUE(RelativeNear(result[1], mat_result2(0,1), 1e-8));
     }
@@ -973,7 +973,7 @@ TEST(CalibrationResult, project_distorted_14) {
 
         const double rot[3] = {r_a, r_b, r_c};
         double R[9] = {1,0,0,   0,1,0,   0,0,1};
-        hdcalib::CalibrationResult::rot_vec2mat(rot, R);
+        hdcalib::Calib::rot_vec2mat(rot, R);
 
         const double t[3] = {t_x, t_y, t_z};
 
@@ -990,7 +990,7 @@ TEST(CalibrationResult, project_distorted_14) {
 
         cv::Mat_<double> mat_result2(mat_result);
 
-        hdcalib::CalibrationResult::project(p, result, focal, principal, R, t, dist);
+        hdcalib::Calib::project(p, result, focal, principal, R, t, dist);
         EXPECT_TRUE(RelativeNear(result[0], mat_result2(0,0), 1e-10));
         EXPECT_TRUE(RelativeNear(result[1], mat_result2(0,1), 1e-10));
     }
@@ -1012,7 +1012,7 @@ TEST(CalibrationResult, rot_vec2mat) {
 
         cv::Mat_<double> mat_result2(mat_result);
 
-        hdcalib::CalibrationResult::rot_vec2mat(r, result);
+        hdcalib::Calib::rot_vec2mat(r, result);
         EXPECT_NEAR(result[0], mat_result2(0,0), 1e-8);
         EXPECT_NEAR(result[1], mat_result2(0,1), 1e-8);
         EXPECT_NEAR(result[2], mat_result2(0,2), 1e-8);

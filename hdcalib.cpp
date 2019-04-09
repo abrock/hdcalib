@@ -183,6 +183,14 @@ Mat Calib::read_raw(const string &filename) {
 
     if (verbose) {
         printf("Unpacked....\n");
+        std::cout << "Color matrix (top left corner):" << std::endl;
+        for (size_t ii = 0; ii < 6 && ii < S.width; ++ii) {
+            for (size_t jj = 0; jj < 6 && jj < S.height; ++jj) {
+                std::cout << RawProcessor.COLOR(ii, jj) << ":"
+                          << RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)] << " ";
+            }
+            std::cout << std::endl;
+        }
     }
 
     if (!(RawProcessor.imgdata.idata.filters || RawProcessor.imgdata.idata.colors == 1)) {
@@ -303,14 +311,14 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 img = cv::imread(input_file, CV_LOAD_IMAGE_GRAYSCALE);
             }
             setImageSize(img);
-            normalize_raw_per_channel_inplace(img);
+            //normalize_raw_per_channel_inplace(img);
             double min_val = 0, max_val = 0;
             cv::minMaxIdx(img, &min_val, &max_val);
             std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
             img = img * (255.0 / max_val);
             img.convertTo(img, CV_8UC1);
             //cv::normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
-            cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
+            cvtColor(img, img, COLOR_BayerRG2BGR); // RG BG GB GR
             cv::imwrite(input_file + "-demosaiced-normalized.png", img);
             paint = img.clone();
         }
@@ -719,67 +727,67 @@ bool CornerStore::purge32() {
     return false;
 }
 
-double Calib::openCVCalib(CalibrationResult& result) {
-    result.imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
-    result.objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
-    result.imageFiles.resize(data.size());
-    result.imageSize = imageSize;
+double Calib::openCVCalib() {
+    imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
+    objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
+    imageFiles.resize(data.size());
+    imageSize = imageSize;
 
     size_t ii = 0;
     for (auto const& it : data) {
-        it.second.getPoints(result.imagePoints[ii], result.objectPoints[ii]);
-        result.imageFiles[ii] = it.first;
+        it.second.getPoints(imagePoints[ii], objectPoints[ii]);
+        imageFiles[ii] = it.first;
         ++ii;
     }
 
     double result_err = cv::calibrateCamera (
-                result.objectPoints,
-                result.imagePoints,
+                objectPoints,
+                imagePoints,
                 imageSize,
-                result.cameraMatrix,
-                result.distCoeffs,
-                result.rvecs,
-                result.tvecs,
-                result.stdDevIntrinsics,
-                result.stdDevExtrinsics,
-                result.perViewErrors,
+                cameraMatrix,
+                distCoeffs,
+                rvecs,
+                tvecs,
+                stdDevIntrinsics,
+                stdDevExtrinsics,
+                perViewErrors,
                 cv::CALIB_RATIONAL_MODEL |
                 CALIB_THIN_PRISM_MODEL |
                 cv::CALIB_TILTED_MODEL
                 );
 
-    std::cout << "Camera Matrix: " << std::endl << result.cameraMatrix << std::endl;
-    std::cout << "distCoeffs: " << std::endl << result.distCoeffs << std::endl;
-    std::cout << "stdDevIntrinsics: " << std::endl << result.stdDevIntrinsics << std::endl;
-    std::cout << "stdDevExtrinsics: " << std::endl << result.stdDevExtrinsics << std::endl;
-    std::cout << "perViewErrors: " << std::endl << result.perViewErrors << std::endl;
+    std::cout << "Camera Matrix: " << std::endl << cameraMatrix << std::endl;
+    std::cout << "distCoeffs: " << std::endl << distCoeffs << std::endl;
+    std::cout << "stdDevIntrinsics: " << std::endl << stdDevIntrinsics << std::endl;
+    std::cout << "stdDevExtrinsics: " << std::endl << stdDevExtrinsics << std::endl;
+    std::cout << "perViewErrors: " << std::endl << perViewErrors << std::endl;
 
     cv::calibrationMatrixValues (
-                result.cameraMatrix,
+                cameraMatrix,
                 imageSize,
-                result.apertureWidth,
-                result.apertureHeight,
-                result.fovx,
-                result.fovy,
-                result.focalLength,
-                result.principalPoint,
-                result.aspectRatio
+                apertureWidth,
+                apertureHeight,
+                fovx,
+                fovy,
+                focalLength,
+                principalPoint,
+                aspectRatio
                 );
 
-    double const pixel_size = result.apertureWidth / imageSize.width;
+    double const pixel_size = apertureWidth / imageSize.width;
     std::cout << "calibrationMatrixValues: " << std::endl
-              << "fovx: " << result.fovx << std::endl
-              << "fovy: " << result.fovy << std::endl
-              << "focalLength: " << result.focalLength << std::endl
-              << "principalPoint: " << result.principalPoint << std::endl
-              << "aspectRatio: " << result.aspectRatio << std::endl
+              << "fovx: " << fovx << std::endl
+              << "fovy: " << fovy << std::endl
+              << "focalLength: " << focalLength << std::endl
+              << "principalPoint: " << principalPoint << std::endl
+              << "aspectRatio: " << aspectRatio << std::endl
               << "input image size: " << imageSize << std::endl
               << "pixel size (um): " << pixel_size * 1000 << std::endl << std::endl;
 
-    cv::Point2d principal_point_offset = result.principalPoint - cv::Point2d(result.apertureWidth/2, result.apertureHeight/2);
+    cv::Point2d principal_point_offset = principalPoint - cv::Point2d(apertureWidth/2, apertureHeight/2);
     std::cout << "principal point offset: " << principal_point_offset << "mm; ~" << principal_point_offset/pixel_size << "px" << std::endl;
 
-    std::cout << "focal length factor: " << result.cameraMatrix(0,0) / result.focalLength << std::endl;
+    std::cout << "focal length factor: " << cameraMatrix(0,0) / focalLength << std::endl;
 
     return result_err;
 }
@@ -866,7 +874,7 @@ void vec2arr(T arr[2], cv::Point2d const& p) {
     arr[1] = p.y;
 }
 
-void CalibrationResult::plotReprojectionErrors(const size_t ii) {
+void Calib::plotReprojectionErrors(const size_t ii) {
     auto const& imgPoints = imagePoints[ii];
     auto const& objPoints = objectPoints[ii];
     std::string const& filename = imageFiles[ii];
@@ -963,14 +971,14 @@ void CalibrationResult::plotReprojectionErrors(const size_t ii) {
 
 }
 
-void CalibrationResult::plotReprojectionErrors() {
+void Calib::plotReprojectionErrors() {
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         plotReprojectionErrors(ii);
     }
 }
 
 template<class F, class T>
-void CalibrationResult::project(
+void Calib::project(
         F const p[3],
 T result[2],
 const T focal[2],
@@ -993,7 +1001,7 @@ const T t[3]
     y = y * focal[1] + principal[1];
 }
 
-template void CalibrationResult::project(
+template void Calib::project(
 double const p[3],
 double result[2],
 const double focal[2],
@@ -1021,7 +1029,7 @@ void applySensorTilt(
 }
 
 template<class F, class T>
-void CalibrationResult::project(
+void Calib::project(
         F const p[3],
 T result[2],
 const T focal[2],
@@ -1073,7 +1081,7 @@ const T dist[14]
     y = y2 * focal[1] + principal[1];
 }
 
-template void CalibrationResult::project(
+template void Calib::project(
 double const p[3],
 double result[2],
 const double focal[2],
@@ -1084,7 +1092,7 @@ const double dist[14]
 );
 
 template<class T>
-void CalibrationResult::rot_vec2mat(const T vec[], T mat[]) {
+void Calib::rot_vec2mat(const T vec[], T mat[]) {
     T const theta = ceres::sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
     T const c = ceres::cos(theta);
     T const s = ceres::sin(theta);
@@ -1107,6 +1115,6 @@ void CalibrationResult::rot_vec2mat(const T vec[], T mat[]) {
     mat[8] = c + c1*vec_norm[2]*vec_norm[2];
 }
 
-template void CalibrationResult::rot_vec2mat(const double vec[], double mat[]);
+template void Calib::rot_vec2mat(const double vec[], double mat[]);
 
 }

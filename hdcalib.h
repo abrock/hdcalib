@@ -265,8 +265,8 @@ public:
 
 };
 
-class CalibrationResult {
-public:
+class Calib
+{
     /**
      * @brief imageFiles vector of image filenames.
      */
@@ -357,6 +357,26 @@ public:
      */
     double aspectRatio;
 
+
+
+    bool verbose = true;
+    int grid_width = 1;
+    int grid_height = 1;
+
+    bool use_rgb = false;
+
+    typedef std::map<std::string, CornerStore> Store_T;
+    Store_T data;
+
+    bool plot_markers = false;
+
+    /**
+     * @brief size_known false if the resolution of the input images is not (yet) known.
+     */
+    bool resolution_known = false;
+public:
+    Calib();
+
     void plotReprojectionErrors(size_t const ii);
 
     /**
@@ -387,33 +407,11 @@ public:
 
     template<class T>
     static void rot_vec2mat(T const vec[3], T mat[9]);
-};
 
-class Calib
-{
-    bool verbose = true;
-    int grid_width = 1;
-    int grid_height = 1;
-
-    bool use_rgb = false;
-
-    typedef std::map<std::string, CornerStore> Store_T;
-    Store_T data;
-
-    cv::Size imageSize = cv::Size(1000, 1000);
-
-    bool plot_markers = false;
-
-    /**
-     * @brief size_known false if the resolution of the input images is not (yet) known.
-     */
-    bool resolution_known = false;
-public:
-    Calib();
 
     static cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0);
 
-    double openCVCalib(CalibrationResult &result);
+    double openCVCalib();
 
     void plotMarkers(bool plot = true);
 
