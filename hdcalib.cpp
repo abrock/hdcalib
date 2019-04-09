@@ -4,12 +4,95 @@
 
 #include <runningstats/runningstats.h>
 
+namespace  {
+template<class T>
+void vec2arr(T arr[3], cv::Point3d const& p) {
+    arr[0] = p.x;
+    arr[1] = p.y;
+    arr[2] = p.z;
+}
+
+template<class T>
+void vec2arr(T arr[2], cv::Point2d const& p) {
+    arr[0] = p.x;
+    arr[1] = p.y;
+}
+}
+
 namespace hdcalib {
 
 
-Calib::Calib()
-{
+void Calib::removeOutliers(const double threshold) {
 
+}
+
+void Calib::getReprojections(
+        const size_t ii,
+        std::vector<Point2d> &markers,
+        std::vector<Point2d> &reprojections) {
+
+    auto const& imgPoints = imagePoints[ii];
+    auto const& objPoints = objectPoints[ii];
+    std::string const& filename = imageFiles[ii];
+    cv::Mat const& rvec = rvecs[ii];
+    cv::Mat const& tvec = tvecs[ii];
+
+    markers.clear();
+    markers.reserve(imgPoints.size());
+
+    reprojections.clear();
+    reprojections.reserve(imgPoints.size());
+
+    double p[3], r[3], t[3], R[9];
+
+    double result[2];
+
+    cv::Point3d r_point(rvec);
+    cv::Point3d t_point(tvec);
+
+    vec2arr(r, r_point);
+    vec2arr(t, t_point);
+
+    rot_vec2mat(r, R);
+
+    double dist[14];
+    for (size_t jj = 0; jj < 14; ++jj) {
+        dist[jj] = distCoeffs(jj);
+    }
+
+    double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
+    double principal[2] = {cameraMatrix(0,2), cameraMatrix(1,2)};
+
+    std::vector<std::vector<double> > data;
+    for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
+        vec2arr(p, objPoints[jj]);
+        cv::Point2d marker_pos(imgPoints[jj]);
+        project(p, result, focal, principal, R, t, dist);
+        cv::Point2d res(result[0], result[1]);
+        markers.push_back(marker_pos);
+        reprojections.push_back(res);
+    }
+}
+
+char Calib::color(const int ii, const int jj) {
+    if (0 == (ii % 2)) { // First row
+        if (0 == (jj % 2)) { // First column (top left pixel)
+            return 'R';
+        }
+        return 'G'; // Top right pixel
+    }
+    if (0 == (jj % 2)) { // Second row, first column (bottom left pixel)
+        return 'G';
+    }
+    return 'B'; // Second row, second pixel (bottom right pixel)
+}
+
+Calib::Calib() {
+
+}
+
+void Calib::only_green(bool only_green) {
+    use_only_green = only_green;
 }
 
 Point3f Calib::getInitial3DCoord(const Corner &c, const double z) {
@@ -113,21 +196,11 @@ void Calib::normalize_raw_per_channel_inplace(Mat &input) {
     for (int ii = 0; ii < input.rows; ++ii) {
         unsigned short const * const row = input.ptr<unsigned short>(ii);
         for (int jj = 0; jj < input.cols; ++jj) {
-            if (ii % 2 == 0) { // "blue" row (we dont actually care if it's blue or red)
-                if (jj % 2 == 0) {
-                    max_g = std::max(max_g, row[jj]);
-                }
-                else {
-                    max_b = std::max(max_b, row[jj]);
-                }
-            }
-            else { // Red row
-                if (jj % 2 == 0) {
-                    max_r = std::max(max_r, row[jj]);
-                }
-                else {
-                    max_g = std::max(max_g, row[jj]);
-                }
+            switch (color(ii, jj)) {
+            case 'R': max_r = std::max(max_r, row[jj]); break;
+            case 'G': max_g = std::max(max_g, row[jj]); break;
+            case 'B': max_b = std::max(max_b, row[jj]); break;
+            default: throw std::runtime_error("Color value not R,G,B");
             }
         }
     }
@@ -138,21 +211,11 @@ void Calib::normalize_raw_per_channel_inplace(Mat &input) {
     for (int ii = 0; ii < input.rows; ++ii) {
         unsigned short * row = input.ptr<unsigned short>(ii);
         for (int jj = 0; jj < input.cols; ++jj) {
-            if (ii % 2 == 0) { // "blue" row (we dont actually care if it's blue or red)
-                if (jj % 2 == 0) {
-                    row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_g));
-                }
-                else {
-                    row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_b));
-                }
-            }
-            else { // Red row
-                if (jj % 2 == 0) {
-                    row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_r));
-                }
-                else {
-                    row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_g));
-                }
+            switch (color(ii, jj)) {
+            case 'R': row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_r)); break;
+            case 'G': row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_g)); break;
+            case 'B': row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_b)); break;
+            default: throw std::runtime_error("Color value not R,G,B");
             }
         }
     }
@@ -312,13 +375,20 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             }
             setImageSize(img);
             //normalize_raw_per_channel_inplace(img);
+            white_balance_inplace(img, white_balance);
             double min_val = 0, max_val = 0;
             cv::minMaxIdx(img, &min_val, &max_val);
             std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
             img = img * (255.0 / max_val);
             img.convertTo(img, CV_8UC1);
             //cv::normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
-            cvtColor(img, img, COLOR_BayerRG2BGR); // RG BG GB GR
+            cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
+            if (use_only_green) {
+                cv::Mat split[3];
+                cv::split(img, split);
+                split[0] = split[2] = split[1];
+                cv::merge(split, 3, img);
+            }
             cv::imwrite(input_file + "-demosaiced-normalized.png", img);
             paint = img.clone();
         }
@@ -727,6 +797,7 @@ bool CornerStore::purge32() {
     return false;
 }
 
+
 double Calib::openCVCalib() {
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
@@ -861,45 +932,10 @@ int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
     throw std::out_of_range(std::string("Requested dimension ") + to_string(dim) + " out of range (0-1)");
 }
 
-template<class T>
-void vec2arr(T arr[3], cv::Point3d const& p) {
-    arr[0] = p.x;
-    arr[1] = p.y;
-    arr[2] = p.z;
-}
 
-template<class T>
-void vec2arr(T arr[2], cv::Point2d const& p) {
-    arr[0] = p.x;
-    arr[1] = p.y;
-}
 
 void Calib::plotReprojectionErrors(const size_t ii) {
-    auto const& imgPoints = imagePoints[ii];
-    auto const& objPoints = objectPoints[ii];
     std::string const& filename = imageFiles[ii];
-    cv::Mat const& rvec = rvecs[ii];
-    cv::Mat const& tvec = tvecs[ii];
-
-    double p[3], r[3], t[3], R[9];
-
-    double result[2];
-
-    cv::Point3d r_point(rvec);
-    cv::Point3d t_point(tvec);
-
-    vec2arr(r, r_point);
-    vec2arr(t, t_point);
-
-    rot_vec2mat(r, R);
-
-    double dist[14];
-    for (size_t jj = 0; jj < 14; ++jj) {
-        dist[jj] = distCoeffs(jj);
-    }
-
-    double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
-    double principal[2] = {cameraMatrix(0,2), cameraMatrix(1,2)};
 
     std::stringstream plot_command;
     gnuplotio::Gnuplot plot;
@@ -910,15 +946,17 @@ void Calib::plotReprojectionErrors(const size_t ii) {
 
     runningstats::Histogram error_hist(.1);
 
+    std::vector<cv::Point2d> markers, reprojections;
+
+    getReprojections(ii, markers, reprojections);
+
     std::vector<std::vector<double> > data;
-    for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
-        vec2arr(p, objPoints[jj]);
-        cv::Point2d marker_pos(imgPoints[jj]);
-        project(p, result, focal, principal, R, t, dist);
-        cv::Point2d res(result[0], result[1]);
-        cv::Point2d residual = marker_pos - res;
+    for (size_t jj = 0; jj < markers.size(); ++jj) {
+        cv::Point2d residual = markers[jj] - reprojections[jj];
         double error = std::sqrt(residual.dot(residual));
-        data.push_back({marker_pos.x, marker_pos.y, res.x, res.y, error});
+        data.push_back({markers[jj].x, markers[jj].y,
+                        reprojections[jj].x, reprojections[jj].y,
+                        error});
         errors.push_back(error);
         error_hist.push(error);
     }
@@ -969,6 +1007,25 @@ void Calib::plotReprojectionErrors(const size_t ii) {
     std::ofstream out(plot_name + ".gpl");
     out << plot_command.str();
 
+}
+
+void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
+    float const min_val = std::min(white.x, std::min(white.y, white.z));
+    float const max_val = std::max(white.x, std::max(white.y, white.z));
+    float const f_b = min_val / white.x;
+    float const f_g = min_val / white.y;
+    float const f_r = min_val / white.z;
+    for (int ii = 0; ii < mat.rows; ++ii) {
+        unsigned short * row = mat.ptr<unsigned short>(ii);
+        for (int jj = 0; jj < mat.cols; ++jj) {
+            switch (color(ii, jj)) {
+            case 'R': row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_r)); break;
+            case 'G': row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_g)); break;
+            case 'B': row[jj] = cv::saturate_cast<unsigned short>(std::round(row[jj] * f_b)); break;
+            default: throw std::runtime_error("Color value not R,G,B");
+            }
+        }
+    }
 }
 
 void Calib::plotReprojectionErrors() {
@@ -1070,10 +1127,10 @@ const T dist[14]
     T const r6 = r4*r2;
 
     T x2 = x*(T(1) + k1*r2 + k2*r4 + k3*r6)/(T(1) + k4*r2 + k5*r4 + k6*r6)
-             + 2*x*y*p1 + p2*(r2 + 2*x*x) + s1*r2 + s2*r4;
+            + 2*x*y*p1 + p2*(r2 + 2*x*x) + s1*r2 + s2*r4;
 
     T y2 = y*(T(1) + k1*r2 + k2*r4 + k3*r6)/(T(1) + k4*r2 + k5*r4 + k6*r6)
-             + 2*x*y*p2 + p1*(r2 + 2*y*y) + s3*r2 + s4*r4;
+            + 2*x*y*p2 + p1*(r2 + 2*y*y) + s3*r2 + s4*r4;
 
     applySensorTilt(x2, y2, tau_x, tau_y);
 

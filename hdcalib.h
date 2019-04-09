@@ -357,7 +357,13 @@ class Calib
      */
     double aspectRatio;
 
+    /**
+     * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
+     * @param threshold error threshold in px.
+     */
+    void removeOutliers(double const threshold);
 
+    void getReprojections(const size_t ii, std::vector<cv::Point2d> & markers, std::vector<cv::Point2d> & reprojections);
 
     bool verbose = true;
     int grid_width = 1;
@@ -374,10 +380,26 @@ class Calib
      * @brief size_known false if the resolution of the input images is not (yet) known.
      */
     bool resolution_known = false;
+
+    /**
+     * @brief white_balance Color of white (BGR)
+     */
+    cv::Point3f white_balance = cv::Point3f(200,170,80);
+
+    /**
+     * @brief use_only_green If set to true only the green channel will be used.
+     */
+    bool use_only_green = false;
+
+    static char color(int const ii, int const jj);
 public:
     Calib();
 
+    void only_green(bool only_green = true);
+
     void plotReprojectionErrors(size_t const ii);
+
+    static void white_balance_inplace(cv::Mat & mat, const Point3f white);
 
     /**
      * @brief plotReprojectionErrors plots all reprojection errors of all input images.

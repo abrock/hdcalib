@@ -21,6 +21,7 @@ int main(int argc, char* argv[]) {
     bool demosaic = false;
     bool libraw = false;
     bool plot_markers = false;
+    bool only_green = false;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -47,6 +48,9 @@ int main(int argc, char* argv[]) {
         TCLAP::SwitchArg plot_markers_arg("", "plot", "Use this flag if the detected markers should be painted into the input images", false);
         cmd.add(plot_markers_arg);
 
+        TCLAP::SwitchArg only_green_arg("", "only-green", "Set this flag true if only the green channel of a bayer image should be used. This implies demosaic, in this case bilinear demosaicing of the green channel only.", false);
+        cmd.add(only_green_arg);
+
         TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input", "Input images, should contain markers", true, "string");
         cmd.add(input_img_arg);
 
@@ -57,7 +61,8 @@ int main(int argc, char* argv[]) {
         recursion_depth = recursive_depth_arg.getValue();
         effort = effort_arg.getValue();
         libraw = read_raw_arg.getValue();
-        demosaic = demosaic_arg.getValue() || libraw;
+        only_green = only_green_arg.getValue();
+        demosaic = demosaic_arg.getValue() || libraw || only_green;
         plot_markers = plot_markers_arg.getValue();
 
         std::cout << "Parameters: " << std::endl
@@ -66,9 +71,11 @@ int main(int argc, char* argv[]) {
                   << "effort: " << effort << std::endl
                   << "demosaic: " << (demosaic ? "true" : "false") << std::endl
                   << "use libraw: " << (libraw ? "true" : "false") << std::endl
-                  << "plot markers: " << (plot_markers ? "true" : "false") << std::endl;
+                  << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
+                  << "only green channel: " << (only_green ? "true" : "false") << std::endl;
 
         calib.plotMarkers(plot_markers);
+        calib.only_green(only_green);
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
