@@ -357,11 +357,7 @@ class Calib
      */
     double aspectRatio;
 
-    /**
-     * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
-     * @param threshold error threshold in px.
-     */
-    void removeOutliers(double const threshold);
+
 
     void getReprojections(const size_t ii, std::vector<cv::Point2d> & markers, std::vector<cv::Point2d> & reprojections);
 
@@ -395,9 +391,18 @@ class Calib
 public:
     Calib();
 
+    /**
+     * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
+     * @param threshold error threshold in px.
+     */
+    void removeOutliers(double const threshold = 2);
+
     void only_green(bool only_green = true);
 
     void plotReprojectionErrors(size_t const ii);
+
+    template<class Point>
+    static double distance(Point const a, Point const b);
 
     static void white_balance_inplace(cv::Mat & mat, const Point3f white);
 
@@ -405,6 +410,17 @@ public:
      * @brief plotReprojectionErrors plots all reprojection errors of all input images.
      */
     void plotReprojectionErrors();
+
+    /**
+     * @brief findOutliers finds outliers of the detected markers with a reprojection error above some threshold in one of the images.
+     * @param threshold error threshold in px.
+     * @param ii index of the image to search for outliers in.
+     * @param outliers vector of detected outliers
+     */
+    void findOutliers(
+            double const threshold,
+            size_t const ii,
+            std::vector<Corner> &outliers);
 
     template<class F, class T>
     static void project(

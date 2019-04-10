@@ -123,6 +123,8 @@ int main(int argc, char* argv[]) {
 
     calib.plotReprojectionErrors();
 
+    calib.removeOutliers();
+
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
 }

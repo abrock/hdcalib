@@ -23,7 +23,13 @@ namespace hdcalib {
 
 
 void Calib::removeOutliers(const double threshold) {
-
+    std::vector<hdmarker::Corner> outliers;
+    for (size_t ii = 0; ii < data.size(); ++ii) {
+        findOutliers(
+                threshold,
+                ii,
+                outliers);
+    }
 }
 
 void Calib::getReprojections(
@@ -374,21 +380,24 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 img = cv::imread(input_file, CV_LOAD_IMAGE_GRAYSCALE);
             }
             setImageSize(img);
-            //normalize_raw_per_channel_inplace(img);
-            white_balance_inplace(img, white_balance);
             double min_val = 0, max_val = 0;
             cv::minMaxIdx(img, &min_val, &max_val);
             std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
-            img = img * (255.0 / max_val);
-            img.convertTo(img, CV_8UC1);
+            img = img * (65535 / max_val);
+            //normalize_raw_per_channel_inplace(img);
+            white_balance_inplace(img, white_balance);
+
             //cv::normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
             cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
             if (use_only_green) {
                 cv::Mat split[3];
                 cv::split(img, split);
-                split[0] = split[2] = split[1];
-                cv::merge(split, 3, img);
+                img = split[1];
             }
+            cv::minMaxIdx(img, &min_val, &max_val);
+            std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
+            img = img * (255.0 / max_val);
+            img.convertTo(img, CV_8UC1);
             cv::imwrite(input_file + "-demosaiced-normalized.png", img);
             paint = img.clone();
         }
@@ -397,6 +406,10 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             setImageSize(img);
             paint = img.clone();
         }
+    }
+    if (plot_markers && paint.channels() == 1) {
+        cv::Mat tmp[3] = {paint, paint, paint};
+        cv::merge(tmp, 3, paint);
     }
     std::cout << "Input image size: " << img.size << std::endl;
 
@@ -750,7 +763,7 @@ bool CornerStore::purgeDuplicates() {
             }
             hdmarker::Corner const& b = get(res_indices[jj]);
             cv::Point2f residual = candidate.p - b.p;
-            double const dist = std::sqrt(residual.dot(residual));
+            double const dist = Calib::distance(candidate.p, b.p);
             if (dist < (candidate.size + b.size)/20) {
                 is_duplicate = true;
                 break;
@@ -952,8 +965,7 @@ void Calib::plotReprojectionErrors(const size_t ii) {
 
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < markers.size(); ++jj) {
-        cv::Point2d residual = markers[jj] - reprojections[jj];
-        double error = std::sqrt(residual.dot(residual));
+        double const error = distance(markers[jj], reprojections[jj]);
         data.push_back({markers[jj].x, markers[jj].y,
                         reprojections[jj].x, reprojections[jj].y,
                         error});
@@ -1031,6 +1043,28 @@ void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
 void Calib::plotReprojectionErrors() {
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         plotReprojectionErrors(ii);
+    }
+}
+
+void Calib::findOutliers(
+        const double threshold,
+        const size_t image_index,
+        std::vector<hdmarker::Corner> & outliers) {
+    std::vector<cv::Point2d> markers, projections;
+    getReprojections(image_index, markers, projections);
+
+    for (size_t ii = 0; ii < markers.size(); ++ii) {
+        double const error = distance(markers[ii], projections[ii]);
+        if (error < threshold) {
+            continue;
+        }
+        hdmarker::Corner c = data[imageFiles[image_index]].get(ii);
+        outliers.push_back(c);
+        if (verbose) {
+            std::cout << "found outlier in image " << imageFiles[image_index]
+                         << ": id " << c.id << ", " << c.page << ", marker: "
+                         << markers[ii] << ", proj: " << projections[ii] << std::endl;
+        }
     }
 }
 
@@ -1173,5 +1207,11 @@ void Calib::rot_vec2mat(const T vec[], T mat[]) {
 }
 
 template void Calib::rot_vec2mat(const double vec[], double mat[]);
+
+template<class Point>
+double Calib::distance(const Point a, const Point b) {
+    Point residual = a-b;
+    return std::sqrt(residual.dot(residual));
+}
 
 }
