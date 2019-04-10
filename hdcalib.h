@@ -149,6 +149,8 @@ public:
      */
     CornerStore(const CornerStore& c);
 
+    CornerStore(const std::vector<hdmarker::Corner> & corners);
+
     /**
      * @brief operator = a better copy operator for avoiding memory problems.
      * @param other
@@ -394,6 +396,11 @@ class Calib
     bool use_only_green = false;
 
     static char color(int const ii, int const jj);
+
+    /**
+     * @brief prepareCalibration fills the containers imagePoints, objectPoints and imageFiles.
+     */
+    void prepareCalibration();
 public:
     Calib();
 
@@ -405,8 +412,6 @@ public:
 
     void only_green(bool only_green = true);
 
-    void plotReprojectionErrors(size_t const ii);
-
     template<class Point>
     static double distance(Point const a, Point const b);
 
@@ -414,8 +419,21 @@ public:
 
     /**
      * @brief plotReprojectionErrors plots all reprojection errors of all input images.
+     * @param prefix prefix for all files
+     * @param suffix suffix for all files (before filename extension)
      */
-    void plotReprojectionErrors();
+    void plotReprojectionErrors(const std::string prefix = "",
+                                const std::string suffix ="");
+
+    /**
+     * @brief plotReprojectionErrors plots reprojection errors of a sinle input image.
+     * @param ii index of the input image.
+     * @param prefix prefix for all files.
+     * @param suffix suffix for all files (before filename extension)
+     */
+    void plotReprojectionErrors(size_t const ii,
+                                const std::string prefix = "",
+                                const std::string suffix = "");
 
     /**
      * @brief findOutliers finds outliers of the detected markers with a reprojection error above some threshold in one of the images.

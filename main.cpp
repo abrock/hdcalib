@@ -121,9 +121,11 @@ int main(int argc, char* argv[]) {
 
     calib.openCVCalib();
 
-    calib.plotReprojectionErrors();
+    calib.plotReprojectionErrors("", "initial");
 
-    calib.removeOutliers();
+    calib.removeOutliers(1.5);
+
+    calib.plotReprojectionErrors("", "outliers");
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

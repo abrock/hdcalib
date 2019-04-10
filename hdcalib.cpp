@@ -30,6 +30,14 @@ void Calib::removeOutliers(const double threshold) {
                 ii,
                 outliers);
     }
+    if (outliers.empty()) {
+        return;
+    }
+    CornerStore subtrahend(outliers);
+    for (auto& it : data) {
+        it.second.difference(subtrahend);
+    }
+    prepareCalibration();
 }
 
 void Calib::getReprojections(
@@ -91,6 +99,21 @@ char Calib::color(const int ii, const int jj) {
         return 'G';
     }
     return 'B'; // Second row, second pixel (bottom right pixel)
+}
+
+void Calib::prepareCalibration()
+{
+    imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
+    objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
+    imageFiles.resize(data.size());
+    imageSize = imageSize;
+
+    size_t ii = 0;
+    for (auto const& it : data) {
+        it.second.getPoints(imagePoints[ii], objectPoints[ii]);
+        imageFiles[ii] = it.first;
+        ++ii;
+    }
 }
 
 Calib::Calib() {
@@ -588,6 +611,22 @@ CornerStore::CornerStore(const CornerStore &c) :
     replaceCorners(c.getCorners());
 }
 
+CornerStore::CornerStore(const std::vector<Corner> &corners) :
+    idx_adapt(*this),
+    pos_adapt(*this),
+    idx_tree(new CornerIndexTree(
+                 3 /*dim*/,
+                 idx_adapt,
+                 nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
+                 )),
+    pos_tree(new CornerPositionTree (
+                 2 /*dim*/,
+                 pos_adapt,
+                 nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
+                 )) {
+    replaceCorners(corners);
+}
+
 CornerStore &CornerStore::operator=(const CornerStore &other) {
     if (this != &other) { // protect against invalid self-assignment
         replaceCorners(other.getCorners());
@@ -828,17 +867,7 @@ bool CornerStore::purge32() {
 
 
 double Calib::openCVCalib() {
-    imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
-    objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
-    imageFiles.resize(data.size());
-    imageSize = imageSize;
-
-    size_t ii = 0;
-    for (auto const& it : data) {
-        it.second.getPoints(imagePoints[ii], objectPoints[ii]);
-        imageFiles[ii] = it.first;
-        ++ii;
-    }
+    prepareCalibration();
 
     double result_err = cv::calibrateCamera (
                 objectPoints,
@@ -963,13 +992,15 @@ int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
 
 
 
-void Calib::plotReprojectionErrors(const size_t ii) {
+void Calib::plotReprojectionErrors(const size_t ii,
+                                   const std::string prefix,
+                                   const std::string suffix) {
     std::string const& filename = imageFiles[ii];
 
     std::stringstream plot_command;
     gnuplotio::Gnuplot plot;
 
-    std::string plot_name = filename + ".marker-residuals";
+    std::string plot_name = prefix + filename + ".marker-residuals";
 
     std::vector<double> errors;
 
@@ -996,43 +1027,43 @@ void Calib::plotReprojectionErrors(const size_t ii) {
 
     plot_command << std::setprecision(16);
     plot_command << "set term svg enhanced background rgb \"white\";\n"
-                 << "set output \"" << plot_name << ".residuals.svg\";\n"
+                 << "set output \"" << plot_name << ".residuals." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals.data")
+                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
                  << " u ($1-$3):($2-$4) w p notitle;\n"
-                 << "set output \"" << plot_name << ".residuals-log.svg\";\n"
+                 << "set output \"" << plot_name << ".residuals-log." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
                  << "set logscale xy;\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals.data")
+                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
                  << " u (abs($1-$3)):(abs($2-$4)) w p notitle;\n"
                  << "reset;\n"
-                 << "set output \"" << plot_name + ".vectors.svg\";\n"
+                 << "set output \"" << plot_name + ".vectors." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals.data")
+                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
                  << " w vectors notitle;\n"
-                 << "set output \"" << plot_name + ".error-dist.svg\";\n"
+                 << "set output \"" << plot_name + ".error-dist." << suffix << ".svg\";\n"
                  << "set title 'CDF of the Reprojection Error';\n"
                  << "set xlabel 'error';\n"
                  << "set ylabel 'CDF';\n"
-                 << "plot " << plot.file1d(errors, plot_name + ".errors.data") << " u 1:($0/" << errors.size()-1 << ") w l notitle;\n"
+                 << "plot " << plot.file1d(errors, plot_name + ".errors." + suffix + ".data") << " u 1:($0/" << errors.size()-1 << ") w l notitle;\n"
                  << "set logscale x;\n"
-                 << "set output \"" << plot_name + ".error-dist-log.svg\";\n"
+                 << "set output \"" << plot_name + ".error-dist-log." << suffix << ".svg\";\n"
                  << "replot;\n"
                  << "reset;\n"
-                 << "set output \"" << plot_name + ".error-hist.svg\";\n"
+                 << "set output \"" << plot_name + ".error-hist." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Error Histogram';\n"
                  << "set xlabel 'error';\n"
                  << "set ylabel 'absolute frequency';\n"
-                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist.data")
+                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist." + suffix + ".data")
                  << " w boxes notitle;\n"
-                 << "set output \"" << plot_name + ".error-hist-log.svg\";\n"
+                 << "set output \"" << plot_name + ".error-hist-log." << suffix << ".svg\";\n"
                  << "set logscale xy;\n"
-                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist.data")
+                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist." + suffix + ".data")
                  << "w boxes notitle;\n";
 
     plot << plot_command.str();
 
-    std::ofstream out(plot_name + ".gpl");
+    std::ofstream out(plot_name + "." + suffix + ".gpl");
     out << plot_command.str();
 
 }
@@ -1056,9 +1087,9 @@ void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
     }
 }
 
-void Calib::plotReprojectionErrors() {
+void Calib::plotReprojectionErrors(const string prefix, const string suffix) {
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
-        plotReprojectionErrors(ii);
+        plotReprojectionErrors(ii, prefix, suffix);
     }
 }
 
