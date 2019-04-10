@@ -625,6 +625,22 @@ void CornerStore::intersect(CornerStore &a, CornerStore &b) {
     }
 }
 
+void CornerStore::difference(const CornerStore &subtrahend) {
+    bool found_delete = false;
+    std::vector<hdmarker::Corner> replacement;
+    for (size_t ii = 0; ii < size(); ++ii) {
+        if (subtrahend.hasID(get(ii))) {
+            found_delete = true;
+        }
+        else {
+            replacement.push_back(get(ii));
+        }
+    }
+    if (found_delete) {
+        replaceCorners(replacement);
+    }
+}
+
 void CornerStore::replaceCorners(const std::vector<Corner> &_corners) {
     corners = _corners;
     {

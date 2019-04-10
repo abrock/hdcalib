@@ -818,6 +818,55 @@ TEST(CornerStore, purge32) {
 
 }
 
+TEST(CornerStore, difference) {
+    {
+        hdcalib::CornerStore a, b;
+        getCornerGrid(a, 15, 15);
+        EXPECT_EQ(a.size(), 225);
+
+        getCornerGrid(b, 15, 15);
+        EXPECT_EQ(b.size(), 225);
+
+        a.difference(b);
+        EXPECT_EQ(a.size(), 0);
+        EXPECT_EQ(b.size(), 225);
+    }
+    {
+        hdcalib::CornerStore a, b;
+        getCornerGrid(a, 15, 15);
+        EXPECT_EQ(a.size(), 225);
+
+        getCornerGrid(b, 5, 5);
+        EXPECT_EQ(b.size(), 25);
+
+        a.difference(b);
+        EXPECT_EQ(a.size(), 200);
+        EXPECT_EQ(b.size(), 25);
+    }
+    {
+        hdcalib::CornerStore a, b;
+        getCornerGrid(a, 5, 5);
+        EXPECT_EQ(a.size(), 25);
+
+        getCornerGrid(b, 15, 15);
+        EXPECT_EQ(b.size(), 225);
+
+        a.difference(b);
+        EXPECT_EQ(a.size(), 0);
+        EXPECT_EQ(b.size(), 225);
+    }
+    {
+        hdcalib::CornerStore a, b;
+        getCornerGrid(a, 5, 5);
+        EXPECT_EQ(a.size(), 25);
+
+        EXPECT_EQ(b.size(), 0);
+
+        a.difference(b);
+        EXPECT_EQ(a.size(), 25);
+        EXPECT_EQ(b.size(), 0);
+    }
+}
 double square_p1(double const in) {
     return in*in+1;
 }

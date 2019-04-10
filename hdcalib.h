@@ -170,6 +170,12 @@ public:
 
     static void intersect(CornerStore & a, CornerStore & b);
 
+    /**
+     * @brief difference removes all markers in subtrahend from the store.
+     * @param subtrahend markers which should be removed.
+     */
+    void difference(CornerStore const& subtrahend);
+
     void replaceCorners(std::vector<hdmarker::Corner> const& _corners);
 
     /**
