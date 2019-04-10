@@ -127,6 +127,8 @@ int main(int argc, char* argv[]) {
 
     calib.plotReprojectionErrors("", "outliers");
 
+    calib.CeresCalib();
+
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
 }

@@ -2,6 +2,8 @@
 
 #include "gnuplot-iostream.h"
 
+#include <ceres/ceres.h>
+
 #include <runningstats/runningstats.h>
 
 namespace  {
@@ -26,9 +28,9 @@ void Calib::removeOutliers(const double threshold) {
     std::vector<hdmarker::Corner> outliers;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         findOutliers(
-                threshold,
-                ii,
-                outliers);
+                    threshold,
+                    ii,
+                    outliers);
     }
     if (outliers.empty()) {
         return;
@@ -106,7 +108,6 @@ void Calib::prepareCalibration()
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
     imageFiles.resize(data.size());
-    imageSize = imageSize;
 
     size_t ii = 0;
     for (auto const& it : data) {
@@ -122,6 +123,16 @@ Calib::Calib() {
 
 void Calib::only_green(bool only_green) {
     use_only_green = only_green;
+}
+
+std::vector<double> Calib::mat2vec(const Mat &in) {
+    std::vector<double> result;
+    result.reserve(in.cols*in.rows);
+    cv::Mat_<double> _in(in);
+    for (auto const& it : _in) {
+        result.push_back(it);
+    }
+    return result;
 }
 
 Point3f Calib::getInitial3DCoord(const Corner &c, const double z) {
@@ -567,7 +578,9 @@ void CornerStore::add(const std::vector<Corner> &vec) {
     pos_tree->addPoints(corners.size() - vec.size(), corners.size()-1);
 }
 
-void CornerStore::getPoints(std::vector<Point2f> &imagePoints, std::vector<cv::Point3f> &objectPoints) const {
+void CornerStore::getPoints(
+        std::vector<Point2f> &imagePoints,
+        std::vector<Point3f> &objectPoints) const {
     imagePoints.clear();
     imagePoints.reserve(size());
 
@@ -921,6 +934,62 @@ double Calib::openCVCalib() {
     return result_err;
 }
 
+double Calib::CeresCalib() {
+
+    // Build the problem.
+    ceres::Problem problem;
+
+    prepareCalibration();
+
+    std::vector<std::vector<double> >local_tvecs, local_rvecs;
+
+    std::vector<double> local_dist = mat2vec(distCoeffs);
+
+    for (size_t ii = 0; ii < data.size(); ++ii) {
+        local_tvecs.push_back(mat2vec(tvecs[ii]));
+        local_rvecs.push_back(mat2vec(rvecs[ii]));
+
+        ceres::CostFunction * cost_function =
+                new ceres::AutoDiffCostFunction<
+                ProjectionFunctor,
+                ceres::DYNAMIC,
+                1, // focal length x
+                1, // focal length y
+                1, // principal point x
+                1, // principal point y
+                3, // rotation vector for the target
+                3, // translation vector for the target
+                14 // distortion coefficients
+
+                >(new ProjectionFunctor(imagePoints[ii], objectPoints[ii]),
+                  2*imagePoints[ii].size() // Number of residuals
+                  );
+        problem.AddResidualBlock(cost_function,
+                                 nullptr, // Loss function (nullptr = L2)
+                                 &cameraMatrix(0,0), // focal length x
+                                 &cameraMatrix(1,1), // focal length y
+                                 &cameraMatrix(0,2), // principal point x
+                                 &cameraMatrix(1,2), // principal point y
+                                 local_rvecs[ii].data(), // rotation vector for the target
+                                 local_tvecs[ii].data(), // translation vector for the target
+                                 local_dist.data() // distortion coefficients
+                                 );
+
+    }
+
+
+    // Run the solver!
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::DENSE_QR;
+    options.minimizer_progress_to_stdout = true;
+    ceres::Solver::Summary summary;
+    Solve(options, &problem, &summary);
+
+    std::cout << summary.BriefReport() << "\n";
+
+    return 0;
+}
+
 void Calib::plotMarkers(bool plot) {
     plot_markers = plot;
 }
@@ -1259,6 +1328,31 @@ template<class Point>
 double Calib::distance(const Point a, const Point b) {
     Point residual = a-b;
     return std::sqrt(residual.dot(residual));
+}
+
+ProjectionFunctor::ProjectionFunctor(
+        const std::vector<Point2f> &_markers,
+        const std::vector<Point3f> &_points) :
+    markers(_markers),
+    points(_points) {
+
+}
+
+template<class T>
+bool ProjectionFunctor::operator()(
+        const T * const f_x,
+        const T * const f_y,
+        const T * const c_x,
+        const T * const c_y,
+        const T * const tvec,
+        const T * const rvec,
+        const T * const dist,
+        T *residuals) const {
+    for (size_t ii = 0; ii < markers.size(); ++ii) {
+        residuals[2*ii] = T(0);
+        residuals[2*ii+1] = T(0);
+    }
+    return true;
 }
 
 }

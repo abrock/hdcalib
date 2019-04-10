@@ -269,9 +269,40 @@ public:
      */
     void add(std::vector<hdcalib::Corner> const& vec);
 
-    void getPoints(std::vector<cv::Point2f>& imagePoints, std::vector<cv::Point3f> & objectPoints) const;
+    void getPoints(
+            std::vector<cv::Point2f>& imagePoints,
+            std::vector<cv::Point3f> & objectPoints) const;
 
 };
+
+class ProjectionFunctor {
+    std::vector<cv::Point2f> const& markers;
+    std::vector<cv::Point3f> const& points;
+
+public:
+    ProjectionFunctor(std::vector<cv::Point2f> const& _markers,
+                      std::vector<cv::Point3f> const& _points);
+    /*
+    1, // focal length x
+    1, // focal length y
+    1, // principal point x
+    1, // principal point y
+    3, // translation vector for the target
+    3, // rotation vector for the target
+    14 // distortion coefficients
+    */
+    template<class T>
+    bool operator()(
+            T const* const f_x,
+            T const* const f_y,
+            T const* const c_x,
+            T const* const c_y,
+            T const* const tvec,
+            T const* const rvec,
+            T const* const dist,
+            T* residuals) const;
+};
+
 
 class Calib
 {
@@ -367,7 +398,10 @@ class Calib
 
 
 
-    void getReprojections(const size_t ii, std::vector<cv::Point2d> & markers, std::vector<cv::Point2d> & reprojections);
+    void getReprojections(
+            const size_t ii,
+            std::vector<cv::Point2d> & markers,
+            std::vector<cv::Point2d> & reprojections);
 
     bool verbose = true;
     int grid_width = 1;
@@ -414,6 +448,8 @@ public:
 
     template<class Point>
     static double distance(Point const a, Point const b);
+
+    static std::vector<double> mat2vec(cv::Mat const& in);
 
     static void white_balance_inplace(cv::Mat & mat, const Point3f white);
 
@@ -474,6 +510,8 @@ public:
     static cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0);
 
     double openCVCalib();
+
+    double CeresCalib();
 
     void plotMarkers(bool plot = true);
 
