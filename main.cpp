@@ -129,6 +129,8 @@ int main(int argc, char* argv[]) {
 
     calib.CeresCalib();
 
+    calib.plotReprojectionErrors("", "ceres");
+
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
 }

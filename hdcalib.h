@@ -287,8 +287,8 @@ public:
     1, // focal length y
     1, // principal point x
     1, // principal point y
-    3, // translation vector for the target
     3, // rotation vector for the target
+    3, // translation vector for the target
     14 // distortion coefficients
     */
     template<class T>
@@ -297,8 +297,8 @@ public:
             T const* const f_y,
             T const* const c_x,
             T const* const c_y,
-            T const* const tvec,
             T const* const rvec,
+            T const* const tvec,
             T const* const dist,
             T* residuals) const;
 };
@@ -450,6 +450,8 @@ public:
     static double distance(Point const a, Point const b);
 
     static std::vector<double> mat2vec(cv::Mat const& in);
+
+    static cv::Mat_<double> vec2mat(std::vector<double> const& in);
 
     static void white_balance_inplace(cv::Mat & mat, const Point3f white);
 

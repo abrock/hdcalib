@@ -135,6 +135,14 @@ std::vector<double> Calib::mat2vec(const Mat &in) {
     return result;
 }
 
+cv::Mat_<double> Calib::vec2mat(const std::vector<double> &in) {
+    cv::Mat_<double> result;
+    for (auto const& it : in) {
+        result.push_back(it);
+    }
+    return result;
+}
+
 Point3f Calib::getInitial3DCoord(const Corner &c, const double z) {
     cv::Point3f res(c.id.x, c.id.y, z);
     switch (c.page) {
@@ -941,13 +949,17 @@ double Calib::CeresCalib() {
 
     prepareCalibration();
 
-    std::vector<std::vector<double> >local_tvecs, local_rvecs;
+    std::vector<std::vector<double> > local_rvecs(data.size()), local_tvecs(data.size());
 
     std::vector<double> local_dist = mat2vec(distCoeffs);
 
+    cv::Mat_<double> old_cam = cameraMatrix.clone(), old_dist = distCoeffs.clone();
+
+
+
     for (size_t ii = 0; ii < data.size(); ++ii) {
-        local_tvecs.push_back(mat2vec(tvecs[ii]));
-        local_rvecs.push_back(mat2vec(rvecs[ii]));
+        local_rvecs[ii] = mat2vec(rvecs[ii]);
+        local_tvecs[ii] = mat2vec(tvecs[ii]);
 
         ceres::CostFunction * cost_function =
                 new ceres::AutoDiffCostFunction<
@@ -986,6 +998,29 @@ double Calib::CeresCalib() {
     Solve(options, &problem, &summary);
 
     std::cout << summary.BriefReport() << "\n";
+
+    size_t counter = 0;
+    for (auto & it : distCoeffs) {
+        it = local_dist[counter];
+        counter++;
+    }
+
+    for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
+        rvecs[ii] = vec2mat(local_rvecs[ii]);
+        tvecs[ii] = vec2mat(local_tvecs[ii]);
+    }
+
+    if (verbose) {
+        std::cout << "Parameters before: " << std::endl
+                  << "Camera matrix: " << old_cam << std::endl
+                  << "Distortion: " << old_dist << std::endl;
+        std::cout << "Parameters after: " << std::endl
+                  << "Camera matrix: " << cameraMatrix << std::endl
+                  << "Distortion: " << distCoeffs << std::endl;
+        std::cout << "Difference: old - new" << std::endl
+                  << "Camera matrix: " << (old_cam - cameraMatrix) << std::endl
+                  << "Distortion: " << (old_dist - distCoeffs) << std::endl;
+    }
 
     return 0;
 }
@@ -1250,8 +1285,8 @@ const T dist[14]
     T& y = result[1];
     T z;
     z = R[6]*X + R[7]*Y + R[8]*Z + t[2];
-    if (0 == z) {
-        z = 1;
+    if (T(0) == z) {
+        z = T(1);
     }
     x = (R[0]*X + R[1]*Y + R[2]*Z + t[0])/z;
     y = (R[3]*X + R[4]*Y + R[5]*Z + t[1])/z;
@@ -1277,10 +1312,10 @@ const T dist[14]
     T const r6 = r4*r2;
 
     T x2 = x*(T(1) + k1*r2 + k2*r4 + k3*r6)/(T(1) + k4*r2 + k5*r4 + k6*r6)
-            + 2*x*y*p1 + p2*(r2 + 2*x*x) + s1*r2 + s2*r4;
+            + T(2)*x*y*p1 + p2*(r2 + T(2)*x*x) + s1*r2 + s2*r4;
 
     T y2 = y*(T(1) + k1*r2 + k2*r4 + k3*r6)/(T(1) + k4*r2 + k5*r4 + k6*r6)
-            + 2*x*y*p2 + p1*(r2 + 2*y*y) + s3*r2 + s4*r4;
+            + T(2)*x*y*p2 + p1*(r2 + T(2)*y*y) + s3*r2 + s4*r4;
 
     applySensorTilt(x2, y2, tau_x, tau_y);
 
@@ -1306,7 +1341,7 @@ void Calib::rot_vec2mat(const T vec[], T mat[]) {
     T c1 = T(1) - c;
 
     // Calculate normalized vector.
-    T const factor = (T(0) != theta ? T(1)/theta : 1);
+    T const factor = (T(0) != theta ? T(1)/theta : T(1));
     T const vec_norm[3] = {factor * vec[0], factor * vec[1], factor * vec[2]};
 
     mat[0] = c + c1*vec_norm[0]*vec_norm[0];
@@ -1344,13 +1379,20 @@ bool ProjectionFunctor::operator()(
         const T * const f_y,
         const T * const c_x,
         const T * const c_y,
-        const T * const tvec,
         const T * const rvec,
+        const T * const tvec,
         const T * const dist,
         T *residuals) const {
+    T rot_mat[9];
+    Calib::rot_vec2mat(rvec, rot_mat);
+    T const f[2] = {f_x[0], f_y[0]};
+    T const c[2] = {c_x[0], c_y[0]};
+    T result[2] = {T(0), T(0)};
     for (size_t ii = 0; ii < markers.size(); ++ii) {
-        residuals[2*ii] = T(0);
-        residuals[2*ii+1] = T(0);
+        T point[3] = {T(points[ii].x), T(points[ii].y), T(points[ii].z)};
+        Calib::project(point, result, f, c, rot_mat, tvec, dist);
+        residuals[2*ii] = result[0] - T(markers[ii].x);
+        residuals[2*ii+1] = result[1] - T(markers[ii].y);
     }
     return true;
 }
