@@ -1218,6 +1218,33 @@ void Calib::plotResidualsByMarkerStats(
         const string prefix,
         const string suffix) {
 
+    std::vector<std::pair<double, double> > mean_residuals_by_marker;
+    for (auto const& it : map) {
+        const cv::Point2f mean_res = meanResidual(it.second);
+        mean_residuals_by_marker.push_back({mean_res.x, mean_res.y});
+    }
+    std::stringstream plot_command;
+    std::string plot_name = prefix + ".residuals-by-marker";
+
+    gnuplotio::Gnuplot plot;
+
+    plot_command << "set term svg enhanced background rgb \"white\";\n"
+                 << "set output \"" << plot_name << "." << suffix << ".svg\";\n"
+                 << "set title 'Mean reprojection residuals of each marker';\n"
+                 << "plot " << plot.file1d(mean_residuals_by_marker, plot_name + "." + suffix + ".data")
+                 << " u 1:2 w p notitle;\n";
+
+    plot << plot_command.str();
+    std::ofstream out(plot_name + ".gpl");
+    out << plot_command.str();
+}
+
+Point2f Calib::meanResidual(const std::vector<std::pair<Point2f, Point2f> > &data) {
+    cv::Point2f sum(0,0);
+    for (auto const& it : data) {
+        sum += it.first - it.second;
+    }
+    return cv::Point2f(sum.x/data.size(), sum.y/data.size());
 }
 
 Point3i Calib::getSimpleId(const Corner &marker) {

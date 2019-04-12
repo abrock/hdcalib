@@ -496,6 +496,13 @@ public:
                                     const std::string suffix="");
 
     /**
+     * @brief meanResidual calculate mean residual given a vector of pairs of detected markers and reprojections.
+     * @param data
+     * @return
+     */
+    static cv::Point2f meanResidual(std::vector<std::pair<cv::Point2f, cv::Point2f> > const& data);
+
+    /**
      * @brief getSimpleId returns the "id" of the marker which consists of the marker's id value and page number in one single cv::Point3i for easy usage in std::map etc.
      * @param marker
      * @return
