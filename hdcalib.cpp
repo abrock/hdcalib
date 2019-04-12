@@ -1096,13 +1096,16 @@ int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
 
 
 
-void Calib::plotReprojectionErrors(const size_t ii,
+void Calib::plotReprojectionErrors(const size_t image_index,
+                                   MarkerMap &residuals_by_marker,
                                    const std::string prefix,
                                    const std::string suffix) {
-    std::string const& filename = imageFiles[ii];
+    std::string const& filename = imageFiles[image_index];
 
     std::stringstream plot_command;
     gnuplotio::Gnuplot plot;
+
+    CornerStore const& store = data[filename];
 
     std::string plot_name = prefix + filename + ".marker-residuals";
 
@@ -1112,14 +1115,16 @@ void Calib::plotReprojectionErrors(const size_t ii,
 
     std::vector<cv::Point2d> markers, reprojections;
 
-    getReprojections(ii, markers, reprojections);
+    getReprojections(image_index, markers, reprojections);
 
     std::vector<std::vector<double> > data;
-    for (size_t jj = 0; jj < markers.size(); ++jj) {
-        double const error = distance(markers[jj], reprojections[jj]);
-        data.push_back({markers[jj].x, markers[jj].y,
-                        reprojections[jj].x, reprojections[jj].y,
+    for (size_t ii = 0; ii < markers.size(); ++ii) {
+        double const error = distance(markers[ii], reprojections[ii]);
+        data.push_back({markers[ii].x, markers[ii].y,
+                        reprojections[ii].x, reprojections[ii].y,
                         error});
+        auto const id = getSimpleId(store.get(ii));
+        residuals_by_marker[id].push_back(std::make_pair(markers[ii], reprojections[ii]));
         errors.push_back(error);
         error_hist.push(error);
     }
@@ -1172,6 +1177,53 @@ void Calib::plotReprojectionErrors(const size_t ii,
 
 }
 
+void Calib::plotErrorsByMarker(
+        const Calib::MarkerMap &map,
+        const string prefix,
+        const string suffix) {
+
+    for (auto const& it : map) {
+        if (it.second.size() < 2) {
+            continue;
+        }
+        std::stringstream _id;
+        _id << it.first;
+        auto const id = _id.str();
+
+        std::vector<std::vector<float> > local_data;
+        for (auto const& d : it.second) {
+            local_data.push_back({d.first.x, d.first.y, d.second.x, d.second.y});
+        }
+
+        std::string plot_name = "markers." + id;
+        gnuplotio::Gnuplot plot;
+        std::stringstream plot_command;
+        plot_command << std::setprecision(16);
+        plot_command << "set term svg enhanced background rgb \"white\";\n"
+                     << "set output \"" << plot_name << ".residuals." << suffix << ".svg\";\n"
+                     << "set title 'Reprojection Residuals for marker " << id << "';\n"
+                     << "plot " << plot.file1d(local_data, plot_name + ".residuals." + suffix + ".data")
+                     << " u ($1-$3):($2-$4) w p notitle;\n";
+
+
+        plot << plot_command.str();
+
+        std::ofstream out(plot_name + "." + suffix + ".gpl");
+        out << plot_command.str();
+    }
+}
+
+void Calib::plotResidualsByMarkerStats(
+        const Calib::MarkerMap &map,
+        const string prefix,
+        const string suffix) {
+
+}
+
+Point3i Calib::getSimpleId(const Corner &marker) {
+    return cv::Point3i(marker.id.x, marker.id.y, marker.page);
+}
+
 void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
     float const min_val = std::min(white.x, std::min(white.y, white.z));
     float const max_val = std::max(white.x, std::max(white.y, white.z));
@@ -1192,9 +1244,12 @@ void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
 }
 
 void Calib::plotReprojectionErrors(const string prefix, const string suffix) {
+    MarkerMap residuals_by_marker;
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
-        plotReprojectionErrors(ii, prefix, suffix);
+        plotReprojectionErrors(ii, residuals_by_marker, prefix, suffix);
     }
+    //plotErrorsByMarker(residuals_by_marker);
+    plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
 }
 
 void Calib::findOutliers(

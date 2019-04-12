@@ -303,6 +303,15 @@ public:
             T* residuals) const;
 };
 
+struct cmpSimpleIndex {
+    bool operator()(const cv::Point3i& a, const cv::Point3i& b) const {
+        if (a.z < b.z) return true;
+        if (a.z > b.z) return false;
+        if (a.y < b.y) return true;
+        if (a.y > b.y) return false;
+        return a.x < b.x;
+    }
+};
 
 class Calib
 {
@@ -438,6 +447,8 @@ class Calib
 public:
     Calib();
 
+    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex> MarkerMap;
+
     /**
      * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
      * @param threshold error threshold in px.
@@ -469,9 +480,27 @@ public:
      * @param prefix prefix for all files.
      * @param suffix suffix for all files (before filename extension)
      */
-    void plotReprojectionErrors(size_t const ii,
+    void plotReprojectionErrors(size_t const image_index,
+                                MarkerMap & residuals_by_marker,
                                 const std::string prefix = "",
-                                const std::string suffix = "");
+                                const std::string suffix = ""
+            );
+
+    void plotErrorsByMarker(MarkerMap const& map,
+                            const std::string prefix="",
+                            const std::string suffix="");
+
+
+    void plotResidualsByMarkerStats(MarkerMap const& map,
+                                    const std::string prefix="",
+                                    const std::string suffix="");
+
+    /**
+     * @brief getSimpleId returns the "id" of the marker which consists of the marker's id value and page number in one single cv::Point3i for easy usage in std::map etc.
+     * @param marker
+     * @return
+     */
+    static cv::Point3i getSimpleId(hdmarker::Corner const & marker);
 
     /**
      * @brief findOutliers finds outliers of the detected markers with a reprojection error above some threshold in one of the images.
