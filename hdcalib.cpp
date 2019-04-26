@@ -3,7 +3,7 @@
 #include "gnuplot-iostream.h"
 
 #include <ceres/ceres.h>
-
+#include <opencv2/optflow.hpp>
 #include <runningstats/runningstats.h>
 
 namespace  {
@@ -143,9 +143,24 @@ cv::Mat_<double> Calib::vec2mat(const std::vector<double> &in) {
     return result;
 }
 
+std::vector<double> Calib::point2vec3f(const Point3f &in) {
+    return {in.x, in.y, in.z};
+}
+
+Point3f Calib::vec2point3f(const std::vector<double> &in) {
+    if (in.size() < 3) {
+        throw std::runtime_error("Less than 3 elements in input vector.");
+    }
+    return cv::Point3f(in[0], in[1], in[2]);
+}
+
 Point3f Calib::getInitial3DCoord(const Corner &c, const double z) {
-    cv::Point3f res(c.id.x, c.id.y, z);
-    switch (c.page) {
+    return getInitial3DCoord(getSimpleId(c), z);
+}
+
+Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) {
+    cv::Point3f res(c.x, c.y, z);
+    switch (c.z) {
     case 1: res.x+= 32; break;
     case 2: res.x += 64; break;
 
@@ -998,11 +1013,116 @@ double Calib::CeresCalib() {
     Solve(options, &problem, &summary);
 
     std::cout << summary.BriefReport() << "\n";
+    std::cout << summary.FullReport() << "\n";
 
     size_t counter = 0;
     for (auto & it : distCoeffs) {
         it = local_dist[counter];
         counter++;
+    }
+
+    for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
+        rvecs[ii] = vec2mat(local_rvecs[ii]);
+        tvecs[ii] = vec2mat(local_tvecs[ii]);
+    }
+
+    if (verbose) {
+        std::cout << "Parameters before: " << std::endl
+                  << "Camera matrix: " << old_cam << std::endl
+                  << "Distortion: " << old_dist << std::endl;
+        std::cout << "Parameters after: " << std::endl
+                  << "Camera matrix: " << cameraMatrix << std::endl
+                  << "Distortion: " << distCoeffs << std::endl;
+        std::cout << "Difference: old - new" << std::endl
+                  << "Camera matrix: " << (old_cam - cameraMatrix) << std::endl
+                  << "Distortion: " << (old_dist - distCoeffs) << std::endl;
+    }
+
+    return 0;
+}
+
+double Calib::CeresCalibFlexibleTarget() {
+
+    // Build the problem.
+    ceres::Problem problem;
+
+    prepareCalibration();
+
+    std::vector<std::vector<double> > local_rvecs(data.size()), local_tvecs(data.size());
+
+    std::vector<double> local_dist = mat2vec(distCoeffs);
+
+    cv::Mat_<double> old_cam = cameraMatrix.clone(), old_dist = distCoeffs.clone();
+
+
+    std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > local_corrections;
+
+    for (const auto& it: data) {
+        for (size_t ii = 0; ii < it.second.size(); ++ii) {
+            cv::Point3i const c = getSimpleId(it.second.get(ii));
+            local_corrections[c] = point2vec3f(objectPointCorrections[c]);
+        }
+    }
+
+    for (size_t ii = 0; ii < data.size(); ++ii) {
+        local_rvecs[ii] = mat2vec(rvecs[ii]);
+        local_tvecs[ii] = mat2vec(tvecs[ii]);
+
+        auto const & sub_data = data[imageFiles[ii]];
+        for (size_t jj = 0; jj < sub_data.size(); ++jj) {
+            cv::Point3i const c = getSimpleId(sub_data.get(jj));
+            ceres::CostFunction * cost_function =
+                    new ceres::AutoDiffCostFunction<
+                    FlexibleTargetProjectionFunctor,
+                    2, // Number of residuals
+                    1, // focal length x
+                    1, // focal length y
+                    1, // principal point x
+                    1, // principal point y
+                    3, // rotation vector for the target
+                    3, // translation vector for the target
+                    3, // correction vector for the 3d marker position
+                    14 // distortion coefficients
+
+                    >(new FlexibleTargetProjectionFunctor(
+                          imagePoints[ii][jj],
+                          objectPoints[ii][jj]
+                          )
+                      );
+            problem.AddResidualBlock(cost_function,
+                                     nullptr, // Loss function (nullptr = L2)
+                                     &cameraMatrix(0,0), // focal length x
+                                     &cameraMatrix(1,1), // focal length y
+                                     &cameraMatrix(0,2), // principal point x
+                                     &cameraMatrix(1,2), // principal point y
+                                     local_rvecs[ii].data(), // rotation vector for the target
+                                     local_tvecs[ii].data(), // translation vector for the target
+                                     local_corrections[c].data(),
+                                     local_dist.data() // distortion coefficients
+                                     );
+        }
+    }
+
+
+    // Run the solver!
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.max_num_iterations = 150;
+    options.minimizer_progress_to_stdout = true;
+    ceres::Solver::Summary summary;
+    Solve(options, &problem, &summary);
+
+    std::cout << summary.BriefReport() << "\n";
+    std::cout << summary.FullReport() << "\n";
+
+    size_t counter = 0;
+    for (auto & it : distCoeffs) {
+        it = local_dist[counter];
+        counter++;
+    }
+
+    for (auto const& it : local_corrections) {
+        objectPointCorrections[it.first] = vec2point3f(it.second);
     }
 
     for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
@@ -1219,12 +1339,27 @@ void Calib::plotResidualsByMarkerStats(
         const string suffix) {
 
     std::vector<std::pair<double, double> > mean_residuals_by_marker;
+    int max_x = 0, max_y = 0;
+    for (auto const& it : map) {
+        cv::Point3f const f_coord = getInitial3DCoord(it.first);
+        max_x = std::max(max_x, 1+int(std::ceil(f_coord.x)));
+        max_y = std::max(max_y, 1+int(std::ceil(f_coord.y)));
+    }
+    cv::Mat_<cv::Vec2f> residuals(max_y, max_x, cv::Vec2f(0,0));
+    cv::Mat_<uint8_t> errors(max_y, max_x, uint8_t(0));
     for (auto const& it : map) {
         const cv::Point2f mean_res = meanResidual(it.second);
         mean_residuals_by_marker.push_back({mean_res.x, mean_res.y});
+        cv::Point3f const f_coord = getInitial3DCoord(it.first);
+        residuals(int(f_coord.y), int(f_coord.x)) = cv::Vec2f(mean_res);
+        errors(int(f_coord.y), int(f_coord.x)) = cv::saturate_cast<uint8_t>(255*std::sqrt(mean_res.dot(mean_res)));
     }
+
     std::stringstream plot_command;
-    std::string plot_name = prefix + ".residuals-by-marker";
+    std::string plot_name = prefix + "residuals-by-marker";
+
+    cv::optflow::writeOpticalFlow(plot_name + "." + suffix + ".flo", residuals);
+    cv::imwrite(plot_name + ".errors." + suffix + ".png", errors);
 
     gnuplotio::Gnuplot plot;
 
@@ -1477,6 +1612,48 @@ bool ProjectionFunctor::operator()(
         residuals[2*ii+1] = result[1] - T(markers[ii].y);
     }
     return true;
+}
+
+FlexibleTargetProjectionFunctor::FlexibleTargetProjectionFunctor(
+        const Point2f &_marker,
+        const Point3f &_point): marker(_marker), point(_point)
+{
+
+}
+
+template<class T>
+bool FlexibleTargetProjectionFunctor::operator()(
+        const T * const f_x,
+        const T * const f_y,
+        const T * const c_x,
+        const T * const c_y,
+        const T * const rvec,
+        const T * const tvec,
+        const T * const correction,
+        const T * const dist,
+        T *residuals) const
+{
+    T rot_mat[9];
+    Calib::rot_vec2mat(rvec, rot_mat);
+    T const f[2] = {f_x[0], f_y[0]};
+    T const c[2] = {c_x[0], c_y[0]};
+    T result[2] = {T(0), T(0)};
+    T const src[3] = {T(point.x) + correction[0],
+                      T(point.y) + correction[1],
+                      T(point.z) + correction[2]};
+    Calib::project(src, result, f, c, rot_mat, tvec, dist);
+    residuals[0] = result[0] - T(marker.x);
+    residuals[1] = result[1] - T(marker.y);
+    return true;
+}
+
+template<class C>
+bool cmpSimpleIndex3<C>::operator()(const C &a, const C &b) const {
+    if (a.z < b.z) return true;
+    if (a.z > b.z) return false;
+    if (a.y < b.y) return true;
+    if (a.y > b.y) return false;
+    return a.x < b.x;
 }
 
 }

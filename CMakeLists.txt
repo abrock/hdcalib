@@ -26,8 +26,6 @@ include_directories(${CERES_INCLUDE_DIRS})
 
 target_link_libraries(hdcalib
   hdmarker
-  ${Boost_FILESYSTEM_LIBRARY}
-  ${Boost_SYSTEM_LIBRARY}
   ${OpenCV_LIBS}
   ${CERES_LIBRARIES}
   ${Boost_FILESYSTEM_LIBRARY}

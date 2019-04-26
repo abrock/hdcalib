@@ -131,6 +131,10 @@ int main(int argc, char* argv[]) {
 
     calib.plotReprojectionErrors("", "ceres");
 
+    calib.CeresCalibFlexibleTarget();
+
+    calib.plotReprojectionErrors("", "ceres2");
+
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
 }

@@ -303,14 +303,39 @@ public:
             T* residuals) const;
 };
 
-struct cmpSimpleIndex {
-    bool operator()(const cv::Point3i& a, const cv::Point3i& b) const {
-        if (a.z < b.z) return true;
-        if (a.z > b.z) return false;
-        if (a.y < b.y) return true;
-        if (a.y > b.y) return false;
-        return a.x < b.x;
-    }
+class FlexibleTargetProjectionFunctor {
+    cv::Point2f const marker;
+    cv::Point3f const point;
+
+public:
+    FlexibleTargetProjectionFunctor(cv::Point2f const& _marker,
+                                    cv::Point3f const& _point);
+    /*
+    1, // focal length x
+    1, // focal length y
+    1, // principal point x
+    1, // principal point y
+    3, // rotation vector for the target
+    3, // translation vector for the target
+    3, // correction vector for the 3d marker position
+    14 // distortion coefficients
+    */
+    template<class T>
+    bool operator()(
+            T const* const f_x,
+            T const* const f_y,
+            T const* const c_x,
+            T const* const c_y,
+            T const* const rvec,
+            T const* const tvec,
+            T const* const correction,
+            T const* const dist,
+            T* residuals) const;
+};
+
+template<class C>
+struct cmpSimpleIndex3 {
+    bool operator()(const C& a, const C& b) const;
 };
 
 class Calib
@@ -330,6 +355,15 @@ class Calib
      * @brief objectPoints storage for 3D points of Corners on the target.
      */
     std::vector<std::vector<cv::Point3f> > objectPoints;
+
+    /**
+     * @brief objectPointCorrections Corrections to the objectPoints
+     * which allow the optimization to account for systematic misplacements
+     * by the marker detection algorithm
+     */
+    std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > objectPointCorrections;
+
+    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > const& corrections) const;
 
     /**
      * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
@@ -447,7 +481,7 @@ class Calib
 public:
     Calib();
 
-    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex> MarkerMap;
+    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex3<cv::Point3i> > MarkerMap;
 
     /**
      * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
@@ -463,6 +497,10 @@ public:
     static std::vector<double> mat2vec(cv::Mat const& in);
 
     static cv::Mat_<double> vec2mat(std::vector<double> const& in);
+
+    static std::vector<double> point2vec3f(cv::Point3f const& in);
+
+    static cv::Point3f vec2point3f(std::vector<double> const& in);
 
     static void white_balance_inplace(cv::Mat & mat, const Point3f white);
 
@@ -547,9 +585,18 @@ public:
 
     static cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0);
 
+    static cv::Point3f getInitial3DCoord(cv::Point3i const& c, double const z = 0);
+
     double openCVCalib();
 
     double CeresCalib();
+
+    /**
+     * @brief CeresCalibFlexibleTarget calibrates the camera using a bundle adjustment
+     * algorithm where the exact locations of the markers are free variables.
+     * @return
+     */
+    double CeresCalibFlexibleTarget();
 
     void plotMarkers(bool plot = true);
 
