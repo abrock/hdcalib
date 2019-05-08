@@ -42,6 +42,11 @@ void Calib::removeOutliers(const double threshold) {
     prepareCalibration();
 }
 
+void Calib::printObjectPointCorrectionsStats(
+        const std::map<Point3i, Point3f, cmpSimpleIndex3<Point3i> > &corrections) const {
+    
+}
+
 void Calib::getReprojections(
         const size_t ii,
         std::vector<Point2d> &markers,
