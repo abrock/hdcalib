@@ -43,6 +43,9 @@ target_link_libraries(hdcalib
 add_executable(hdcalib-tool "main.cpp")
 target_link_libraries(hdcalib-tool hdcalib)
 
+add_executable(extract-green "extract-green.cpp")
+target_link_libraries(extract-green hdcalib)
+
 find_package(GTest REQUIRED)
 add_executable(tests tests.cpp)
 target_link_libraries(tests
