@@ -400,6 +400,28 @@ Mat Calib::read_raw(const string &filename) {
         }
     }
 
+    if ("Sony" == std::string(RawProcessor.imgdata.idata.make)
+            && "ILCE-7RM2" == std::string(RawProcessor.imgdata.idata.model)) {
+        if (verbose) {
+            std::cout << "Known camera detected, scaling result" << std::endl;
+        }
+        //result *= 4;
+        double min = 0, max = 0;
+        if (verbose) {
+            cv::minMaxIdx(result, &min, &max);
+            std::cout << "original min/max: " << min << " / " << max << std::endl;
+        }
+        result.forEach<uint16_t>([&](uint16_t& element, const int position[]) -> void
+        {
+            element *= 4;
+        }
+        );
+        if (verbose) {
+            cv::minMaxIdx(result, &min, &max);
+            std::cout << "scaled min/max: " << min << " / " << max << std::endl;
+        }
+    }
+
 
     return result;
 }
