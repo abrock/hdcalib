@@ -290,6 +290,37 @@ void Calib::normalize_raw_per_channel_inplace(Mat &input) {
 
 }
 
+void printHist(std::ostream& out, runningstats::Histogram const& h, double const threshold = 0) {
+    auto hist = h.getRelativeHist();
+    double threshold_sum = 0;
+    double last_thresh_key = hist.front().first;
+    double prev_key = last_thresh_key;
+    for (auto const& it : hist) {
+        if (it.second > threshold) {
+            if (threshold_sum > 0) {
+                if (last_thresh_key == prev_key) {
+                    out << prev_key << ": " << threshold_sum << std::endl;
+                }
+                else {
+                    out << last_thresh_key << " - " << prev_key << ": " << threshold_sum << std::endl;
+                }
+            }
+            out << it.first << ": " << it.second << std::endl;
+            threshold_sum = 0;
+            last_thresh_key = it.first;
+        }
+        else {
+            threshold_sum += it.second;
+            if (threshold_sum > threshold) {
+                out << last_thresh_key << " - " << prev_key << ": " << threshold_sum << std::endl;
+                threshold_sum = 0;
+                last_thresh_key = it.first;
+            }
+        }
+        prev_key = it.first;
+    }
+}
+
 Mat Calib::read_raw(const string &filename) {
     LibRaw RawProcessor;
 
