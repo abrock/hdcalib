@@ -353,6 +353,35 @@ Mat Calib::read_raw(const string &filename) {
             }
             std::cout << std::endl;
         }
+        runningstats::Histogram r(1),g(1),b(1);
+        for (int jj = 0; jj < S.height; ++jj) {
+            int global_counter = jj * S.raw_width;
+            for (size_t ii = 0; ii < S.height; ++ii, ++global_counter) {
+                int const value = RawProcessor.imgdata.rawdata.raw_image[global_counter];
+                switch(RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)]) {
+                case 'R': r.push(value); break;
+                case 'G': g.push(value); break;
+                case 'B': b.push(value); break;
+                }
+            }
+        }
+        double const hist_threshold = 0.001;
+        std::cout << "R-channel histogram:" << std::endl;
+        printHist(std::cout, r, hist_threshold);
+        std::cout << "G-channel histogram:" << std::endl;
+        printHist(std::cout, g, hist_threshold);
+        std::cout << "B-channel histogram:" << std::endl;
+        printHist(std::cout, b, hist_threshold);
+
+        std::cout << "model2: " << RawProcessor.imgdata.color.model2 << std::endl;
+        std::cout << "UniqueCameraModel: " << RawProcessor.imgdata.color.UniqueCameraModel << std::endl;
+        std::cout << "LocalizedCameraModel: " << RawProcessor.imgdata.color.LocalizedCameraModel << std::endl;
+
+        std::cout << "desc: " << RawProcessor.imgdata.other.desc << std::endl;
+        std::cout << "artist: " << RawProcessor.imgdata.other.artist << std::endl;
+
+        std::cout << "make: " << RawProcessor.imgdata.idata.make << std::endl;
+        std::cout << "model: " << RawProcessor.imgdata.idata.model << std::endl;
     }
 
     if (!(RawProcessor.imgdata.idata.filters || RawProcessor.imgdata.idata.colors == 1)) {
