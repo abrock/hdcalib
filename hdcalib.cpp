@@ -4,6 +4,7 @@
 
 #include <ceres/ceres.h>
 #include <opencv2/optflow.hpp>
+#include <opencv2/video/tracking.hpp>
 #include <runningstats/runningstats.h>
 
 namespace  {
@@ -510,7 +511,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             resolution_known = true;
         }
         else {
-            img = cv::imread(input_file, CV_LOAD_IMAGE_GRAYSCALE);
+            img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
             setImageSize(img);
         }
     }
@@ -521,7 +522,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 img = read_raw(input_file);
             }
             else {
-                img = cv::imread(input_file, CV_LOAD_IMAGE_GRAYSCALE);
+                img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
             }
             setImageSize(img);
             double min_val = 0, max_val = 0;
@@ -585,21 +586,21 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
             circle(paint, c.p, 1, Scalar(0,0,0,0), 2);
             circle(paint, c.p, 1, Scalar(0,255,0,0));
-            putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, Scalar(0,0,0,0), 2, CV_AA);
-            putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, font_color, 1, CV_AA);
+            putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, Scalar(0,0,0,0), 2, cv::LINE_AA);
+            putText(paint, text.c_str(), c.p, FONT_HERSHEY_PLAIN, 1.2, font_color, 1, cv::LINE_AA);
 
             std::string const text_page = to_string(c.page);
             double font_size = 2;
             cv::Point2f const point_page = c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5);
-            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, CV_AA);
-            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, CV_AA);
+            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, cv::LINE_AA);
+            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, cv::LINE_AA);
         }
         imwrite(input_file + "-1.png", paint);
     }
 
     Mat gray;
     if (img.channels() != 1) {
-        cvtColor(img, gray, CV_BGR2GRAY);
+        cvtColor(img, gray, cv::COLOR_BGR2GRAY);
     }
     else {
         gray = img;
@@ -1445,7 +1446,7 @@ void Calib::plotResidualsByMarkerStats(
     std::stringstream plot_command;
     std::string plot_name = prefix + "residuals-by-marker";
 
-    cv::optflow::writeOpticalFlow(plot_name + "." + suffix + ".flo", residuals);
+    cv::writeOpticalFlow(plot_name + "." + suffix + ".flo", residuals);
     cv::imwrite(plot_name + ".errors." + suffix + ".png", errors);
 
     gnuplotio::Gnuplot plot;
