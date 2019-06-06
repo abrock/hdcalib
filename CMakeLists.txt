@@ -5,7 +5,10 @@ SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Werror -pedantic")
 project(hdcalib)
 
 FIND_PACKAGE(OpenCV REQUIRED)
-INCLUDE_DIRECTORIES(${OpenCV_Include_Dirs})
+INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
+
+FIND_PACKAGE(Eigen3 REQUIRED)
+INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIRS})
 
 find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
@@ -36,20 +39,19 @@ target_link_libraries(hdcalib
   raw
 )
 
-
-
-
-
 add_executable(hdcalib-tool "main.cpp")
-target_link_libraries(hdcalib-tool hdcalib)
 
 add_executable(extract-green "extract-green.cpp")
-target_link_libraries(extract-green hdcalib)
+
+add_executable(hdcalib-localize-exception "localize-exception.cpp")
+
+foreach(program hdcalib-tool extract-green hdcalib-localize-exception)
+    target_link_libraries(${program} hdcalib)
+endforeach()
 
 find_package(GTest REQUIRED)
 add_executable(tests tests.cpp)
 target_link_libraries(tests
-  hdmarker
   hdcalib
   ${GTEST_BOTH_LIBRARIES}
   )
