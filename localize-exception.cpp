@@ -198,10 +198,10 @@ int main(int argc, char* argv[]) {
         TCLAP::SwitchArg only_green_arg("", "only-green", "Set this flag true if only the green channel of a bayer image should be used. This implies demosaic, in this case bilinear demosaicing of the green channel only.", false);
         cmd.add(only_green_arg);
 
-        TCLAP::ValueArg<std::string> input_img_arg("i", "input", "Input image, should contain markers", true, "", "string");
+        TCLAP::ValueArg<std::string> input_img_arg("i", "input", "Input image, should contain markers", true, "", "Input image");
         cmd.add(input_img_arg);
 
-        TCLAP::ValueArg<std::string> executable_arg("", "ex", "path of the extractMarker executable", true, "", "string");
+        TCLAP::ValueArg<std::string> executable_arg("", "ex", "path of the extractMarker executable", true, "", "path of the extractMarker executable");
         cmd.add(executable_arg);
 
         cmd.parse(argc, argv);
