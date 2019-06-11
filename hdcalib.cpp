@@ -516,7 +516,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
     }
 
-    if (plot_markers) {
+    if (plot_markers || !read_cache_success) {
         if (demosaic) {
             if (raw) {
                 img = read_raw(input_file);
