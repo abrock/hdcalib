@@ -1009,11 +1009,22 @@ double Calib::openCVCalib() {
                 cv::CALIB_TILTED_MODEL
                 );
 
+    std::cout << "RMSE: " << result_err << std::endl;
     std::cout << "Camera Matrix: " << std::endl << cameraMatrix << std::endl;
     std::cout << "distCoeffs: " << std::endl << distCoeffs << std::endl;
     std::cout << "stdDevIntrinsics: " << std::endl << stdDevIntrinsics << std::endl;
     std::cout << "stdDevExtrinsics: " << std::endl << stdDevExtrinsics << std::endl;
     std::cout << "perViewErrors: " << std::endl << perViewErrors << std::endl;
+
+    std::cout << "rvecs: " << std::endl;
+    for (auto const& rvec: rvecs) {
+        std::cout << rvec << std::endl;
+    }
+
+    std::cout << "tvecs: " << std::endl;
+    for (auto const& tvec: tvecs) {
+        std::cout << tvec << std::endl;
+    }
 
     cv::calibrationMatrixValues (
                 cameraMatrix,
