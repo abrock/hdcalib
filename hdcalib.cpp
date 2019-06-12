@@ -116,7 +116,7 @@ void Calib::prepareCalibration()
     imageFiles.resize(data.size());
 
     size_t ii = 0;
-    for (auto const& it : data) {
+    for (std::pair<std::string, CornerStore> const& it : data) {
         it.second.getPoints(imagePoints[ii], objectPoints[ii]);
         imageFiles[ii] = it.first;
         ++ii;
