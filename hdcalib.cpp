@@ -1332,6 +1332,8 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 
     runningstats::Histogram error_hist(.1);
 
+    runningstats::RunningCovariance proj_x, proj_y;
+
     std::vector<cv::Point2d> markers, reprojections;
 
     getReprojections(image_index, markers, reprojections);
@@ -1342,14 +1344,22 @@ void Calib::plotReprojectionErrors(const size_t image_index,
         data.push_back({markers[ii].x, markers[ii].y,
                         reprojections[ii].x, reprojections[ii].y,
                         error});
+        proj_x.push(markers[ii].x, reprojections[ii].x);
+        proj_y.push(markers[ii].y, reprojections[ii].y);
         auto const id = getSimpleId(store.get(ii));
         residuals_by_marker[id].push_back(std::make_pair(markers[ii], reprojections[ii]));
         errors.push_back(error);
         error_hist.push(error);
     }
 
+
     std::cout << "Error stats for image " << filename << ": "
-              << std::endl << error_hist.printBoth() << std::endl << std::endl;
+              << std::endl << error_hist.printBoth() << std::endl;
+
+    std::cout << "Covariance between marker x-values and reprojection x-values: " << proj_x.getCorr() << std::endl;
+    std::cout << "Covariance between marker y-values and reprojection y-values: " << proj_y.getCorr() << std::endl;
+
+    std::cout << std::endl;
 
     std::sort(errors.begin(), errors.end());
 
