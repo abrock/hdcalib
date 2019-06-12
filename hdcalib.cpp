@@ -173,6 +173,8 @@ Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) {
     case 3: res.y += 32; break;
     case 4: res.y += 32; res.x += 32; break;
     case 5: res.y += 32; res.x += 64; break;
+
+    case 7: res.x += 32; break;
     }
 
     return res;
