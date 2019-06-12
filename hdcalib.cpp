@@ -1378,7 +1378,18 @@ void Calib::plotReprojectionErrors(const size_t image_index,
                  << "set output \"" << plot_name + ".vectors." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
                  << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
-                 << " w vectors notitle;\n"
+                 << " u 1:2:($3-$1):($4-$2) w vectors notitle;\n"
+                 << "reset;\n"
+                 << "set output \"" << plot_name + ".vectors." << suffix << ".2.svg\";\n"
+                 << "set title 'Reprojection Residuals';\n"
+                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
+                 << " u 3:4:($1-$3):($2-$4) w vectors notitle;\n"
+                 << "reset;\n"
+                 << "set key out horiz;\n"
+                 << "set output \"" << plot_name + ".images." << suffix << ".svg\";\n"
+                 << "set title 'Reprojection vs. original';\n"
+                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
+                 << " u 1:2 w points title 'detected', \"" << plot_name + ".residuals." + suffix << ".data\" u 3:4 w points title 'reprojected';\n"
                  << "set output \"" << plot_name + ".error-dist." << suffix << ".svg\";\n"
                  << "set title 'CDF of the Reprojection Error';\n"
                  << "set xlabel 'error';\n"
