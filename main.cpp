@@ -7,10 +7,22 @@
 */
 
 #include <exception>
+#include <boost/filesystem.hpp>
 
 #include <tclap/CmdLine.h>
 
 #include "hdcalib.h"
+
+namespace fs = boost::filesystem;
+
+void trim(std::string &s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
+        return !std::isspace(ch);
+    }));
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) {
+        return !std::isspace(ch);
+    }).base(), s.end());
+}
 
 int main(int argc, char* argv[]) {
 
@@ -45,13 +57,22 @@ int main(int argc, char* argv[]) {
                                       false);
         cmd.add(read_raw_arg);
 
-        TCLAP::SwitchArg plot_markers_arg("", "plot", "Use this flag if the detected markers should be painted into the input images", false);
+        TCLAP::SwitchArg plot_markers_arg("p", "plot", "Use this flag if the detected markers should be painted into the input images", false);
         cmd.add(plot_markers_arg);
 
-        TCLAP::SwitchArg only_green_arg("", "only-green", "Set this flag true if only the green channel of a bayer image should be used. This implies demosaic, in this case bilinear demosaicing of the green channel only.", false);
+        TCLAP::SwitchArg only_green_arg("g", "only-green", "Set this flag true if only the green channel of a bayer image should be used."
+                                                           "In the case of demosaicing this means that the missing green pixels"
+                                                           "are interpolated bilinear.", false);
         cmd.add(only_green_arg);
 
-        TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input", "Input images, should contain markers", true, "Input images");
+        TCLAP::MultiArg<std::string> textfile_arg("i",
+                                                  "input",
+                                                  "Text file containing a list of image paths relative to the working directory.",
+                                                  false,
+                                                  "Text file with a list of input images.");
+        cmd.add(textfile_arg);
+
+        TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input_img", "Input images, should contain markers.", false, "Input images.");
         cmd.add(input_img_arg);
 
         cmd.parse(argc, argv);
@@ -62,8 +83,30 @@ int main(int argc, char* argv[]) {
         effort = effort_arg.getValue();
         libraw = read_raw_arg.getValue();
         only_green = only_green_arg.getValue();
-        demosaic = demosaic_arg.getValue() || libraw || only_green;
+        demosaic = demosaic_arg.getValue() || libraw;
         plot_markers = plot_markers_arg.getValue();
+        std::vector<std::string> const textfiles = textfile_arg.getValue();
+
+        for (std::string const& file : textfiles) {
+            if (!fs::is_regular_file(file)) {
+                continue;
+            }
+            std::ifstream in(file);
+            std::string line;
+            while (std::getline(in, line)) {
+                trim(line);
+                if (fs::is_regular_file(line)) {
+                    input_files.push_back(line);
+                }
+            }
+        }
+
+        if (input_files.empty()) {
+            std::cerr << "Fatal error: No input files specified." << std::endl;
+            cmd.getOutput()->usage(cmd);
+
+            return EXIT_FAILURE;
+        }
 
         std::cout << "Parameters: " << std::endl
                   << "Number of input files: " << input_files.size() << std::endl
