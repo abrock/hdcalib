@@ -79,7 +79,7 @@ void Calib::getReprojections(
 
     double dist[14];
     for (size_t jj = 0; jj < 14; ++jj) {
-        dist[jj] = distCoeffs(jj);
+        dist[jj] = distCoeffs.cols > jj ? distCoeffs(jj) : 0;
     }
 
     double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
