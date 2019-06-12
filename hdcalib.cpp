@@ -993,6 +993,16 @@ bool CornerStore::purge32() {
 double Calib::openCVCalib() {
     prepareCalibration();
 
+    int flags = 0;
+    flags |= CALIB_FIX_PRINCIPAL_POINT;
+    flags |= CALIB_FIX_ASPECT_RATIO;
+
+    if (imageSize.height == 5320 && imageSize.width == 7968) { // Hacky detection of my Sony setup.
+        cameraMatrix = (Mat_<double>(3,3) << 12222, 0, 3984, 0, 12222, 2660, 0, 0, 1);
+        flags |= CALIB_USE_INTRINSIC_GUESS;
+    }
+    std::cout << "Initial camera matrix: " << std::endl << cameraMatrix << std::endl;
+
     double result_err = cv::calibrateCamera (
                 objectPoints,
                 imagePoints,
@@ -1004,9 +1014,7 @@ double Calib::openCVCalib() {
                 stdDevIntrinsics,
                 stdDevExtrinsics,
                 perViewErrors,
-                cv::CALIB_RATIONAL_MODEL |
-                CALIB_THIN_PRISM_MODEL |
-                cv::CALIB_TILTED_MODEL
+                flags
                 );
 
     std::cout << "RMSE: " << result_err << std::endl;
