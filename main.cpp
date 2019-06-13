@@ -176,6 +176,8 @@ int main(int argc, char* argv[]) {
 
     calib.CeresCalibFlexibleTarget();
 
+    calib.printObjectPointCorrectionsStats();
+
     calib.plotReprojectionErrors("", "ceres2");
 
     //  microbench_measure_output("app finish");
