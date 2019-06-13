@@ -483,6 +483,10 @@ cv::Size Calib::read_raw_imagesize(const string &filename) {
     return cv::Size(S.width, S.height);
 }
 
+void Calib::printObjectPointCorrectionsStats() {
+    printObjectPointCorrectionsStats(objectPointCorrections);
+}
+
 CornerStore Calib::getUnion() const {
     CornerStore res;
     for (const auto& it : data) {
