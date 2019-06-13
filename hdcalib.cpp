@@ -1192,6 +1192,25 @@ double Calib::CeresCalib() {
     return 0;
 }
 
+struct LocalCorrectionsSum {
+    /**
+    std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& local_corrections;
+    LocalCorrectionsSum(std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& _local_corrections) :
+        local_corrections(_local_corrections) {}
+    **/
+
+    LocalCorrectionsSum() {}
+    template<class T>
+    bool operator () (
+            T const * const correction,
+            T *residuals) const {
+        for (size_t ii = 0; ii < 3; ++ii) {
+            residuals[ii] = correction[ii];
+        }
+        return true;
+    }
+};
+
 double Calib::CeresCalibFlexibleTarget() {
 
     // Build the problem.
@@ -1215,6 +1234,8 @@ double Calib::CeresCalibFlexibleTarget() {
         }
     }
 
+    std::set<cv::Point3i, cmpSimpleIndex3<cv::Point3i> > ids;
+
     for (size_t ii = 0; ii < data.size(); ++ii) {
         local_rvecs[ii] = mat2vec(rvecs[ii]);
         local_tvecs[ii] = mat2vec(tvecs[ii]);
@@ -1222,36 +1243,49 @@ double Calib::CeresCalibFlexibleTarget() {
         auto const & sub_data = data[imageFiles[ii]];
         for (size_t jj = 0; jj < sub_data.size(); ++jj) {
             cv::Point3i const c = getSimpleId(sub_data.get(jj));
-            ceres::CostFunction * cost_function =
-                    new ceres::AutoDiffCostFunction<
-                    FlexibleTargetProjectionFunctor,
-                    2, // Number of residuals
-                    1, // focal length x
-                    1, // focal length y
-                    1, // principal point x
-                    1, // principal point y
-                    3, // rotation vector for the target
-                    3, // translation vector for the target
-                    3, // correction vector for the 3d marker position
-                    14 // distortion coefficients
+            ids.insert(c);
+            {
+                ceres::CostFunction * cost_function =
+                        new ceres::AutoDiffCostFunction<
+                        FlexibleTargetProjectionFunctor,
+                        2, // Number of residuals
+                        1, // focal length x
+                        1, // focal length y
+                        1, // principal point x
+                        1, // principal point y
+                        3, // rotation vector for the target
+                        3, // translation vector for the target
+                        3, // correction vector for the 3d marker position
+                        14 // distortion coefficients
 
-                    >(new FlexibleTargetProjectionFunctor(
-                          imagePoints[ii][jj],
-                          objectPoints[ii][jj]
-                          )
-                      );
-            problem.AddResidualBlock(cost_function,
-                                     nullptr, // Loss function (nullptr = L2)
-                                     &cameraMatrix(0,0), // focal length x
-                                     &cameraMatrix(1,1), // focal length y
-                                     &cameraMatrix(0,2), // principal point x
-                                     &cameraMatrix(1,2), // principal point y
-                                     local_rvecs[ii].data(), // rotation vector for the target
-                                     local_tvecs[ii].data(), // translation vector for the target
-                                     local_corrections[c].data(),
-                                     local_dist.data() // distortion coefficients
-                                     );
+                        >(new FlexibleTargetProjectionFunctor(
+                              imagePoints[ii][jj],
+                              objectPoints[ii][jj]
+                              )
+                          );
+                problem.AddResidualBlock(cost_function,
+                                         nullptr, // Loss function (nullptr = L2)
+                                         &cameraMatrix(0,0), // focal length x
+                                         &cameraMatrix(1,1), // focal length y
+                                         &cameraMatrix(0,2), // principal point x
+                                         &cameraMatrix(1,2), // principal point y
+                                         local_rvecs[ii].data(), // rotation vector for the target
+                                         local_tvecs[ii].data(), // translation vector for the target
+                                         local_corrections[c].data(),
+                                         local_dist.data() // distortion coefficients
+                                         );
+            }
         }
+    }
+
+    for (cv::Point3i const& it : ids) {
+        ceres::CostFunction* cost_function =
+                new ceres::AutoDiffCostFunction<LocalCorrectionsSum, 3, 3>(
+                    new LocalCorrectionsSum());
+        problem.AddResidualBlock(cost_function,
+                                 nullptr, // Loss function (nullptr = L2)
+                                 local_corrections[it].data() // correction
+                                 );
     }
 
 
