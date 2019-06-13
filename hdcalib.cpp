@@ -88,6 +88,7 @@ void Calib::getReprojections(
     auto const& imgPoints = imagePoints[ii];
     auto const& objPoints = objectPoints[ii];
     std::string const& filename = imageFiles[ii];
+    CornerStore const& store = data[filename];
     cv::Mat const& rvec = rvecs[ii];
     cv::Mat const& tvec = tvecs[ii];
 
@@ -119,7 +120,9 @@ void Calib::getReprojections(
 
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
-        vec2arr(p, objPoints[jj]);
+        cv::Point3f current_objPoint = objPoints[jj] + objectPointCorrections[getSimpleId(store.get(jj))];
+
+        vec2arr(p, current_objPoint);
         cv::Point2d marker_pos(imgPoints[jj]);
         project(p, result, focal, principal, R, t, dist);
         cv::Point2d res(result[0], result[1]);
