@@ -57,7 +57,27 @@ void Calib::removeOutliers(const double threshold) {
 
 void Calib::printObjectPointCorrectionsStats(
         const std::map<Point3i, Point3f, cmpSimpleIndex3<Point3i> > &corrections) const {
-    
+    runningstats::RunningStats dx, dy, dz, abs_dx, abs_dy, abs_dz, length;
+    for (std::pair<cv::Point3i, cv::Point3f> const& it : corrections) {
+        dx.push(it.second.x);
+        dy.push(it.second.y);
+        dz.push(it.second.z);
+
+        abs_dx.push(std::abs(it.second.x));
+        abs_dy.push(std::abs(it.second.y));
+        abs_dz.push(std::abs(it.second.z));
+
+        length.push(std::sqrt(it.second.dot(it.second)));
+    }
+    std::cout << "Object point correction stats: " << std::endl
+              << "dx: " << dx.print() << std::endl
+              << "dy: " << dy.print() << std::endl
+              << "dz: " << dz.print() << std::endl
+              << "abs(dx): " << abs_dx.print() << std::endl
+              << "abs(dy): " << abs_dy.print() << std::endl
+              << "abs(dz): " << abs_dz.print() << std::endl
+              << "length: " << length.print() << std::endl
+              << std::endl;
 }
 
 void Calib::getReprojections(
