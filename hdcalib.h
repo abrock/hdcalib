@@ -648,6 +648,8 @@ public:
             const bool raw);
 
     cv::Size read_raw_imagesize(const string &filename);
+
+    void printObjectPointCorrectionsStats();
 };
 
 }
