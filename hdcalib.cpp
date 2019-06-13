@@ -37,8 +37,20 @@ void Calib::removeOutliers(const double threshold) {
         return;
     }
     CornerStore subtrahend(outliers);
+    std::stringstream msg;
+    msg << "Oulier percentage by image:" << std::endl;
+    runningstats::RunningStats percent_stats;
     for (auto& it : data) {
+        size_t const before = it.second.size();
         it.second.difference(subtrahend);
+        size_t const after = it.second.size();
+        double const percent = (double(before - after)/before)*100.0;
+        percent_stats.push(percent);
+        msg << it.first << ": removed " << (before-after) << " out of " << before << " corners (" << percent << "%)" << std::endl;
+    }
+    msg << "Removeal percentage stats: " << percent_stats.print() << std::endl;
+    if (verbose) {
+        std::cout << msg.str() << std::endl;
     }
     prepareCalibration();
 }
