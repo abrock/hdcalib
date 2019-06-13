@@ -1264,7 +1264,7 @@ double Calib::CeresCalibFlexibleTarget() {
                               )
                           );
                 problem.AddResidualBlock(cost_function,
-                                         nullptr, // Loss function (nullptr = L2)
+                                         new ceres::CauchyLoss(0.5), // Loss function (nullptr = L2)
                                          &cameraMatrix(0,0), // focal length x
                                          &cameraMatrix(1,1), // focal length y
                                          &cameraMatrix(0,2), // principal point x
