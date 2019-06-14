@@ -166,19 +166,21 @@ int main(int argc, char* argv[]) {
 
     calib.plotReprojectionErrors("", "initial");
 
-    calib.removeOutliers(1.5);
-
-    calib.plotReprojectionErrors("", "outliers");
-
     calib.CeresCalib();
 
     calib.plotReprojectionErrors("", "ceres");
+
+    calib.removeOutliers(150);
+
+    calib.CeresCalib();
+
+    calib.plotReprojectionErrors("", "ceres2");
 
     calib.CeresCalibFlexibleTarget();
 
     calib.printObjectPointCorrectionsStats();
 
-    calib.plotReprojectionErrors("", "ceres2");
+    calib.plotReprojectionErrors("", "ceres3");
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

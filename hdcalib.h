@@ -112,6 +112,8 @@ public:
     }
 };
 
+class Calib;
+
 class CornerStore {
 private:
     /**
@@ -271,7 +273,8 @@ public:
 
     void getPoints(
             std::vector<cv::Point2f>& imagePoints,
-            std::vector<cv::Point3f> & objectPoints) const;
+            std::vector<cv::Point3f> & objectPoints,
+            hdcalib::Calib const& calib) const;
 
 };
 
@@ -478,6 +481,13 @@ class Calib
      * @brief prepareCalibration fills the containers imagePoints, objectPoints and imageFiles.
      */
     void prepareCalibration();
+
+    /**
+     * @brief cornerIdFactor Scale factor for the corner IDs when using submarkers.
+     * Without submarkers corner id values are in [0...32].
+     */
+    int cornerIdFactor = 1;
+
 public:
     Calib();
 
@@ -583,9 +593,9 @@ public:
     static void rot_vec2mat(T const vec[3], T mat[9]);
 
 
-    static cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0);
+    cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0) const;
 
-    static cv::Point3f getInitial3DCoord(cv::Point3i const& c, double const z = 0);
+    cv::Point3f getInitial3DCoord(cv::Point3i const& c, double const z = 0) const;
 
     double openCVCalib();
 

@@ -152,7 +152,7 @@ void Calib::prepareCalibration()
 
     size_t ii = 0;
     for (std::pair<std::string, CornerStore> const& it : data) {
-        it.second.getPoints(imagePoints[ii], objectPoints[ii]);
+        it.second.getPoints(imagePoints[ii], objectPoints[ii], *this);
         imageFiles[ii] = it.first;
         ++ii;
     }
@@ -195,11 +195,11 @@ Point3f Calib::vec2point3f(const std::vector<double> &in) {
     return cv::Point3f(in[0], in[1], in[2]);
 }
 
-Point3f Calib::getInitial3DCoord(const Corner &c, const double z) {
+Point3f Calib::getInitial3DCoord(const Corner &c, const double z) const {
     return getInitial3DCoord(getSimpleId(c), z);
 }
 
-Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) {
+Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
     cv::Point3f res(c.x, c.y, z);
     switch (c.z) {
     case 1: res.x+= 32; break;
@@ -503,20 +503,18 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                                  const int recursion_depth,
                                  const bool raw) {
     std::string pointcache_file = input_file + "-pointcache.yaml";
-    vector<Corner> corners;
+    std::string submarkers_file = input_file + "-submarkers.yaml";
+    vector<Corner> corners, submarkers;
+
     bool read_cache_success = false;
-
-
-
     try {
         if (fs::exists(pointcache_file)) {
             read_cache_success = true;
             FileStorage pointcache(pointcache_file, FileStorage::READ);
             FileNode n = pointcache["corners"]; // Read string sequence - Get node
-            if (n.type() != FileNode::SEQ)
-            {
-                cerr << "corners is not a sequence! FAIL" << endl;
+            if (n.type() != FileNode::SEQ) {
                 read_cache_success = false;
+                throw std::runtime_error("Corners is not a sequence! FAIL");
             }
 
             FileNodeIterator it = n.begin(), it_end = n.end(); // Go through the node
@@ -533,10 +531,39 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                   << e.what() << std::endl;
         read_cache_success = false;
     }
-
     if (read_cache_success) {
         corners = filter_duplicate_markers(corners);
         std::cout << "Got corners from pointcache file" << std::endl;
+    }
+
+    bool read_submarkers_success = false;
+    try {
+        if (fs::exists(submarkers_file)) {
+            read_submarkers_success = true;
+            FileStorage pointcache(submarkers_file, FileStorage::READ);
+            FileNode n = pointcache["corners"]; // Read string sequence - Get node
+            if (n.type() != FileNode::SEQ) {
+                read_submarkers_success = false;
+                throw std::runtime_error("Corners is not a sequence! FAIL");
+            }
+
+            FileNodeIterator it = n.begin(), it_end = n.end(); // Go through the node
+            for (; it != it_end; ++it) {
+                hdmarker::Corner c;
+                *it >> c;
+                submarkers.push_back(c);
+            }
+
+        }
+    }
+    catch (const Exception& e) {
+        std::cout << "Reading pointcache file failed with exception: " << std::endl
+                  << e.what() << std::endl;
+        read_submarkers_success = false;
+    }
+    if (read_submarkers_success) {
+        submarkers = filter_duplicate_markers(submarkers);
+        std::cout << "Got corners from submarkers file" << std::endl;
     }
 
 
@@ -557,7 +584,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
     }
 
-    if (plot_markers || !read_cache_success) {
+    if (plot_markers || !read_cache_success || (recursion_depth > 0 && !read_submarkers_success)) {
         if (demosaic) {
             if (raw) {
                 img = read_raw(input_file);
@@ -649,20 +676,52 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     if (recursion_depth > 0) {
         std::cout << "Drawing sub-markers" << std::endl;
-        vector<Corner> corners_sub;
         double msize = 1.0;
-        if (!read_cache_success) {
-            hdmarker::refine_recursive(gray, corners, corners_sub, 3, &msize);
+        if (!read_submarkers_success) {
+            hdmarker::refine_recursive(gray, corners, submarkers, recursion_depth, &msize);
         }
+        FileStorage pointcache(submarkers_file, FileStorage::WRITE);
+        pointcache << "corners" << "[";
+        for (hdmarker::Corner const& c : submarkers) {
+            pointcache << c;
+        }
+        pointcache << "]";
 
-        vector<Corner> corners_f2;
         if (plot_markers) {
             cv::Mat paint2 = paint.clone();
-            for (hdmarker::Corner const& c : corners_f2) {
+            for (hdmarker::Corner const& c : submarkers) {
                 circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
             }
             imwrite(input_file + "-2.png", paint2);
         }
+
+        if (submarkers.size() < corners.size()) {
+            throw std::runtime_error(std::string("Number of submarkers (") + std::to_string(submarkers.size())
+                                     + ") smaller than number of corners (" + std::to_string(corners.size()) + "), aborting.");
+        }
+#pragma omp critical
+        if (1 == cornerIdFactor) {
+            cornerIdFactor = submarkers[0].id.x / corners[0].id.x;
+        }
+        for (size_t ii = 0; ii < corners.size(); ++ii) {
+            { // Checking the factor for x:
+                const int current_factor = submarkers[ii].id.x / corners[ii].id.x;
+                if (current_factor != cornerIdFactor) {
+                    throw std::runtime_error(std::string("Factor for x at corner #") + std::to_string(ii) +
+                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
+                                             std::to_string(cornerIdFactor) + "), aborting.");
+                }
+            }
+            { // Checking the factor for y:
+                const int current_factor = submarkers[ii].id.y / corners[ii].id.y;
+                if (current_factor != cornerIdFactor) {
+                    throw std::runtime_error(std::string("Factor for y at corner #") + std::to_string(ii) +
+                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
+                                             std::to_string(cornerIdFactor) + "), aborting.");
+                }
+            }
+        }
+
     }
 
     FileStorage pointcache(pointcache_file, FileStorage::WRITE);
@@ -672,6 +731,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     pointcache << "]";
 
+    if (recursion_depth > 0) {
+        return submarkers;
+    }
     return corners;
 
 }
@@ -732,7 +794,8 @@ void CornerStore::add(const std::vector<Corner> &vec) {
 
 void CornerStore::getPoints(
         std::vector<Point2f> &imagePoints,
-        std::vector<Point3f> &objectPoints) const {
+        std::vector<Point3f> &objectPoints,
+        hdcalib::Calib const& calib) const {
     imagePoints.clear();
     imagePoints.reserve(size());
 
@@ -740,7 +803,7 @@ void CornerStore::getPoints(
     objectPoints.reserve(size());
     for (size_t ii = 0; ii < size(); ++ii) {
         imagePoints.push_back(get(ii).p);
-        objectPoints.push_back(Calib::getInitial3DCoord(get(ii)));
+        objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
     }
 }
 
@@ -1420,6 +1483,8 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 
     runningstats::RunningCovariance proj_x, proj_y;
 
+    runningstats::QuantileStats<double> error_stats;
+
     std::vector<cv::Point2d> markers, reprojections;
 
     getReprojections(image_index, markers, reprojections);
@@ -1435,12 +1500,19 @@ void Calib::plotReprojectionErrors(const size_t image_index,
         auto const id = getSimpleId(store.get(ii));
         residuals_by_marker[id].push_back(std::make_pair(markers[ii], reprojections[ii]));
         errors.push_back(error);
+        error_stats.push(error);
         error_hist.push(error);
     }
 
 
     std::cout << "Error stats for image " << filename << ": "
-              << std::endl << error_hist.printBoth() << std::endl;
+              << std::endl << error_hist.printBoth() << ", quantiles for .25, .5, .75, .9, .95: "
+              << error_stats.getQuantile(.25) << ", "
+              << error_stats.getQuantile(.5) << ", "
+              << error_stats.getQuantile(.75) << ", "
+              << error_stats.getQuantile(.9) << ", "
+              << error_stats.getQuantile(.95) << ", "
+              << std::endl;
 
     std::cout << "Covariance between marker x-values and reprojection x-values: " << proj_x.getCorr() << std::endl;
     std::cout << "Covariance between marker y-values and reprojection y-values: " << proj_y.getCorr() << std::endl;
