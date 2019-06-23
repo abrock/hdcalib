@@ -494,6 +494,13 @@ public:
     typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex3<cv::Point3i> > MarkerMap;
 
     /**
+     * @brief hasFile checks if the given file is already known to the class.
+     * @param filename
+     * @return
+     */
+    bool hasFile(std::string const filename) const;
+
+    /**
      * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
      * @param threshold error threshold in px.
      */
@@ -629,6 +636,14 @@ public:
 
     void addInputImage(std::string const filename, std::vector<hdmarker::Corner> const& corners);
 
+    /**
+     * @brief addInputImageAfterwards Adds an input image to the dataset after the initial calibration is finished.
+     * The rvec and tvec for the calibration target are estimated via solvePNP
+     * @param filename
+     * @param corners
+     */
+    void addInputImageAfterwards(std::string const filename, std::vector<hdmarker::Corner> const& corners);
+
     void addInputImage(std::string const filename, CornerStore const& corners);
 
     /**
@@ -681,6 +696,16 @@ public:
      * @param node
      */
     void read(const cv::FileNode& node);
+
+    template<class T, class T1, class T2>
+    /**
+     * @brief insertSorted Sorts vector a using the default comparison operator of T assuming that the vector is already sorted except for the last element.
+     * The vectors b and c are simultaneously updated so the relationship between elements of a, b and c are maintained.
+     * @param a primary vector used for sorting.
+     * @param b
+     * @param c
+     */
+    static void insertSorted(std::vector<T> &a, std::vector<T1> &b, std::vector<T2> &c);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

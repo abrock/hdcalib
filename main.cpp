@@ -169,13 +169,23 @@ int main(int argc, char* argv[]) {
 
     if (has_cached_calib) {
         calib.CeresCalibFlexibleTarget();
-
         calib.removeOutliers(2);
-
         calib.CeresCalibFlexibleTarget();
 
-        calib.printObjectPointCorrectionsStats();
+        bool found_new_files = false;
+        for (auto const& it : detected_markers) {
+            if (!calib.hasFile(it.first)) {
+                calib.addInputImageAfterwards(it.first, it.second);
+                found_new_files = true;
+            }
+        }
+        if (found_new_files) {
+            calib.CeresCalibFlexibleTarget();
+            calib.removeOutliers(2);
+            calib.CeresCalibFlexibleTarget();
+        }
 
+        calib.printObjectPointCorrectionsStats();
         //*
         calib.plotReprojectionErrors("", "ceres3");
 

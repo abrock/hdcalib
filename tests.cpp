@@ -1076,6 +1076,98 @@ TEST(CalibrationResult, rot_vec2mat) {
     }
 }
 
+template<class T1, class T2, class T3>
+void printArrays(std::vector<T1> const& a, std::vector<T2> const& b, std::vector<T3> const& c) {
+    for (size_t ii = 0; ii < a.size() && ii < b.size() && ii < c.size(); ++ii) {
+        std::cout << a[ii] << "\t" << b[ii] << "\t" << c[ii] << std::endl;
+    }
+    std::cout << std::endl;
+}
+
+TEST(Calib, insertSorted) {
+    std::vector<std::string> a = {"a", "b", "z", "c"};
+    std::vector<std::string> b = {"1", "2", "26", "3"};
+    std::vector<std::string> c = {"alpha", "beta", "omega", "gamma"};
+
+    hdcalib::Calib::insertSorted(a, b, c);
+
+    printArrays(a,b,c);
+
+    EXPECT_EQ(a[0], "a");
+    EXPECT_EQ(a[1], "b");
+    EXPECT_EQ(a[2], "c");
+    EXPECT_EQ(a[3], "z");
+
+    EXPECT_EQ(b[0], "1");
+    EXPECT_EQ(b[1], "2");
+    EXPECT_EQ(b[2], "3");
+    EXPECT_EQ(b[3], "26");
+
+    EXPECT_EQ(c[0], "alpha");
+    EXPECT_EQ(c[1], "beta");
+    EXPECT_EQ(c[2], "gamma");
+    EXPECT_EQ(c[3], "omega");
+}
+
+std::string random_string( size_t length ) {
+    auto randchar = []() -> char
+    {
+            const char charset[] =
+            "0123456789"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "abcdefghijklmnopqrstuvwxyz";
+            const size_t max_index = (sizeof(charset) - 1);
+            return charset[ rand() % max_index ];
+};
+std::string str(length,0);
+std::generate_n( str.begin(), length, randchar );
+return str;
+}
+
+TEST(Calib, insertSortedRandom) {
+    for (size_t maxlength = 0; maxlength < 10; ++maxlength) {
+        for (size_t jj = 0; jj < 50; ++jj) {
+
+            std::vector<std::string> a;
+            std::vector<std::string> b;
+            std::vector<std::string> c;
+
+            size_t stringlength = 3;
+
+            for (size_t ii = 1; ii < maxlength; ++ii) {
+                a.push_back(random_string(stringlength));
+                b.push_back(random_string(stringlength));
+                c.push_back(random_string(stringlength));
+            }
+
+            std::sort(a.begin(), a.end());
+            a.push_back(random_string(stringlength));
+            b.push_back(random_string(stringlength));
+            c.push_back(random_string(stringlength));
+
+            std::map<std::string, std::pair<std::string, std::string> > map;
+            for (size_t ii = 0; ii < a.size(); ++ii) {
+                map[a[ii]] = std::pair<std::string, std::string>(b[ii], c[ii]);
+            }
+
+            hdcalib::Calib::insertSorted(a, b, c);
+
+            for (size_t ii = 0; ii < a.size(); ++ii) {
+                auto const& it = map.find(a[ii]);
+                EXPECT_NE(it, map.end());
+                if (it != map.end()) {
+                    EXPECT_EQ(it->second.first, b[ii]);
+                    EXPECT_EQ(it->second.second, c[ii]);
+                }
+            }
+            for (size_t ii = 1; ii < a.size(); ++ii) {
+                EXPECT_TRUE(a[ii-1] < a[ii]);
+            }
+        }
+    }
+
+}
+
 int main(int argc, char** argv)
 {
 

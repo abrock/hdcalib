@@ -24,7 +24,6 @@ void vec2arr(T arr[2], cv::Point2d const& p) {
 
 namespace hdcalib {
 
-
 void Calib::removeOutliers(const double threshold) {
     std::vector<hdmarker::Corner> outliers;
     for (size_t ii = 0; ii < data.size(); ++ii) {
@@ -162,6 +161,10 @@ Calib::Calib() {
 
 }
 
+bool Calib::hasFile(const string filename) const {
+    return data.end() != data.find(filename);
+}
+
 void Calib::only_green(bool only_green) {
     useOnlyGreen = only_green;
 }
@@ -274,6 +277,64 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
     ref.clean();
+}
+
+template<class T, class T1, class T2>
+void Calib::insertSorted(std::vector<T>& a, std::vector<T1>& b, std::vector<T2>& c) {
+    if (a.size() != b.size() || a.size() != c.size()) {
+        throw std::runtime_error(std::string("Sizes of arrays do not match: ")
+                                 + std::to_string(a.size()) + ", "
+                                 + std::to_string(b.size())
+                                 + std::to_string(c.size()));
+    }
+    if (a.size() < 2) {
+        return;
+    }
+    for (size_t ii = a.size()-1; ii > 0; --ii) {
+        if (a[ii] < a[ii-1]) {
+            std::swap(a[ii], a[ii-1]);
+            std::swap(b[ii], b[ii-1]);
+            std::swap(c[ii], c[ii-1]);
+        }
+        else {
+            return;
+        }
+    }
+}
+
+template void Calib::insertSorted(std::vector<std::string> &, std::vector<std::string> &, std::vector<std::string> &);
+
+void Calib::addInputImageAfterwards(const string filename, const std::vector<Corner> &corners) {
+    prepareCalibration();
+
+    rvecs.push_back(cv::Mat());
+    tvecs.push_back(cv::Mat());
+    imageFiles.push_back(filename);
+
+
+    insertSorted(imageFiles, rvecs, tvecs);
+
+    CornerStore & ref = data[filename];
+    ref.replaceCorners(corners);
+    ref.clean();
+
+    prepareCalibration();
+
+    size_t index = 0;
+    for (; index < imageFiles.size(); ++index) {
+        if (filename == imageFiles[index]) {
+            break;
+        }
+    }
+
+    bool const success = cv::solvePnP (
+                objectPoints[index],
+                imagePoints[index],
+                cameraMatrix,
+                distCoeffs,
+                rvecs[index],
+                tvecs[index]);
+
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
@@ -1755,6 +1816,7 @@ void Calib::plotResidualsByMarkerStats(
     plot_command << "set term svg enhanced background rgb \"white\";\n"
                  << "set output \"" << plot_name << "." << suffix << ".svg\";\n"
                  << "set title 'Mean reprojection residuals of each marker';\n"
+                 << "set size ratio -1;\n"
                  << "plot " << plot.file1d(mean_residuals_by_marker, plot_name + "." + suffix + ".data")
                  << " u 1:2 w p notitle;\n";
 
