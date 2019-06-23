@@ -34,6 +34,7 @@ int main(int argc, char* argv[]) {
     bool libraw = false;
     bool plot_markers = false;
     bool only_green = false;
+    std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -46,6 +47,11 @@ int main(int argc, char* argv[]) {
                                           "Effort value for the marker detection.",
                                           false, .5, "float");
         cmd.add(effort_arg);
+
+        TCLAP::ValueArg<std::string> cache_arg("c", "cache",
+                                          "Cache file for the calibration results. This makes use of the opencv filestorage capabilities so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
+                                          false, "", "Calibration cache.");
+        cmd.add(cache_arg);
 
         TCLAP::SwitchArg demosaic_arg("d", "demosaic",
                                       "Use this flag if the input images are raw images and demosaicing should be used.",
@@ -86,6 +92,9 @@ int main(int argc, char* argv[]) {
         demosaic = demosaic_arg.getValue() || libraw;
         plot_markers = plot_markers_arg.getValue();
         std::vector<std::string> const textfiles = textfile_arg.getValue();
+        if (fs::is_regular_file(cache_arg.getValue())) {
+            cache_file = cache_arg.getValue();
+        }
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -143,6 +152,40 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    bool has_cached_calib = false;
+    if (fs::is_regular_file(cache_file)) {
+        try {
+            cv::FileStorage fs(cache_file, cv::FileStorage::READ);
+            cv::FileNode n = fs["calibration"];
+            n >> calib;
+            has_cached_calib = true;
+            fs.release();
+        }
+        catch (std::exception const& e) {
+            std::cout << "Reading cache file failed with exception:" << std::endl
+                      << e.what() << std::endl;
+        }
+    }
+
+    if (has_cached_calib) {
+        calib.CeresCalibFlexibleTarget();
+
+        calib.removeOutliers(2);
+
+        calib.CeresCalibFlexibleTarget();
+
+        calib.printObjectPointCorrectionsStats();
+
+        //*
+        calib.plotReprojectionErrors("", "ceres3");
+
+        cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
+        fs << "calibration" << calib;
+        fs.release();
+        // */
+        return EXIT_SUCCESS;
+    }
+
     std::ofstream duplicate_markers("duplicate-markers.log");
     for (auto const& it : detected_markers) {
         for (size_t ii = 0; ii < it.second.size(); ++ii) {
@@ -178,9 +221,19 @@ int main(int argc, char* argv[]) {
 
     calib.CeresCalibFlexibleTarget();
 
+    calib.removeOutliers(2);
+
+    calib.CeresCalibFlexibleTarget();
+
     calib.printObjectPointCorrectionsStats();
 
     calib.plotReprojectionErrors("", "ceres3");
+
+    if (!cache_file.empty()) {
+        cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
+        fs << "calibration" << calib;
+        fs.release();
+    }
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
