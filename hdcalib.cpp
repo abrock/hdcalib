@@ -163,7 +163,7 @@ Calib::Calib() {
 }
 
 void Calib::only_green(bool only_green) {
-    use_only_green = only_green;
+    useOnlyGreen = only_green;
 }
 
 std::vector<double> Calib::mat2vec(const Mat &in) {
@@ -506,6 +506,8 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     std::string submarkers_file = input_file + "-submarkers.yaml";
     vector<Corner> corners, submarkers;
 
+    Mat img, paint;
+
     bool read_cache_success = false;
     try {
         if (fs::exists(pointcache_file)) {
@@ -566,22 +568,15 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         std::cout << "Got corners from submarkers file" << std::endl;
     }
 
-
-
-
-    //  microbench_init();
-
-    Mat img, paint;
-
-    if (!resolution_known) {
+    if (!resolutionKnown || 0 == imageSize.width || 0 == imageSize.height) {
         if (raw) {
             imageSize = read_raw_imagesize(input_file);
-            resolution_known = true;
         }
         else {
             img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
             setImageSize(img);
         }
+        resolutionKnown = true;
     }
 
     if (plot_markers || !read_cache_success || (recursion_depth > 0 && !read_submarkers_success)) {
@@ -602,7 +597,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
             //cv::normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
             cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
-            if (use_only_green) {
+            if (useOnlyGreen) {
                 cv::Mat split[3];
                 cv::split(img, split);
                 img = split[1];
@@ -1399,7 +1394,7 @@ void Calib::plotMarkers(bool plot) {
 
 void Calib::setImageSize(const Mat &img) {
     imageSize = cv::Size(img.size());
-    resolution_known = true;
+    resolutionKnown = true;
 }
 
 bool CornerStore::hasID(const Corner &ref) const {

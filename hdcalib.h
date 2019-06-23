@@ -463,7 +463,7 @@ class Calib
     /**
      * @brief size_known false if the resolution of the input images is not (yet) known.
      */
-    bool resolution_known = false;
+    bool resolutionKnown = false;
 
     /**
      * @brief white_balance Color of white (BGR)
@@ -473,7 +473,7 @@ class Calib
     /**
      * @brief use_only_green If set to true only the green channel will be used.
      */
-    bool use_only_green = false;
+    bool useOnlyGreen = false;
 
     static char color(int const ii, int const jj);
 
