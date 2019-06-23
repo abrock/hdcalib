@@ -276,6 +276,14 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
     ref.clean();
 }
 
+void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
+    CornerStore & ref = data[filename];
+    ref.replaceCorners(corners);
+    ref.clean();
+    rvecs.push_back(rvec);
+    tvecs.push_back(tvec);
+}
+
 void Calib::addInputImage(const string filename, const CornerStore &corners) {
     CornerStore & ref = data[filename];
     ref = corners;
@@ -487,6 +495,93 @@ void Calib::printObjectPointCorrectionsStats() {
     printObjectPointCorrectionsStats(objectPointCorrections);
 }
 
+void Calib::write(FileStorage &fs) const {
+
+    fs << "{"
+       << "cameraMatrix" << cameraMatrix;
+    fs << "distCoeffs" << distCoeffs
+       << "imageSize" << imageSize
+       << "resolutionKnown" << resolutionKnown
+       << "apertureWidth" << apertureWidth
+       << "apertureHeight" << apertureHeight
+       << "useOnlyGreen" << useOnlyGreen;
+
+    fs << "images" << "[";
+    for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
+        fs << "{";
+        fs << "name" << imageFiles[ii]
+              << "rvec" << rvecs[ii]
+                 << "tvec" << tvecs[ii]
+                    << "corners" << "[";
+        CornerStore const & store = data.find(imageFiles[ii])->second;
+        for (size_t jj = 0; jj < store.size(); ++jj) {
+            fs << store.get(jj);
+        }
+        fs << "]";
+        fs << "}";
+    }
+    fs << "]";
+
+    fs << "objectPointCorrections" << "[";
+    for (const auto& it : objectPointCorrections) {
+        fs << "{"
+           << "id" << it.first
+           << "val" << it.second
+           << "}";
+    }
+    fs << "]";
+
+    fs << "}";
+}
+
+void Calib::read(const FileNode &node) {
+    node["cameraMatrix"] >> cameraMatrix;
+    node["distCoeffs"] >> distCoeffs;
+    node["imageSize"] >> imageSize;
+    node["resolutionKnown"] >> resolutionKnown;
+    node["apertureWidth"] >> apertureWidth;
+    node["apertureHeight"] >> apertureHeight;
+    node["useOnlyGreen"] >> useOnlyGreen;
+
+    FileNode n = node["images"]; // Read string sequence - Get node
+    if (n.type() != FileNode::SEQ) {
+        throw std::runtime_error("Error while reading cached calibration result: Images is not a sequence. Aborting.");
+    }
+
+    for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
+        std::vector<hdmarker::Corner> corners;
+        cv::Mat rvec, tvec;
+        std::string name;
+        (*it)["name"] >> name;
+        (*it)["rvec"] >> rvec;
+        (*it)["tvec"] >> tvec;
+        cv::FileNode corners_node = (*it)["corners"];
+        if (corners_node.type() != FileNode::SEQ) {
+            throw std::runtime_error(std::string("Error while reading cached calibration result for image ") + name + ": Corners is not a sequence. Aborting.");
+        }
+        for (FileNodeIterator corner_it = corners_node.begin(); corner_it != corners_node.end(); ++corner_it) { // Go through the node
+            hdmarker::Corner c;
+            *corner_it >> c;
+            corners.push_back(c);
+        }
+        addInputImage(name, corners, rvec, tvec);
+    }
+
+    n = node["objectPointCorrections"]; // Read string sequence - Get node
+    if (n.type() != FileNode::SEQ) {
+        throw std::runtime_error("Error while reading cached calibration result: objectPointCorrections is not a sequence. Aborting.");
+    }
+    for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
+        cv::Point3i id;
+        cv::Point3f val;
+        (*it)["id"] >> id;
+        (*it)["val"] >> val;
+        objectPointCorrections[id] = val;
+    }
+
+    prepareCalibration();
+}
+
 CornerStore Calib::getUnion() const {
     CornerStore res;
     for (const auto& it : data) {
@@ -525,7 +620,16 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 *it >> c;
                 corners.push_back(c);
             }
-
+            if (pointcache["imageWidth"].isInt() && pointcache["imageHeight"].isInt()) {
+                int width = 0, height = 0;
+                pointcache["imageWidth"] >> width;
+                pointcache["imageHeight"] >> height;
+                if (0 != width && 0 != height) {
+                    imageSize.width = width;
+                    imageSize.height = height;
+                    resolutionKnown = true;
+                }
+            }
         }
     }
     catch (const Exception& e) {
@@ -556,6 +660,16 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 submarkers.push_back(c);
             }
 
+            if (pointcache["imageWidth"].isInt() && pointcache["imageHeight"].isInt()) {
+                int width = 0, height = 0;
+                pointcache["imageWidth"] >> width;
+                pointcache["imageHeight"] >> height;
+                if (0 != width && 0 != height) {
+                    imageSize.width = width;
+                    imageSize.height = height;
+                    resolutionKnown = true;
+                }
+            }
         }
     }
     catch (const Exception& e) {
@@ -725,6 +839,8 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         pointcache << c;
     }
     pointcache << "]";
+    pointcache << "imageWidth" << imageSize.width;
+    pointcache << "imageHeight" << imageSize.height;
 
     if (recursion_depth > 0) {
         return submarkers;
@@ -1927,6 +2043,18 @@ bool cmpSimpleIndex3<C>::operator()(const C &a, const C &b) const {
     if (a.y < b.y) return true;
     if (a.y > b.y) return false;
     return a.x < b.x;
+}
+
+void write(FileStorage &fs, const string &, const Calib &x) {
+    x.write(fs);
+}
+
+void read(const FileNode &node, Calib &x, const Calib &default_value) {
+    if(node.empty()) {
+        throw std::runtime_error("Could not recover calibration, file storage is empty.");
+    }
+    else
+        x.read(node);
 }
 
 }

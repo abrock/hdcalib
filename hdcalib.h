@@ -631,6 +631,15 @@ public:
 
     void addInputImage(std::string const filename, CornerStore const& corners);
 
+    /**
+     * @brief addInputImage Adds an input image where rvec and tvec are already known.
+     * @param filename filename of the input image.
+     * @param corners Corners vector with all detected corners.
+     * @param rvec Rotation vector of the calibration target.
+     * @param tvec Translation vector of the calibration target.
+     */
+    void addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec);
+
     CornerStore get(std::string const filename) const;
 
     cv::Mat normalize_raw_per_channel(cv::Mat const& input);
@@ -660,7 +669,23 @@ public:
     cv::Size read_raw_imagesize(const string &filename);
 
     void printObjectPointCorrectionsStats();
+
+    /**
+     * @brief write Function needed for serializating a Corner using the OpenCV FileStorage system.
+     * @param fs
+     */
+    void write(cv::FileStorage& fs) const;
+
+    /**
+     * @brief read Method needed for reading a serialized Corner using the OpenCV FileStorage system.
+     * @param node
+     */
+    void read(const cv::FileNode& node);
 };
+
+void write(cv::FileStorage& fs, const std::string&, const Calib& x);
+
+void read(const cv::FileNode& node, Calib& x, const Calib& default_value = Calib());
 
 }
 
