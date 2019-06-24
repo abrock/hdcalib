@@ -41,11 +41,13 @@ target_link_libraries(hdcalib
 
 add_executable(hdcalib-tool "main.cpp")
 
+add_executable(hdcalib-analyze-lf "analyze-lf.cpp")
+
 add_executable(extract-green "extract-green.cpp")
 
 add_executable(hdcalib-localize-exception "localize-exception.cpp")
 
-foreach(program hdcalib-tool extract-green hdcalib-localize-exception)
+foreach(program hdcalib-tool extract-green hdcalib-localize-exception hdcalib-analyze-lf)
     target_link_libraries(${program} hdcalib)
 endforeach()
 
