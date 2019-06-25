@@ -2026,7 +2026,8 @@ void Calib::findOutliers(
         if (verbose) {
             std::cout << "found outlier in image " << imageFiles[image_index]
                          << ": id " << c.id << ", " << c.page << ", marker: "
-                         << markers[ii] << ", proj: " << projections[ii] << std::endl;
+                         << markers[ii] << ", proj: " << projections[ii]
+                         << ", dist: " << error << std::endl;
         }
     }
 }
