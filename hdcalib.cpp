@@ -726,6 +726,7 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
         }
     }
     ceres::Solver::Options options;
+    options.max_num_iterations = 150;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = true;
     options.function_tolerance = 1e-16;
@@ -1535,6 +1536,7 @@ double Calib::CeresCalib() {
 
     // Run the solver!
     ceres::Solver::Options options;
+    options.max_num_iterations = 150;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = true;
     ceres::Solver::Summary summary;
