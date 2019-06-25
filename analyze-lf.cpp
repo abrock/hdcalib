@@ -83,11 +83,9 @@ int main(int argc, char* argv[]) {
         only_green = only_green_arg.getValue();
         demosaic = demosaic_arg.getValue() || libraw;
         std::string const textfile = textfile_arg.getValue();
-        if (fs::is_regular_file(cache_arg.getValue())) {
-            cache_file = cache_arg.getValue();
-        }
-        else {
-            throw std::runtime_error("Specified cache file is not a regular file.");
+        cache_file = cache_arg.getValue();
+        if (!fs::is_regular_file(cache_file)) {
+            throw std::runtime_error(("Specified cache file (") + cache_file + ") is not a regular file.");
         }
 
         if (!fs::is_regular_file(textfile)) {
@@ -157,6 +155,8 @@ int main(int argc, char* argv[]) {
     fs.release();
 
     calib.printObjectPointCorrectionsStats();
+
+    calib.analyzeGridLF(rows, cols, input_files);
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

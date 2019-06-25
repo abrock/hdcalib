@@ -1168,6 +1168,33 @@ TEST(Calib, insertSortedRandom) {
 
 }
 
+TEST(Calib, get3DPoint) {
+    //Vec3d Calib::get3DPoint(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
+
+    hdcalib::CornerStore store;
+    getCornerGrid(store, 3, 3);
+    hdcalib::Calib c;
+    c.addInputImage("test1", store);
+
+    cv::Mat_<double> rvec(3,1);
+    cv::Mat_<double> tvec(3,1);
+
+    for (size_t ii = 0; ii < 3; ++ii) {
+        rvec(ii) = 0;
+        tvec(ii) = ii;
+    }
+
+    store = c.get("test1");
+    std::vector<hdcalib::Corner> corners = store.getCorners();
+
+    for (hdmarker::Corner const& corner : corners) {
+        cv::Vec3d point = c.get3DPoint(corner, rvec, tvec);
+        std::cout << "Corner: " << corner.id << ", " << corner.page << std::endl
+                  << "Position: " << point << std::endl << std::endl;
+    }
+    std::cout << std::endl;
+}
+
 int main(int argc, char** argv)
 {
 

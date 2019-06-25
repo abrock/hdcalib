@@ -92,9 +92,7 @@ int main(int argc, char* argv[]) {
         demosaic = demosaic_arg.getValue() || libraw;
         plot_markers = plot_markers_arg.getValue();
         std::vector<std::string> const textfiles = textfile_arg.getValue();
-        if (fs::is_regular_file(cache_arg.getValue())) {
-            cache_file = cache_arg.getValue();
-        }
+        cache_file = cache_arg.getValue();
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {

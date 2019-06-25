@@ -194,7 +194,7 @@ public:
      * @param num_results maximum number of results we want. The result set might be smaller.
      * @return A vector of results, ordered by distance to ref ascending.
      */
-    std::vector<hdmarker::Corner> findByID(hdmarker::Corner const& ref, size_t const num_results = 1);
+    std::vector<hdmarker::Corner> findByID(hdmarker::Corner const& ref, size_t const num_results = 1) const;
 
     /**
      * @brief findByPos does a nearest-neighbour search for the num_results closest hdmarker::Corner to a given marker. Distance is the L2 distance of the pixel positions.
@@ -500,6 +500,8 @@ public:
      */
     bool hasFile(std::string const filename) const;
 
+    size_t getId(std::string const& filename) const;
+
     /**
      * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
      * @param threshold error threshold in px.
@@ -596,9 +598,33 @@ public:
     const T dist[14]
     );
 
+    template<class F, class T>
+    static void get3DPoint(
+            F const p[3],
+    T result[3],
+    const T R[9],
+    const T t[3]
+    );
+
+    cv::Vec3d get3DPoint(hdmarker::Corner const& c, cv::Mat const& _rvec, cv::Mat const& _tvec);
+
     template<class T>
     static void rot_vec2mat(T const vec[3], T mat[9]);
 
+    template<class T>
+    static void rot_vec2mat(cv::Mat const& vec, T mat[9]);
+
+    /**
+     * @brief getRectificationRotation Find the rotation vector in object space needed for the rectification of the captured light field images.
+     * This means: Find one rotation R such that when R is applied to the estimated 3D locations of the markers on the calibration target
+     * the projected markers of images in the same row only move along the x axis when projected using the camera model without distortion;
+     * and projected markers of images in the same columns only move along the y axis.
+     * @param rows
+     * @param cols
+     * @param images
+     * @param rect_rot
+     */
+    void getRectificationRotation(size_t const rows, size_t const cols, std::vector<std::string> const& images, cv::Vec3d & rect_rot);
 
     cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0) const;
 
@@ -706,6 +732,15 @@ public:
      * @param c
      */
     static void insertSorted(std::vector<T> &a, std::vector<T1> &b, std::vector<T2> &c);
+
+    void analyzeGridLF(size_t const rows, size_t const cols, std::vector<std::string> const& images);
+
+    void getGridVectors(
+            size_t const rows,
+            size_t const cols,
+            std::vector<std::string> const& images,
+            cv::Vec3d & row_vec,
+            cv::Vec3d & col_vec);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);
