@@ -1537,7 +1537,7 @@ double Calib::CeresCalib() {
     // Run the solver!
     ceres::Solver::Options options;
     options.max_num_iterations = 150;
-    options.linear_solver_type = ceres::DENSE_QR;
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.minimizer_progress_to_stdout = true;
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
