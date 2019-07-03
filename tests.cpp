@@ -323,7 +323,7 @@ TEST(CornerStore, find) {
         a.id.x = 32;
         store.push_back(a);
     }
-    store.purgeUnlikely();
+    store.purgeUnlikely(1);
     EXPECT_EQ(store.size(), old_size);
 
     for (size_t ii = 0; ii < grid_width; ++ii) {
@@ -491,7 +491,7 @@ TEST(CornerStore, purge) {
     getCornerGrid(s, 30, 30, 0);
     EXPECT_EQ(s.size(), 900);
 
-    s.purgeUnlikely();
+    s.purgeUnlikely(1);
     EXPECT_EQ(s.size(), 900);
 
     s.purgeDuplicates();
@@ -500,7 +500,7 @@ TEST(CornerStore, purge) {
     getCornerGrid(s, 10, 10, 1, cv::Point2f(32,0));
     EXPECT_EQ(s.size(), 1000);
 
-    s.purgeUnlikely();
+    s.purgeUnlikely(1);
     EXPECT_EQ(s.size(), 1000);
 
     s.purgeDuplicates();
@@ -591,7 +591,7 @@ TEST(CornerStore, purge2) {
     getCornerGrid(a, 50, 50, 0);
     EXPECT_EQ(a.size(), 5000);
 
-    a.purgeUnlikely();
+    a.purgeUnlikely(1);
     EXPECT_EQ(a.size(), 5000);
 
     a.purgeDuplicates();
@@ -600,7 +600,7 @@ TEST(CornerStore, purge2) {
     getCornerGrid(a, 10, 10, 1, cv::Point2f(50, 50));
     EXPECT_EQ(a.size(), 2600);
 
-    a.purgeUnlikely();
+    a.purgeUnlikely(1);
     EXPECT_EQ(a.size(), 2600);
 
     a.purgeDuplicates();
@@ -1219,7 +1219,7 @@ int main(int argc, char** argv)
 
         getCornerGrid(store, 10, 10);
 
-        store.purgeUnlikely();
+        store.purgeUnlikely(1);
 
     }
 

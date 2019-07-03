@@ -163,7 +163,7 @@ public:
     /**
      * @brief clean first calls purgeDuplicates and then purgeUnlikely;
      */
-    void clean();
+    void clean(int cornerIdFactor);
 
     /**
      * @brief intersect calculates the intersection between this store and another store
@@ -216,7 +216,7 @@ public:
     /**
      * @brief purgeUnlikely searches for likely mis-detections and removes them from the store.
      */
-    bool purgeUnlikely();
+    bool purgeUnlikely(int cornerIdFactor);
 
     /**
      * @brief purgeDuplicates removes duplicate markers.
@@ -458,7 +458,7 @@ class Calib
     typedef std::map<std::string, CornerStore> Store_T;
     Store_T data;
 
-    bool plot_markers = false;
+    bool plotMarkers = false;
 
     /**
      * @brief size_known false if the resolution of the input images is not (yet) known.
@@ -488,10 +488,26 @@ class Calib
      */
     int cornerIdFactor = 1;
 
+    /**
+     * @brief recursionDepth Recursion depth for the marker detection.
+     */
+    int recursionDepth = 1;
+
+    /**
+     * @brief markerSize Physical size of the major markers on the target in any unit.
+     */
+    double markerSize = 6.35;
+
 public:
     Calib();
 
+    void setRecursionDepth(int _recursionDepth);
+
     typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex3<cv::Point3i> > MarkerMap;
+
+    static void scaleCornerIds(std::vector<hdmarker::Corner>& corners, int factor);
+
+    static void piecewiseRefinement(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
 
     /**
      * @brief hasFile checks if the given file is already known to the class.
@@ -641,7 +657,7 @@ public:
      */
     double CeresCalibFlexibleTarget();
 
-    void plotMarkers(bool plot = true);
+    void setPlotMarkers(bool plot = true);
 
     /**
      * @brief setImageSize set the size of the captured images.
@@ -700,11 +716,9 @@ public:
    * @param raw
    * @return
    */
-    vector<Corner> getCorners(
-            const std::string input_file,
+    vector<Corner> getCorners(const std::string input_file,
             const float effort,
             const bool demosaic,
-            const int recursion_depth,
             const bool raw);
 
     cv::Size read_raw_imagesize(const string &filename);

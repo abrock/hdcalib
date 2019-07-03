@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
                   << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
                   << "only green channel: " << (only_green ? "true" : "false") << std::endl;
 
-        calib.plotMarkers(plot_markers);
+        calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
     }
     catch (TCLAP::ArgException const & e) {
@@ -138,11 +138,13 @@ int main(int argc, char* argv[]) {
 
     std::map<std::string, std::vector<hdmarker::Corner> > detected_markers;
 
-#pragma omp parallel for schedule(dynamic)
+    calib.setRecursionDepth(recursion_depth);
+
+//#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < input_files.size(); ++ii) {
         std::string const& input_file = input_files[ii];
         try {
-            detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, recursion_depth, libraw);
+            detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, libraw);
         }
         catch (const std::exception &e) {
             std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl

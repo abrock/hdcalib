@@ -223,7 +223,7 @@ int main(int argc, char* argv[]) {
                   << "use libraw: " << (libraw ? "true" : "false") << std::endl
                   << "only green channel: " << (only_green ? "true" : "false") << std::endl;
 
-        calib.plotMarkers(plot_markers);
+        calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
     }
     catch (TCLAP::ArgException const & e) {

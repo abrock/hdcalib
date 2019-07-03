@@ -24,6 +24,22 @@ void vec2arr(T arr[2], cv::Point2d const& p) {
 
 namespace hdcalib {
 
+struct CornerIdSort
+{
+    inline bool operator() (const hdmarker::Corner& a, const hdmarker::Corner& b)
+    {
+        if (a.page < b.page) return true;
+        if (a.page > b.page) return false;
+
+        if (a.id.x < b.id.x) return true;
+        if (a.id.x > b.id.x) return false;
+
+        if (a.id.y < b.id.y) return true;
+        if (a.id.y > b.id.y) return false;
+        return false;
+    }
+};
+
 void Calib::removeOutliers(const double threshold) {
     std::vector<hdmarker::Corner> outliers;
     for (size_t ii = 0; ii < data.size(); ++ii) {
@@ -161,6 +177,61 @@ Calib::Calib() {
 
 }
 
+void Calib::setRecursionDepth(int _recursionDepth) {
+    recursionDepth = _recursionDepth;
+}
+
+void Calib::scaleCornerIds(std::vector<Corner> &corners, int factor) {
+    for (hdmarker::Corner& c: corners) {
+        c.id *= factor;
+    }
+}
+
+void Calib::piecewiseRefinement(cv::Mat & img, const std::vector<Corner> &in, std::vector<Corner> &out, int recursion_depth, double &markerSize) {
+    CornerStore store(in);
+    for (hdmarker::Corner const& it : in) {
+        if (it.id.x > 30 || it.id.y > 30) {
+            continue;
+        }
+        std::vector<hdmarker::Corner> local_corners;
+        local_corners.push_back(it);
+        {
+            hdmarker::Corner copy(it);
+            copy.id.x += 1;
+            std::vector<hdmarker::Corner> res = store.findByID(copy);
+            if (res.empty() || res.front().id != copy.id || res.front().page != copy.page) continue;
+            local_corners.push_back(res.front());
+        }
+        {
+            hdmarker::Corner copy(it);
+            copy.id.y += 1;
+            std::vector<hdmarker::Corner> res = store.findByID(copy);
+            if (res.empty() || res.front().id != copy.id || res.front().page != copy.page) continue;
+            local_corners.push_back(res.front());
+        }
+        {
+            hdmarker::Corner copy(it);
+            copy.id.x += 1;
+            copy.id.y += 1;
+            std::vector<hdmarker::Corner> res = store.findByID(copy);
+            if (res.empty() || res.front().id != copy.id || res.front().page != copy.page) continue;
+            local_corners.push_back(res.front());
+        }
+        cv::Rect limits(it.id.x, it.id.y, 1, 1);
+        std::vector<hdmarker::Corner> local_submarkers;
+        hdmarker::refine_recursive(img, in, local_submarkers, recursion_depth, &markerSize,
+                                   nullptr, // cv::Mat paint *
+                                   nullptr, // bool * mask_2x2
+                                   it.page, // page
+                                   limits
+                                   );
+        out.insert( out.end(), local_submarkers.begin(), local_submarkers.end() );
+    }
+    if (out.size() < in.size()) {
+        out = in;
+    }
+}
+
 bool Calib::hasFile(const string filename) const {
     return data.end() != data.find(filename);
 }
@@ -214,15 +285,18 @@ Point3f Calib::getInitial3DCoord(const Corner &c, const double z) const {
 Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
     cv::Point3f res(c.x, c.y, z);
     switch (c.z) {
-    case 1: res.x+= 32; break;
-    case 2: res.x += 64; break;
+    case 1: res.x += cornerIdFactor * 32; break;
+    case 2: res.x += cornerIdFactor * 64; break;
 
-    case 3: res.y += 32; break;
-    case 4: res.y += 32; res.x += 32; break;
-    case 5: res.y += 32; res.x += 64; break;
+    case 3: res.y += cornerIdFactor * 32; break;
+    case 4: res.y += cornerIdFactor * 32; res.x += cornerIdFactor * 32; break;
+    case 5: res.y += cornerIdFactor * 32; res.x += cornerIdFactor * 64; break;
 
-    case 7: res.x += 32; break;
+    case 7: res.x += cornerIdFactor * 32; break;
     }
+
+    res.x *= markerSize / cornerIdFactor;
+    res.y *= markerSize / cornerIdFactor;
 
     return res;
 }
@@ -285,7 +359,7 @@ void Calib::keepCommonCorners() {
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners) {
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
-    ref.clean();
+    ref.clean(cornerIdFactor);
 }
 
 template<class T, class T1, class T2>
@@ -325,7 +399,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
-    ref.clean();
+    ref.clean(cornerIdFactor);
 
     prepareCalibration();
 
@@ -349,7 +423,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
-    ref.clean();
+    ref.clean(cornerIdFactor);
     rvecs.push_back(rvec);
     tvecs.push_back(tvec);
 }
@@ -357,7 +431,7 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
 void Calib::addInputImage(const string filename, const CornerStore &corners) {
     CornerStore & ref = data[filename];
     ref = corners;
-    ref.clean();
+    ref.clean(cornerIdFactor);
 }
 
 CornerStore Calib::get(const string filename) const {
@@ -574,7 +648,8 @@ void Calib::write(FileStorage &fs) const {
        << "resolutionKnown" << resolutionKnown
        << "apertureWidth" << apertureWidth
        << "apertureHeight" << apertureHeight
-       << "useOnlyGreen" << useOnlyGreen;
+       << "useOnlyGreen" << useOnlyGreen
+       << "recursionDepth" << recursionDepth;
 
     fs << "images" << "[";
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
@@ -612,6 +687,7 @@ void Calib::read(const FileNode &node) {
     node["apertureWidth"] >> apertureWidth;
     node["apertureHeight"] >> apertureHeight;
     node["useOnlyGreen"] >> useOnlyGreen;
+    node["recursionDepth"] >> useOnlyGreen;
 
     FileNode n = node["images"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
@@ -799,7 +875,6 @@ CornerStore Calib::getUnion() const {
 vector<Corner> Calib::getCorners(const std::string input_file,
                                  const float effort,
                                  const bool demosaic,
-                                 const int recursion_depth,
                                  const bool raw) {
     std::string pointcache_file = input_file + "-pointcache.yaml";
     std::string submarkers_file = input_file + "-submarkers.yaml";
@@ -843,7 +918,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     if (read_cache_success) {
         corners = filter_duplicate_markers(corners);
-        std::cout << "Got corners from pointcache file" << std::endl;
+        std::cout << "Got " << corners.size() << " corners from pointcache file" << std::endl;
     }
 
     bool read_submarkers_success = false;
@@ -883,7 +958,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     if (read_submarkers_success) {
         submarkers = filter_duplicate_markers(submarkers);
-        std::cout << "Got corners from submarkers file" << std::endl;
+        std::cout << "Got " << submarkers.size() << " submarkers from submarkers file" << std::endl;
     }
 
     if (!resolutionKnown || 0 == imageSize.width || 0 == imageSize.height) {
@@ -897,7 +972,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         resolutionKnown = true;
     }
 
-    if (plot_markers || !read_cache_success || (recursion_depth > 0 && !read_submarkers_success)) {
+    if (plotMarkers || !read_cache_success || (recursionDepth > 0 && !read_submarkers_success)) {
         if (demosaic) {
             if (raw) {
                 img = read_raw(input_file);
@@ -910,21 +985,13 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             cv::minMaxIdx(img, &min_val, &max_val);
             std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
             img = img * (65535 / max_val);
-            //normalize_raw_per_channel_inplace(img);
-            white_balance_inplace(img, white_balance);
 
-            //cv::normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
             cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
             if (useOnlyGreen) {
                 cv::Mat split[3];
                 cv::split(img, split);
                 img = split[1];
             }
-            cv::minMaxIdx(img, &min_val, &max_val);
-            std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
-            img = img * (255.0 / max_val);
-            img.convertTo(img, CV_8UC1);
-            cv::imwrite(input_file + "-demosaiced-normalized.png", img);
             paint = img.clone();
         }
         else {
@@ -933,17 +1000,26 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             paint = img.clone();
         }
     }
-    if (plot_markers && paint.channels() == 1) {
+    if (plotMarkers && paint.channels() == 1) {
         cv::Mat tmp[3] = {paint, paint, paint};
         cv::merge(tmp, 3, paint);
     }
-    std::cout << "Input image size: " << img.size << std::endl;
+    std::cout << "Input image size of file " << input_file << ": " << img.size << std::endl;
 
     Marker::init();
 
     if (!read_cache_success) {
         detect(img, corners,use_rgb,0,10, effort, 3);
         corners = filter_duplicate_markers(corners);
+
+        FileStorage pointcache(pointcache_file, FileStorage::WRITE);
+        pointcache << "corners" << "[";
+        for (hdmarker::Corner const& c : corners) {
+            pointcache << c;
+        }
+        pointcache << "]";
+        pointcache << "imageWidth" << imageSize.width;
+        pointcache << "imageHeight" << imageSize.height;
     }
 
     printf("final score %zu corners\n", corners.size());
@@ -958,7 +1034,115 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         cv::Scalar(0,255,255),
         cv::Scalar(255,0,255),
     };
-    if (plot_markers) {
+
+
+    Mat gray;
+    if (img.channels() != 1) {
+        cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+    }
+    else {
+        gray = img;
+    }
+
+    if (recursionDepth > 0) {
+        std::cout << "Drawing sub-markers" << std::endl;
+        double msize = 1.0;
+        if (!read_submarkers_success) {
+            hdmarker::refine_recursive(gray, corners, submarkers, recursionDepth, &msize);
+            //piecewiseRefinement(gray, corners, submarkers, recursion_depth, msize);
+            FileStorage submarker_cache(submarkers_file, FileStorage::WRITE);
+            submarker_cache << "corners" << "[";
+            for (hdmarker::Corner const& c : submarkers) {
+                submarker_cache << c;
+            }
+            submarker_cache << "]";
+            submarker_cache.release();
+        }
+
+
+        if (plotMarkers) {
+            cv::Mat paint2 = paint.clone();
+            for (hdmarker::Corner const& c : submarkers) {
+                circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
+            }
+            imwrite(input_file + "-2.png", paint2);
+        }
+
+        if (submarkers.size() <= corners.size()) {
+            std::cout << "Warning: Number of submarkers (" << std::to_string(submarkers.size())
+                      << ") smaller than or equal to the number of corners (" << std::to_string(corners.size()) << "), in input file"
+                      << input_file << ", scaling ids." << std::endl;
+            int factor = 10;
+            for (int ii = 1; ii < recursionDepth; ++ii) {
+                factor *=5;
+            }
+            submarkers = corners;
+            for (auto& it : submarkers) {
+                it.id *= factor;
+            }
+        }
+#pragma omp critical
+        for (size_t ii = 0; ii < corners.size(); ++ii) {
+            if (0 != corners[ii].id.x) { // Checking the factor for x:
+                const int current_factor = submarkers[ii].id.x / corners[ii].id.x;
+                if (1 == cornerIdFactor) {
+                    cornerIdFactor = current_factor;
+                }
+                if (current_factor != cornerIdFactor) {
+                    throw std::runtime_error(std::string("Factor for x at corner #") + std::to_string(ii) +
+                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
+                                             std::to_string(cornerIdFactor) + "), aborting.");
+                }
+            }
+            if (0 != corners[ii].id.y) { // Checking the factor for y:
+                const int current_factor = submarkers[ii].id.y / corners[ii].id.y;
+                if (1 == cornerIdFactor) {
+                    cornerIdFactor = current_factor;
+                }
+                if (current_factor != cornerIdFactor) {
+                    throw std::runtime_error(std::string("Factor for y at corner #") + std::to_string(ii) +
+                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
+                                             std::to_string(cornerIdFactor) + "), aborting.");
+                }
+            }
+        }
+
+    }
+
+    std::cout << "Purging duplicate submarkers: " << submarkers.size() << " -> ";
+    CornerStore c(submarkers);
+    c.purgeDuplicates();
+    submarkers = c.getCorners();
+    std::cout << submarkers.size() << std::endl;
+
+    if (plotMarkers) {
+        //std::sort(submarkers.begin(), submarkers.end(), CornerIdSort());
+        cv::Mat paint_submarkers = paint.clone();
+        if (recursionDepth > 0) {
+            int const paint_sm_factor = 5;
+            if (paint.cols < 3000 && paint.rows < 3000) {
+                cv::resize(paint_submarkers, paint_submarkers, cv::Size(), paint_sm_factor, paint_sm_factor, cv::INTER_NEAREST);
+            }
+            for(size_t ii = 0; ii < submarkers.size(); ++ii) {
+                Corner const& c = submarkers[ii];
+
+
+                cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
+                std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
+                circle(paint_submarkers, paint_sm_factor*c.p, 1, Scalar(0,0,0,0), 2);
+                circle(paint_submarkers, paint_sm_factor*c.p, 1, Scalar(0,255,0,0));
+                putText(paint_submarkers, text.c_str(), paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, 1.2, Scalar(0,0,0,0), 2, cv::LINE_AA);
+                putText(paint_submarkers, text.c_str(), paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, 1.2, font_color, 1, cv::LINE_AA);
+                std::string const text_page = to_string(c.page);
+                double font_size = 2;
+                if (c.id.x % cornerIdFactor == 0 && c.id.y % cornerIdFactor == 0) {
+                    cv::Point2f const point_page = paint_sm_factor * (c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5));
+                    putText(paint_submarkers, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, cv::LINE_AA);
+                    putText(paint_submarkers, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, cv::LINE_AA);
+                }
+            }
+            imwrite(input_file + "-sub.png", paint_submarkers);
+        }
         for(size_t ii = 0; ii < corners.size(); ++ii) {
             Corner const& c = corners[ii];
             Point2f p1, p2;
@@ -979,76 +1163,11 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         imwrite(input_file + "-1.png", paint);
     }
 
-    Mat gray;
-    if (img.channels() != 1) {
-        cvtColor(img, gray, cv::COLOR_BGR2GRAY);
-    }
-    else {
-        gray = img;
-    }
 
-    if (recursion_depth > 0) {
-        std::cout << "Drawing sub-markers" << std::endl;
-        double msize = 1.0;
-        if (!read_submarkers_success) {
-            hdmarker::refine_recursive(gray, corners, submarkers, recursion_depth, &msize);
-        }
-        FileStorage pointcache(submarkers_file, FileStorage::WRITE);
-        pointcache << "corners" << "[";
-        for (hdmarker::Corner const& c : submarkers) {
-            pointcache << c;
-        }
-        pointcache << "]";
-
-        if (plot_markers) {
-            cv::Mat paint2 = paint.clone();
-            for (hdmarker::Corner const& c : submarkers) {
-                circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
-            }
-            imwrite(input_file + "-2.png", paint2);
-        }
-
-        if (submarkers.size() < corners.size()) {
-            throw std::runtime_error(std::string("Number of submarkers (") + std::to_string(submarkers.size())
-                                     + ") smaller than number of corners (" + std::to_string(corners.size()) + "), aborting.");
-        }
-#pragma omp critical
-        if (1 == cornerIdFactor) {
-            cornerIdFactor = submarkers[0].id.x / corners[0].id.x;
-        }
-        for (size_t ii = 0; ii < corners.size(); ++ii) {
-            { // Checking the factor for x:
-                const int current_factor = submarkers[ii].id.x / corners[ii].id.x;
-                if (current_factor != cornerIdFactor) {
-                    throw std::runtime_error(std::string("Factor for x at corner #") + std::to_string(ii) +
-                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
-                                             std::to_string(cornerIdFactor) + "), aborting.");
-                }
-            }
-            { // Checking the factor for y:
-                const int current_factor = submarkers[ii].id.y / corners[ii].id.y;
-                if (current_factor != cornerIdFactor) {
-                    throw std::runtime_error(std::string("Factor for y at corner #") + std::to_string(ii) +
-                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
-                                             std::to_string(cornerIdFactor) + "), aborting.");
-                }
-            }
-        }
-
-    }
-
-    FileStorage pointcache(pointcache_file, FileStorage::WRITE);
-    pointcache << "corners" << "[";
-    for (hdmarker::Corner const& c : corners) {
-        pointcache << c;
-    }
-    pointcache << "]";
-    pointcache << "imageWidth" << imageSize.width;
-    pointcache << "imageHeight" << imageSize.height;
-
-    if (recursion_depth > 0) {
+    if (recursionDepth > 0) {
         return submarkers;
     }
+
     return corners;
 
 }
@@ -1178,10 +1297,10 @@ CornerStore &CornerStore::operator=(const CornerStore &other) {
     return *this;
 }
 
-void CornerStore::clean() {
+void CornerStore::clean(int cornerIdFactor) {
     //purge32();
     purgeDuplicates();
-    purgeUnlikely();
+    purgeUnlikely(cornerIdFactor);
 }
 
 void CornerStore::intersect(const CornerStore &b) {
@@ -1302,7 +1421,7 @@ std::vector<Corner> CornerStore::findByPos(const double x, const double y, const
     return result;
 }
 
-bool CornerStore::purgeUnlikely() {
+bool CornerStore::purgeUnlikely(int cornerIdFactor) {
     std::vector<hdmarker::Corner> keep;
     keep.reserve(size());
 
@@ -1318,7 +1437,7 @@ bool CornerStore::purgeUnlikely() {
                 continue;
             }
             cv::Point2i residual = candidate.id - neighbour.id;
-            if (std::abs(residual.x) <= 1 && std::abs(residual.y) <= 1) {
+            if (std::abs(residual.x) <= cornerIdFactor && std::abs(residual.y) <= cornerIdFactor) {
                 neighbours++;
                 if (neighbours > 1) {
                     keep.push_back(candidate);
@@ -1362,7 +1481,7 @@ bool CornerStore::purgeDuplicates() {
             hdmarker::Corner const& b = get(res_indices[jj]);
             cv::Point2f residual = candidate.p - b.p;
             double const dist = Calib::distance(candidate.p, b.p);
-            if (dist < (candidate.size + b.size)/20) {
+            if (dist < (candidate.size + b.size)/20 && dist < 5) {
                 is_duplicate = true;
                 break;
             }
@@ -1709,8 +1828,8 @@ double Calib::CeresCalibFlexibleTarget() {
     return 0;
 }
 
-void Calib::plotMarkers(bool plot) {
-    plot_markers = plot;
+void Calib::setPlotMarkers(bool plot) {
+    plotMarkers = plot;
 }
 
 void Calib::setImageSize(const Mat &img) {
@@ -2027,7 +2146,7 @@ void Calib::findOutliers(
             std::cout << "found outlier in image " << imageFiles[image_index]
                          << ": id " << c.id << ", " << c.page << ", marker: "
                          << markers[ii] << ", proj: " << projections[ii]
-                         << ", dist: " << error << std::endl;
+                            << ", dist: " << error << std::endl;
         }
     }
 }
