@@ -47,7 +47,9 @@ add_executable(extract-green "extract-green.cpp")
 
 add_executable(hdcalib-localize-exception "localize-exception.cpp")
 
-foreach(program hdcalib-tool extract-green hdcalib-localize-exception hdcalib-analyze-lf)
+add_executable(hdcalib-marker-detection "marker-detection.cpp")
+
+foreach(program hdcalib-tool extract-green hdcalib-localize-exception hdcalib-analyze-lf hdcalib-marker-detection)
     target_link_libraries(${program} hdcalib)
 endforeach()
 
