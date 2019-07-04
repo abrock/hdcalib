@@ -1066,6 +1066,10 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
 
     if (recursionDepth > 0) {
+        cornerIdFactor = 10;
+        for (size_t ii = 1; ii < recursionDepth; ++ii) {
+            cornerIdFactor *= 5;
+        }
         std::cout << "Drawing sub-markers" << std::endl;
         double msize = 1.0;
         if (!read_submarkers_success) {
@@ -1103,32 +1107,6 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 it.id *= factor;
             }
         }
-#pragma omp critical
-        for (size_t ii = 0; ii < corners.size(); ++ii) {
-            if (0 != corners[ii].id.x) { // Checking the factor for x:
-                const int current_factor = submarkers[ii].id.x / corners[ii].id.x;
-                if (1 == cornerIdFactor) {
-                    cornerIdFactor = current_factor;
-                }
-                if (current_factor != cornerIdFactor) {
-                    throw std::runtime_error(std::string("Factor for x at corner #") + std::to_string(ii) +
-                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
-                                             std::to_string(cornerIdFactor) + "), aborting.");
-                }
-            }
-            if (0 != corners[ii].id.y) { // Checking the factor for y:
-                const int current_factor = submarkers[ii].id.y / corners[ii].id.y;
-                if (1 == cornerIdFactor) {
-                    cornerIdFactor = current_factor;
-                }
-                if (current_factor != cornerIdFactor) {
-                    throw std::runtime_error(std::string("Factor for y at corner #") + std::to_string(ii) +
-                                             " (" + std::to_string(current_factor) + ") differs from first factor(" +
-                                             std::to_string(cornerIdFactor) + "), aborting.");
-                }
-            }
-        }
-
     }
 
     std::cout << "Purging duplicate submarkers: " << submarkers.size() << " -> ";
