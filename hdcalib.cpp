@@ -1003,23 +1003,28 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             img = img * (65535 / max_val);
 
             cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
-            if (useOnlyGreen) {
-                cv::Mat split[3];
-                cv::split(img, split);
-                img = split[1];
-            }
-            paint = img.clone();
         }
         else {
             img = cv::imread(input_file);
             setImageSize(img);
-            paint = img.clone();
         }
+        if (useOnlyGreen) {
+            cv::Mat split[3];
+            cv::split(img, split);
+            img = split[1];
+        }
+        paint = img.clone();
     }
     if (plotMarkers && paint.channels() == 1) {
         cv::Mat tmp[3] = {paint, paint, paint};
         cv::merge(tmp, 3, paint);
     }
+    if (paint.depth() == CV_16U || paint.depth() == CV_16S) {
+        std::cout << "Input image 16 bit, converting for painting to 8 bit." << std::endl;
+        paint.convertTo(paint, CV_8UC3, 1.0 / 256.0);
+    }
+    std::cout << "Paint type: " << paint.type() << std::endl;
+    std::cout << "Paint depth: " << paint.depth() << std::endl;
     std::cout << "Input image size of file " << input_file << ": " << img.size << std::endl;
 
     Marker::init();
@@ -1136,10 +1141,11 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         //std::sort(submarkers.begin(), submarkers.end(), CornerIdSort());
         cv::Mat paint_submarkers = paint.clone();
         if (recursionDepth > 0) {
-            int const paint_sm_factor = 5;
+            int paint_sm_factor = 2;
             if (paint.cols < 3000 && paint.rows < 3000) {
-                cv::resize(paint_submarkers, paint_submarkers, cv::Size(), paint_sm_factor, paint_sm_factor, cv::INTER_NEAREST);
+                paint_sm_factor = 5;
             }
+            cv::resize(paint_submarkers, paint_submarkers, cv::Size(), paint_sm_factor, paint_sm_factor, cv::INTER_NEAREST);
             for(size_t ii = 0; ii < submarkers.size(); ++ii) {
                 Corner const& c = submarkers[ii];
 
