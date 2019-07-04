@@ -1000,13 +1000,13 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             double min_val = 0, max_val = 0;
             cv::minMaxIdx(img, &min_val, &max_val);
             std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
-            img = img * (65535 / max_val);
 
             cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
         }
         else {
             img = cv::imread(input_file);
             setImageSize(img);
+            std::cout << "Input file " << input_file << " image size: " << img.size() << std::endl;
         }
         if (useOnlyGreen) {
             if (img.channels() > 1) {
@@ -1014,6 +1014,10 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 cv::split(img, split);
                 img = split[1];
             }
+        }
+        if (img.channels() == 1 && (img.depth() == CV_16U || img.depth() == CV_16S)) {
+            std::cout << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
+            img.convertTo(img, CV_8UC1, 1.0 / 256.0);
         }
         paint = img.clone();
     }
@@ -1031,8 +1035,12 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     Marker::init();
 
+    if (img.depth() == CV_16U || img.depth() == CV_16S) {
+        std::cout << "Input image for marker detection 16 bit, converting for painting to 8 bit." << std::endl;
+        paint.convertTo(paint, CV_8UC1, 1.0 / 256.0);
+    }
     if (!read_cache_success) {
-        detect(img, corners,use_rgb,0,10, effort);
+        detect(img, corners, use_rgb, 0, 10, effort);
         corners = filter_duplicate_markers(corners);
 
         FileStorage pointcache(pointcache_file, FileStorage::WRITE);
