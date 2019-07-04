@@ -892,8 +892,8 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                                  const float effort,
                                  const bool demosaic,
                                  const bool raw) {
-    std::string pointcache_file = input_file + "-pointcache.yaml";
-    std::string submarkers_file = input_file + "-submarkers.yaml";
+    std::string pointcache_file = input_file + "-pointcache.yaml.gz";
+    std::string submarkers_file = input_file + "-submarkers.yaml.gz";
     vector<Corner> corners, submarkers;
 
     Mat img, paint;
