@@ -232,6 +232,22 @@ void Calib::piecewiseRefinement(cv::Mat & img, const std::vector<Corner> &in, st
     }
 }
 
+void Calib::refineRecursiveByPage(Mat &img, const std::vector<Corner> &in, std::vector<Corner> &out, int recursion_depth, double &markerSize) {
+    std::map<int, std::vector<hdmarker::Corner> > pages;
+    for (const hdmarker::Corner& c : in) {
+        pages[c.page].push_back(c);
+    }
+    out.clear();
+    double _markerSize = markerSize;
+    for (const auto& it : pages) {
+        _markerSize = markerSize;
+        std::vector<hdmarker::Corner> _out;
+        hdmarker::refine_recursive(img, it.second, _out, recursion_depth, &_markerSize);
+        out.insert(out.end(), _out.begin(), _out.end());
+    }
+    markerSize = _markerSize;
+}
+
 bool Calib::hasFile(const string filename) const {
     return data.end() != data.find(filename);
 }
@@ -1048,8 +1064,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         std::cout << "Drawing sub-markers" << std::endl;
         double msize = 1.0;
         if (!read_submarkers_success) {
-            hdmarker::refine_recursive(gray, corners, submarkers, recursionDepth, &msize);
+            //hdmarker::refine_recursive(gray, corners, submarkers, recursionDepth, &msize);
             //piecewiseRefinement(gray, corners, submarkers, recursion_depth, msize);
+            refineRecursiveByPage(gray, corners, submarkers, recursionDepth, msize);
             FileStorage submarker_cache(submarkers_file, FileStorage::WRITE);
             submarker_cache << "corners" << "[";
             for (hdmarker::Corner const& c : submarkers) {

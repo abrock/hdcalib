@@ -509,6 +509,8 @@ public:
 
     static void piecewiseRefinement(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
 
+    static void refineRecursiveByPage(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
+
     /**
      * @brief hasFile checks if the given file is already known to the class.
      * @param filename
