@@ -1009,9 +1009,11 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             setImageSize(img);
         }
         if (useOnlyGreen) {
-            cv::Mat split[3];
-            cv::split(img, split);
-            img = split[1];
+            if (img.channels() > 1) {
+                cv::Mat split[3];
+                cv::split(img, split);
+                img = split[1];
+            }
         }
         paint = img.clone();
     }
@@ -1030,7 +1032,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     Marker::init();
 
     if (!read_cache_success) {
-        detect(img, corners,use_rgb,0,10, effort, 3);
+        detect(img, corners,use_rgb,0,10, effort);
         corners = filter_duplicate_markers(corners);
 
         FileStorage pointcache(pointcache_file, FileStorage::WRITE);
