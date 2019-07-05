@@ -276,6 +276,11 @@ public:
             std::vector<cv::Point3f> & objectPoints,
             hdcalib::Calib const& calib) const;
 
+    void getMajorPoints(
+            std::vector<Point2f> &imagePoints,
+            std::vector<Point3f> &objectPoints,
+            hdcalib::Calib const& calib) const;
+
 };
 
 class ProjectionFunctor {
@@ -358,6 +363,11 @@ class Calib
      * @brief objectPoints storage for 3D points of Corners on the target.
      */
     std::vector<std::vector<cv::Point3f> > objectPoints;
+
+    /**
+     * @brief openCVMaxPoints Maximum number of 2D markers per image in the OpenCV calibration.
+     */
+    size_t openCVMaxPoints = 1000;
 
     /**
      * @brief objectPointCorrections Corrections to the objectPoints
@@ -450,6 +460,8 @@ class Calib
             std::vector<cv::Point2d> & reprojections);
 
     bool verbose = true;
+    bool verbose2 = false;
+
     int grid_width = 1;
     int grid_height = 1;
 
@@ -478,11 +490,6 @@ class Calib
     static char color(int const ii, int const jj);
 
     /**
-     * @brief prepareCalibration fills the containers imagePoints, objectPoints and imageFiles.
-     */
-    void prepareCalibration();
-
-    /**
      * @brief cornerIdFactor Scale factor for the corner IDs when using submarkers.
      * Without submarkers corner id values are in [0...32].
      */
@@ -498,8 +505,17 @@ class Calib
      */
     double markerSize = 6.35;
 
+
+    /**
+     * @brief validPages page numbers used in the calibration target, corners with different page numbers will be considered false detections.
+     */
+    std::vector<int> validPages = {6,7};
+
 public:
     Calib();
+
+    bool isValidPage(int const page) const;
+    bool isValidPage(hdmarker::Corner const& c) const;
 
     void setRecursionDepth(int _recursionDepth);
 
@@ -510,6 +526,17 @@ public:
     static void piecewiseRefinement(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
 
     static void refineRecursiveByPage(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
+
+    /**
+     * @brief prepareCalibration fills the containers imagePoints, objectPoints and imageFiles.
+     */
+    void prepareCalibration();
+
+    /**
+     * @brief prepareOpenCVCalibration Prepare calibration data for the OpenCV calibration routine.
+     * It uses way too much memory per correspondence, therefore a subset of 1000 markers per input image is used.
+     */
+    void prepareOpenCVCalibration();
 
     /**
      * @brief hasFile checks if the given file is already known to the class.

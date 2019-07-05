@@ -1195,8 +1195,62 @@ TEST(Calib, get3DPoint) {
     std::cout << std::endl;
 }
 
+void printMarkers(std::vector<hdmarker::Corner> const& corners) {
+    for (size_t ii = 0; ii < corners.size(); ++ii) {
+        std::cout << ii << "\t" << corners[ii].id << ", " << corners[ii].page << std::endl;
+    }
+    std::cout << std::endl;
+}
+
+TEST(Calib, piecewiseRefinement) {
+    cv::Mat img = cv::imread("test1.png");
+    std::vector<hdmarker::Corner> first, second, third;
+    hdmarker::detect(img, first, false, 10, 5);
+    printMarkers(first);
+    double marker_size = 6.35;
+    hdcalib::Calib::piecewiseRefinement(img, first, second, 1, marker_size);
+    std::cout << "Resulting marker size: " << marker_size << std::endl;
+    printMarkers(second);
+}
+
+std::string type2str(int type) {
+  std::string r;
+
+  uchar depth = type & CV_MAT_DEPTH_MASK;
+  uchar chans = 1 + (type >> CV_CN_SHIFT);
+
+  switch ( depth ) {
+    case CV_8U:  r = "8U"; break;
+    case CV_8S:  r = "8S"; break;
+    case CV_16U: r = "16U"; break;
+    case CV_16S: r = "16S"; break;
+    case CV_32S: r = "32S"; break;
+    case CV_32F: r = "32F"; break;
+    case CV_64F: r = "64F"; break;
+    default:     r = "User"; break;
+  }
+
+  r += "C";
+  r += (chans+'0');
+
+  return r;
+}
+
 int main(int argc, char** argv)
 {
+    cv::Mat img = cv::imread("test3.png", cv::IMREAD_GRAYSCALE);
+    std::cout << "Type: " << type2str(img.type()) << std::endl;
+    if (img.channels() != 1) {
+        cv::cvtColor(img, img, CV_BGR2GRAY);
+    }
+    std::cout << "Type: " << type2str(img.type()) << std::endl;
+    std::vector<hdmarker::Corner> first, second, third;
+    hdmarker::detect(img, first,false,0,10, 0.5, 3);
+    printMarkers(first);
+    double marker_size = 6.35;
+    hdcalib::Calib::piecewiseRefinement(img, first, second, 1, marker_size);
+    std::cout << "Resulting marker size: " << marker_size << std::endl;
+    printMarkers(second);
 
 
     {

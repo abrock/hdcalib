@@ -159,8 +159,7 @@ char Calib::color(const int ii, const int jj) {
     return 'B'; // Second row, second pixel (bottom right pixel)
 }
 
-void Calib::prepareCalibration()
-{
+void Calib::prepareCalibration() {
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
     imageFiles.resize(data.size());
@@ -177,8 +176,28 @@ Calib::Calib() {
 
 }
 
+bool Calib::isValidPage(const int page) const {
+    for (const auto valid : validPages) {
+        if (page == valid) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Calib::isValidPage(const Corner &c) const {
+    return isValidPage(c.page);
+}
+
 void Calib::setRecursionDepth(int _recursionDepth) {
     recursionDepth = _recursionDepth;
+    cornerIdFactor = 1;
+    if (recursionDepth > 0) {
+        cornerIdFactor = 10;
+        for (size_t ii = 1; ii < recursionDepth; ++ii) {
+            cornerIdFactor *= 5;
+        }
+    }
 }
 
 void Calib::scaleCornerIds(std::vector<Corner> &corners, int factor) {
@@ -246,6 +265,19 @@ void Calib::refineRecursiveByPage(Mat &img, const std::vector<Corner> &in, std::
         out.insert(out.end(), _out.begin(), _out.end());
     }
     markerSize = _markerSize;
+}
+
+void Calib::prepareOpenCVCalibration() {
+    imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
+    objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
+    imageFiles.resize(data.size());
+
+    size_t ii = 0;
+    for (std::pair<std::string, CornerStore> const& it : data) {
+        it.second.getMajorPoints(imagePoints[ii], objectPoints[ii], *this);
+        imageFiles[ii] = it.first;
+        ++ii;
+    }
 }
 
 bool Calib::hasFile(const string filename) const {
@@ -1076,10 +1108,6 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
 
     if (recursionDepth > 0) {
-        cornerIdFactor = 10;
-        for (size_t ii = 1; ii < recursionDepth; ++ii) {
-            cornerIdFactor *= 5;
-        }
         std::cout << "Drawing sub-markers" << std::endl;
         double msize = 1.0;
         if (!read_submarkers_success) {
@@ -1138,12 +1166,20 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 Corner const& c = submarkers[ii];
 
 
+                cv::Point2f local_shift(0,0);
+                if (c.id.x % 10 != 0 && c.id.y % 10 == 0) {
+                    if (c.id.x % 10 == 3 || c.id.x % 10 == 7) {
+                        local_shift.y = 16;
+                    }
+                }
+
+
                 cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
                 std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
                 circle(paint_submarkers, paint_sm_factor*c.p, 1, Scalar(0,0,0,0), 2);
                 circle(paint_submarkers, paint_sm_factor*c.p, 1, Scalar(0,255,0,0));
-                putText(paint_submarkers, text.c_str(), paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, 1.2, Scalar(0,0,0,0), 2, cv::LINE_AA);
-                putText(paint_submarkers, text.c_str(), paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, 1.2, font_color, 1, cv::LINE_AA);
+                putText(paint_submarkers, text.c_str(), local_shift+paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, .9, Scalar(0,0,0,0), 2, cv::LINE_AA);
+                putText(paint_submarkers, text.c_str(), local_shift+paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, .9, font_color, 1, cv::LINE_AA);
                 std::string const text_page = to_string(c.page);
                 double font_size = 2;
                 if (c.id.x % cornerIdFactor == 0 && c.id.y % cornerIdFactor == 0) {
@@ -1237,6 +1273,24 @@ void CornerStore::add(const std::vector<Corner> &vec) {
     pos_tree->addPoints(corners.size() - vec.size(), corners.size()-1);
 }
 
+void CornerStore::getMajorPoints(
+        std::vector<Point2f> &imagePoints,
+        std::vector<Point3f> &objectPoints,
+        hdcalib::Calib const& calib) const {
+    imagePoints.clear();
+    imagePoints.reserve(size());
+
+    objectPoints.clear();
+    objectPoints.reserve(size());
+    for (size_t ii = 0; ii < size(); ++ii) {
+        hdmarker::Corner const& c = get(ii);
+        if (calib.isValidPage(c) && 0 == (c.id.x % 10) && 0 == (c.id.y % 10)) {
+            imagePoints.push_back(get(ii).p);
+            objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
+        }
+    }
+}
+
 void CornerStore::getPoints(
         std::vector<Point2f> &imagePoints,
         std::vector<Point3f> &objectPoints,
@@ -1247,8 +1301,10 @@ void CornerStore::getPoints(
     objectPoints.clear();
     objectPoints.reserve(size());
     for (size_t ii = 0; ii < size(); ++ii) {
-        imagePoints.push_back(get(ii).p);
-        objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
+        if (calib.isValidPage(get(ii))) {
+            imagePoints.push_back(get(ii).p);
+            objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
+        }
     }
 }
 
@@ -1540,7 +1596,7 @@ bool CornerStore::purge32() {
 
 
 double Calib::openCVCalib() {
-    prepareCalibration();
+    prepareOpenCVCalibration();
 
     int flags = 0;
     //flags |= CALIB_FIX_PRINCIPAL_POINT;
@@ -1914,6 +1970,7 @@ void Calib::plotReprojectionErrors(const size_t image_index,
                                    MarkerMap &residuals_by_marker,
                                    const std::string prefix,
                                    const std::string suffix) {
+
     std::string const& filename = imageFiles[image_index];
 
     std::stringstream plot_command;
@@ -1933,18 +1990,23 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 
     std::vector<cv::Point2d> markers, reprojections;
 
+    std::vector<std::vector<double> > data;
+
+#pragma omp critical
+    {
     getReprojections(image_index, markers, reprojections);
 
-    std::vector<std::vector<double> > data;
-    for (size_t ii = 0; ii < markers.size(); ++ii) {
-        double const error = distance(markers[ii], reprojections[ii]);
-        data.push_back({markers[ii].x, markers[ii].y,
-                        reprojections[ii].x, reprojections[ii].y,
+    for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
+        cv::Point2d const& marker = markers[ii];
+        cv::Point2d const& reprojection = reprojections[ii];
+        double const error = distance(marker, reprojection);
+        data.push_back({marker.x, marker.y,
+                        reprojection.x, reprojection.y,
                         error});
-        proj_x.push(markers[ii].x, reprojections[ii].x);
-        proj_y.push(markers[ii].y, reprojections[ii].y);
+        proj_x.push(marker.x, reprojection.x);
+        proj_y.push(marker.y, reprojection.y);
         auto const id = getSimpleId(store.get(ii));
-        residuals_by_marker[id].push_back(std::make_pair(markers[ii], reprojections[ii]));
+        residuals_by_marker[id].push_back(std::make_pair(marker, reprojection));
         errors.push_back(error);
         error_stats.push(error);
         error_hist.push(error);
@@ -1960,24 +2022,26 @@ void Calib::plotReprojectionErrors(const size_t image_index,
               << error_stats.getQuantile(.95) << ", "
               << std::endl;
 
-    std::cout << "Covariance between marker x-values and reprojection x-values: " << proj_x.getCorr() << std::endl;
-    std::cout << "Covariance between marker y-values and reprojection y-values: " << proj_y.getCorr() << std::endl;
+    std::cout << "Covariance between marker values and reprojection values: " << proj_x.getCorr() << " for x and "
+              << proj_y.getCorr() << " for y" << std::endl;
 
     std::cout << std::endl;
 
     std::sort(errors.begin(), errors.end());
+
+    } // #pragma omp critical
 
     plot_command << std::setprecision(16);
     plot_command << "set term svg enhanced background rgb \"white\";\n"
                  << "set output \"" << plot_name << ".residuals." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
                  << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
-                 << " u ($1-$3):($2-$4) w p notitle;\n"
+                 << " u ($1-$3):($2-$4) w p pt 7 ps 0.17 notitle;\n"
                  << "set output \"" << plot_name << ".residuals-log." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
                  << "set logscale xy;\n"
                  << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
-                 << " u (abs($1-$3)):(abs($2-$4)) w p notitle;\n"
+                 << " u (abs($1-$3)):(abs($2-$4)) w p pt 7 ps 0.17 notitle;\n"
                  << "reset;\n"
                  << "set output \"" << plot_name + ".vectors." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
@@ -1993,7 +2057,7 @@ void Calib::plotReprojectionErrors(const size_t image_index,
                  << "set output \"" << plot_name + ".images." << suffix << ".svg\";\n"
                  << "set title 'Reprojection vs. original';\n"
                  << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
-                 << " u 1:2 w points title 'detected', \"" << plot_name + ".residuals." + suffix << ".data\" u 3:4 w points title 'reprojected';\n"
+                 << " u 1:2 w p pt 7 ps 0.17 title 'detected', \"" << plot_name + ".residuals." + suffix << ".data\" u 3:4 w p pt 7 ps 0.17 title 'reprojected';\n"
                  << "set output \"" << plot_name + ".error-dist." << suffix << ".svg\";\n"
                  << "set title 'CDF of the Reprojection Error';\n"
                  << "set xlabel 'error';\n"
@@ -2132,6 +2196,7 @@ void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
 
 void Calib::plotReprojectionErrors(const string prefix, const string suffix) {
     MarkerMap residuals_by_marker;
+#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         plotReprojectionErrors(ii, residuals_by_marker, prefix, suffix);
     }
@@ -2153,7 +2218,7 @@ void Calib::findOutliers(
         }
         hdmarker::Corner c = data[imageFiles[image_index]].get(ii);
         outliers.push_back(c);
-        if (verbose) {
+        if (verbose && verbose2) {
             std::cout << "found outlier in image " << imageFiles[image_index]
                          << ": id " << c.id << ", " << c.page << ", marker: "
                          << markers[ii] << ", proj: " << projections[ii]

@@ -49,16 +49,21 @@ add_executable(hdcalib-localize-exception "localize-exception.cpp")
 
 add_executable(hdcalib-marker-detection "marker-detection.cpp")
 
+add_executable(hdcalib-test-submarker-detection "test-submarker-detection.cpp")
+
 foreach(program hdcalib-tool extract-green hdcalib-localize-exception hdcalib-analyze-lf hdcalib-marker-detection)
     target_link_libraries(${program} hdcalib)
 endforeach()
 
 find_package(GTest REQUIRED)
 add_executable(tests tests.cpp)
-target_link_libraries(tests
-  hdcalib
-  ${GTEST_BOTH_LIBRARIES}
+
+foreach(program tests hdcalib-test-submarker-detection)
+  target_link_libraries(${program}
+    hdcalib
+    ${GTEST_BOTH_LIBRARIES}
   )
+endforeach()
 
 add_executable(valgrind-tests valgrind-tests.cpp)
 target_link_libraries(valgrind-tests

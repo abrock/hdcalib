@@ -219,6 +219,10 @@ int main(int argc, char* argv[]) {
 
     calib.plotReprojectionErrors("", "initial");
 
+    calib.prepareCalibration();
+
+    calib.plotReprojectionErrors("", "initial-all-markers");
+
     calib.CeresCalib();
 
     calib.plotReprojectionErrors("", "ceres");
