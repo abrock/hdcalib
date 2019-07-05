@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
 
     calib.setRecursionDepth(recursion_depth);
 
-//#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < input_files.size(); ++ii) {
         std::string const& input_file = input_files[ii];
         try {
