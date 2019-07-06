@@ -57,7 +57,7 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 
     std::vector<std::vector<double> > data;
 
-#pragma omp critical
+#pragma omp critical (plotReprojectionErrors)
     {
         prepareCalibration();
         getReprojections(image_index, markers, reprojections);
@@ -95,7 +95,7 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 
         std::sort(errors.begin(), errors.end());
 
-    } // #pragma omp critical
+    } // #pragma omp critical (plotReprojectionErrors)
 
     plot_command << std::setprecision(16);
     plot_command << "set term svg enhanced background rgb \"white\";\n"
@@ -231,7 +231,7 @@ void Calib::plotResidualsByMarkerStats(
 
 void Calib::plotReprojectionErrors(const string prefix, const string suffix) {
     MarkerMap residuals_by_marker;
-#pragma omp parallel for schedule(dynamic)
+//#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         plotReprojectionErrors(ii, residuals_by_marker, prefix, suffix);
     }
