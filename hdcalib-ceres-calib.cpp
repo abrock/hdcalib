@@ -18,6 +18,12 @@ void vec2arr(T arr[2], cv::Point2d const& p) {
 namespace hdcalib {
 
 void Calib::prepareCalibration() {
+    if (preparedCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size()) {
+        return;
+    }
+    preparedOpenCVCalib = false;
+    preparedCalib = true;
+
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
     imageFiles.resize(data.size());
@@ -32,6 +38,9 @@ void Calib::prepareCalibration() {
 
 
 double Calib::CeresCalib() {
+    if (verbose) {
+        std::cout << "Running Ceres calibration" << std::endl;
+    }
 
     // Build the problem.
     ceres::Problem problem;
@@ -140,6 +149,7 @@ struct LocalCorrectionsSum {
 };
 
 double Calib::CeresCalibFlexibleTarget() {
+    std::cout << "Running Ceres calibration with flexible target." << std::endl;
 
     // Build the problem.
     ceres::Problem problem;
@@ -215,7 +225,6 @@ double Calib::CeresCalibFlexibleTarget() {
                                  local_corrections[it].data() // correction
                                  );
     }
-
 
     // Run the solver!
     ceres::Solver::Options options;

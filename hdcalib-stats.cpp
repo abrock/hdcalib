@@ -36,7 +36,6 @@ void Calib::plotReprojectionErrors(const size_t image_index,
                                    MarkerMap &residuals_by_marker,
                                    const std::string prefix,
                                    const std::string suffix) {
-
     std::string const& filename = imageFiles[image_index];
 
     std::stringstream plot_command;
@@ -60,40 +59,41 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 
 #pragma omp critical
     {
-    getReprojections(image_index, markers, reprojections);
+        prepareCalibration();
+        getReprojections(image_index, markers, reprojections);
 
-    for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
-        cv::Point2d const& marker = markers[ii];
-        cv::Point2d const& reprojection = reprojections[ii];
-        double const error = distance(marker, reprojection);
-        data.push_back({marker.x, marker.y,
-                        reprojection.x, reprojection.y,
-                        error});
-        proj_x.push(marker.x, reprojection.x);
-        proj_y.push(marker.y, reprojection.y);
-        auto const id = getSimpleId(store.get(ii));
-        residuals_by_marker[id].push_back(std::make_pair(marker, reprojection));
-        errors.push_back(error);
-        error_stats.push(error);
-        error_hist.push(error);
-    }
+        for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
+            cv::Point2d const& marker = markers[ii];
+            cv::Point2d const& reprojection = reprojections[ii];
+            double const error = distance(marker, reprojection);
+            data.push_back({marker.x, marker.y,
+                            reprojection.x, reprojection.y,
+                            error});
+            proj_x.push(marker.x, reprojection.x);
+            proj_y.push(marker.y, reprojection.y);
+            auto const id = getSimpleId(store.get(ii));
+            residuals_by_marker[id].push_back(std::make_pair(marker, reprojection));
+            errors.push_back(error);
+            error_stats.push(error);
+            error_hist.push(error);
+        }
 
 
-    std::cout << "Error stats for image " << filename << ": "
-              << std::endl << error_hist.printBoth() << ", quantiles for .25, .5, .75, .9, .95: "
-              << error_stats.getQuantile(.25) << ", "
-              << error_stats.getQuantile(.5) << ", "
-              << error_stats.getQuantile(.75) << ", "
-              << error_stats.getQuantile(.9) << ", "
-              << error_stats.getQuantile(.95) << ", "
-              << std::endl;
+        std::cout << "Error stats for image " << filename << ": "
+                  << std::endl << error_hist.printBoth() << ", quantiles for .25, .5, .75, .9, .95: "
+                  << error_stats.getQuantile(.25) << ", "
+                  << error_stats.getQuantile(.5) << ", "
+                  << error_stats.getQuantile(.75) << ", "
+                  << error_stats.getQuantile(.9) << ", "
+                  << error_stats.getQuantile(.95) << ", "
+                  << std::endl;
 
-    std::cout << "Covariance between marker values and reprojection values: " << proj_x.getCorr() << " for x and "
-              << proj_y.getCorr() << " for y" << std::endl;
+        std::cout << "Covariance between marker values and reprojection values: " << proj_x.getCorr() << " for x and "
+                  << proj_y.getCorr() << " for y" << std::endl;
 
-    std::cout << std::endl;
+        std::cout << std::endl;
 
-    std::sort(errors.begin(), errors.end());
+        std::sort(errors.begin(), errors.end());
 
     } // #pragma omp critical
 

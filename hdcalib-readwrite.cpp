@@ -30,26 +30,24 @@ void Calib::insertSorted(std::vector<T>& a, std::vector<T1>& b, std::vector<T2>&
 template void Calib::insertSorted(std::vector<std::string> &, std::vector<std::string> &, std::vector<std::string> &);
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners) {
+    invalidateCache();
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
     ref.clean(cornerIdFactor);
 }
 
 void Calib::addInputImageAfterwards(const string filename, const std::vector<Corner> &corners) {
-    prepareCalibration();
+    invalidateCache();
 
     rvecs.push_back(cv::Mat());
     tvecs.push_back(cv::Mat());
     imageFiles.push_back(filename);
-
 
     insertSorted(imageFiles, rvecs, tvecs);
 
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
     ref.clean(cornerIdFactor);
-
-    prepareCalibration();
 
     size_t index = 0;
     for (; index < imageFiles.size(); ++index) {
@@ -58,6 +56,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         }
     }
 
+    prepareCalibration();
     bool const success = cv::solvePnP (
                 objectPoints[index],
                 imagePoints[index],
@@ -69,6 +68,8 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
+    invalidateCache();
+
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
     ref.clean(cornerIdFactor);
@@ -77,6 +78,8 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
 }
 
 void Calib::addInputImage(const string filename, const CornerStore &corners) {
+    invalidateCache();
+
     CornerStore & ref = data[filename];
     ref = corners;
     ref.clean(cornerIdFactor);
@@ -329,8 +332,6 @@ void Calib::read(const FileNode &node) {
         (*it)["val"] >> val;
         objectPointCorrections[id] = val;
     }
-
-    prepareCalibration();
 }
 
 void Calib::white_balance_inplace(Mat &mat, const Point3f white) {

@@ -516,9 +516,13 @@ class Calib
 
     unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
 
+    bool preparedOpenCVCalib = false;
+    bool preparedCalib = false;
 
 public:
     Calib();
+
+    void invalidateCache();
 
     /**
      * @brief purgeInvalidPages Remove corners if the page number is not in the validPages vector.

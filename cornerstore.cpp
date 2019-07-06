@@ -415,6 +415,7 @@ int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
 }
 
 void Calib::keepCommonCorners_delete() {
+    invalidateCache();
     CornerStore _delete;
     CornerStore _union = getUnion();
 
@@ -446,6 +447,8 @@ void Calib::keepCommonCorners_delete() {
 }
 
 void Calib::keepCommonCorners_intersect() {
+    invalidateCache();
+
     if (data.empty() || data.size() < 2) {
         return;
     }
@@ -466,6 +469,8 @@ void Calib::keepCommonCorners_intersect() {
 }
 
 void Calib::keepCommonCorners() {
+    invalidateCache();
+
     keepCommonCorners_intersect();
 }
 

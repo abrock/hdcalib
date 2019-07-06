@@ -41,6 +41,7 @@ struct CornerIdSort
 };
 
 void Calib::removeOutliers(const double threshold) {
+    prepareCalibration();
     std::vector<hdmarker::Corner> outliers;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         findOutliers(
@@ -53,7 +54,7 @@ void Calib::removeOutliers(const double threshold) {
     }
     CornerStore subtrahend(outliers);
     std::stringstream msg;
-    msg << "Oulier percentage by image:" << std::endl;
+    msg << "Outlier percentage by image:" << std::endl;
     runningstats::RunningStats percent_stats;
     for (auto& it : data) {
         size_t const before = it.second.size();
@@ -67,7 +68,7 @@ void Calib::removeOutliers(const double threshold) {
     if (verbose) {
         std::cout << msg.str() << std::endl;
     }
-    prepareCalibration();
+    invalidateCache();
 }
 
 void Calib::getReprojections(
@@ -138,7 +139,15 @@ Calib::Calib() {
     std::cout << "Number of concurrent threads: " << threads << std::endl;
 }
 
+void Calib::invalidateCache() {
+    preparedCalib = false;
+    preparedOpenCVCalib = false;
+    imagePoints.clear();
+    objectPoints.clear();
+}
+
 void Calib::purgeInvalidPages() {
+    invalidateCache();
     for (auto& it : data) {
         std::vector<hdmarker::Corner> cleaned = purgeInvalidPages(it.second.getCorners(), validPages);
         if (cleaned.size() < it.second.size()) {
@@ -196,6 +205,12 @@ void Calib::scaleCornerIds(std::vector<Corner> &corners, int factor) {
 }
 
 void Calib::prepareOpenCVCalibration() {
+    if (preparedOpenCVCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size()) {
+        return;
+    }
+    preparedOpenCVCalib = true;
+    preparedCalib = false;
+
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
     imageFiles.resize(data.size());
