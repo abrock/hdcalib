@@ -239,4 +239,40 @@ void Calib::plotReprojectionErrors(const string prefix, const string suffix) {
     plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
 }
 
+void Calib::printHist(std::ostream& out, runningstats::Histogram const& h, double const threshold) {
+    auto hist = h.getRelativeHist();
+    double threshold_sum = 0;
+    double last_thresh_key = hist.front().first;
+    double prev_key = last_thresh_key;
+    for (auto const& it : hist) {
+        if (it.second > threshold) {
+            if (threshold_sum > 0) {
+                if (last_thresh_key == prev_key) {
+                    out << prev_key << ": " << threshold_sum << std::endl;
+                }
+                else {
+                    out << last_thresh_key << " - " << prev_key << ": " << threshold_sum << std::endl;
+                }
+            }
+            out << it.first << ": " << it.second << std::endl;
+            threshold_sum = 0;
+            last_thresh_key = it.first;
+        }
+        else {
+            threshold_sum += it.second;
+            if (threshold_sum > threshold) {
+                out << last_thresh_key << " - " << prev_key << ": " << threshold_sum << std::endl;
+                threshold_sum = 0;
+                last_thresh_key = it.first;
+            }
+        }
+        prev_key = it.first;
+    }
+}
+
+void Calib::printObjectPointCorrectionsStats() {
+    printObjectPointCorrectionsStats(objectPointCorrections);
+}
+
+
 } // namespace hdcalib

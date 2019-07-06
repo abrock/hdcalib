@@ -14,6 +14,8 @@ find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
 add_library(cornerstore cornerstore.cpp)
 add_library(calib-stats hdcalib-stats.cpp)
+add_library(hdcalib-readwrite hdcalib-readwrite.cpp)
+add_library(hdcalib-ceres-calib hdcalib-ceres-calib.cpp)
 add_library(hdcalib hdcalib.cpp)
 
 include_directories("/usr/local/include/hdmarker")
@@ -30,10 +32,13 @@ find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 
 target_link_libraries(cornerstore hdcalib)
+target_link_libraries(hdcalib-readwrite calib-stats)
 
 target_link_libraries(hdcalib
   cornerstore
   calib-stats
+  hdcalib-readwrite
+  hdcalib-ceres-calib
   hdmarker
   ${OpenCV_LIBS}
   ${CERES_LIBRARIES}

@@ -414,4 +414,60 @@ int CornerPositionAdaptor::kdtree_get_pt(const size_t idx, int dim) const {
     throw std::out_of_range(std::string("Requested dimension ") + to_string(dim) + " out of range (0-1)");
 }
 
+void Calib::keepCommonCorners_delete() {
+    CornerStore _delete;
+    CornerStore _union = getUnion();
+
+    for (size_t ii = 0; ii < _union.size(); ++ii) {
+        hdmarker::Corner const c = _union.get(ii);
+        for (auto const& it : data) {
+            if (!(it.second.hasID(c))) {
+                _delete.push_conditional(c);
+                break;
+            }
+        }
+    }
+
+    for (auto& it : data) {
+        bool found_delete = false;
+        CornerStore replacement;
+        for (size_t ii = 0; ii < it.second.size(); ++ii) {
+            if (_delete.hasID(it.second.get(ii))) {
+                found_delete = true;
+            }
+            else {
+                replacement.push_conditional(it.second.get(ii));
+            }
+        }
+        if (found_delete) {
+            it.second = replacement;
+        }
+    }
+}
+
+void Calib::keepCommonCorners_intersect() {
+    if (data.empty() || data.size() < 2) {
+        return;
+    }
+    std::string const last = std::prev(data.end())->first;
+    if (data.size() == 2) {
+        CornerStore::intersect(data.begin()->second, data[last]);
+    }
+    std::string prev = last;
+    for (auto& it : data) {
+        it.second.intersect(data[prev]);
+        prev = it.first;
+    }
+    prev = std::prev(data.end())->first;
+    for (auto& it : data) {
+        it.second.intersect(data[prev]);
+        prev = it.first;
+    }
+}
+
+void Calib::keepCommonCorners() {
+    keepCommonCorners_intersect();
+}
+
+
 } // namespace hdcalib

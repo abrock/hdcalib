@@ -23,6 +23,8 @@
 
 #include "nanoflann.hpp"
 
+#include <runningstats/runningstats.h>
+
 namespace hdcalib {
 using namespace std;
 using namespace hdmarker;
@@ -796,6 +798,8 @@ public:
             std::vector<std::string> const& images,
             cv::Vec3d & row_vec,
             cv::Vec3d & col_vec);
+
+    void printHist(std::ostream &out, const runningstats::Histogram &h, const double threshold = 0);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);
