@@ -141,18 +141,6 @@ int main(int argc, char* argv[]) {
 
     calib.setRecursionDepth(recursion_depth);
 
-#pragma omp parallel for schedule(dynamic)
-    for (size_t ii = 0; ii < input_files.size(); ++ii) {
-        std::string const& input_file = input_files[ii];
-        try {
-            detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, libraw);
-        }
-        catch (const std::exception &e) {
-            std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
-                      << e.what() << std::endl;
-        }
-    }
-
     bool has_cached_calib = false;
     if (fs::is_regular_file(cache_file)) {
         try {
@@ -179,6 +167,19 @@ int main(int argc, char* argv[]) {
         calib.CeresCalibFlexibleTarget();
 
         bool found_new_files = false;
+#pragma omp parallel for schedule(dynamic)
+        for (size_t ii = 0; ii < input_files.size(); ++ii) {
+            std::string const& input_file = input_files[ii];
+            if (!calib.hasFile(input_file)) {
+                try {
+                    detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, libraw);
+                }
+                catch (const std::exception &e) {
+                    std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
+                              << e.what() << std::endl;
+                }
+            }
+        }
         for (auto const& it : detected_markers) {
             if (!calib.hasFile(it.first)) {
                 calib.addInputImageAfterwards(it.first, it.second);
@@ -200,6 +201,18 @@ int main(int argc, char* argv[]) {
         fs.release();
         // */
         return EXIT_SUCCESS;
+    }
+
+#pragma omp parallel for schedule(dynamic)
+    for (size_t ii = 0; ii < input_files.size(); ++ii) {
+        std::string const& input_file = input_files[ii];
+        try {
+            detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, libraw);
+        }
+        catch (const std::exception &e) {
+            std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
+                      << e.what() << std::endl;
+        }
     }
 
     std::ofstream duplicate_markers("duplicate-markers.log");
