@@ -12,7 +12,7 @@ INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIRS})
 
 find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
-add_library(hdcalib hdcalib.cpp)
+add_library(hdcalib hdcalib.cpp cornerstore.cpp)
 
 include_directories("/usr/local/include/hdmarker")
 
