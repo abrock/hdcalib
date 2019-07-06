@@ -307,7 +307,6 @@ bool CornerStore::purgeDuplicates() {
                 continue;
             }
             hdmarker::Corner const& b = get(res_indices[jj]);
-            cv::Point2f residual = candidate.p - b.p;
             double const dist = Calib::distance(candidate.p, b.p);
             if (dist < (candidate.size + b.size)/20 && dist < 5) {
                 is_duplicate = true;

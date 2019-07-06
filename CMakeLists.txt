@@ -12,7 +12,9 @@ INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIRS})
 
 find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
-add_library(hdcalib hdcalib.cpp cornerstore.cpp)
+add_library(cornerstore cornerstore.cpp)
+add_library(calib-stats hdcalib-stats.cpp)
+add_library(hdcalib hdcalib.cpp)
 
 include_directories("/usr/local/include/hdmarker")
 
@@ -27,7 +29,11 @@ include_directories(${RUNNINGSTATS_INCLUDE_DIRS})
 find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 
+target_link_libraries(cornerstore hdcalib)
+
 target_link_libraries(hdcalib
+  cornerstore
+  calib-stats
   hdmarker
   ${OpenCV_LIBS}
   ${CERES_LIBRARIES}
