@@ -6,6 +6,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <exception>
+#include <thread>
 
 #include <hdmarker/hdmarker.hpp>
 #include <hdmarker/subpattern.hpp>
@@ -510,6 +511,9 @@ class Calib
      * @brief validPages page numbers used in the calibration target, corners with different page numbers will be considered false detections.
      */
     std::vector<int> validPages = {6,7};
+
+    unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
+
 
 public:
     Calib();
