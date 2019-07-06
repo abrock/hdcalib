@@ -514,6 +514,14 @@ class Calib
 public:
     Calib();
 
+    /**
+     * @brief purgeInvalidPages Remove corners if the page number is not in the validPages vector.
+     */
+    void purgeInvalidPages();
+
+    static std::vector<hdmarker::Corner> purgeInvalidPages(std::vector<hdmarker::Corner> const& in, std::vector<int> const& valid_pages);
+
+    static bool isValidPage(int const page, std::vector<int> const& valid_pages);
     bool isValidPage(int const page) const;
     bool isValidPage(hdmarker::Corner const& c) const;
 

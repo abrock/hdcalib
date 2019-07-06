@@ -176,13 +176,40 @@ Calib::Calib() {
 
 }
 
-bool Calib::isValidPage(const int page) const {
-    for (const auto valid : validPages) {
+void Calib::purgeInvalidPages() {
+    for (auto& it : data) {
+        std::vector<hdmarker::Corner> cleaned = purgeInvalidPages(it.second.getCorners(), validPages);
+        if (cleaned.size() < it.second.size()) {
+            if (verbose) {
+                std::cout << "In image " << it.first << " removed " << it.second.size() - cleaned.size() << " out of " << it.second.size() << " corners" << std::endl;
+            }
+            it.second.replaceCorners(cleaned);
+        }
+    }
+}
+
+std::vector<Corner> Calib::purgeInvalidPages(const std::vector<Corner> &in, const std::vector<int> &valid_pages) {
+    std::vector<hdmarker::Corner> result;
+    result.reserve(in.size());
+    for (const auto& c : in) {
+        if (isValidPage(c.page, valid_pages)) {
+            result.push_back(c);
+        }
+    }
+    return result;
+}
+
+bool Calib::isValidPage(const int page, const std::vector<int> &valid_pages) {
+    for (const auto valid : valid_pages) {
         if (page == valid) {
             return true;
         }
     }
     return false;
+}
+
+bool Calib::isValidPage(const int page) const {
+    return isValidPage(page, validPages);
 }
 
 bool Calib::isValidPage(const Corner &c) const {
@@ -1723,6 +1750,9 @@ double Calib::CeresCalib() {
     // Run the solver!
     ceres::Solver::Options options;
     options.max_num_iterations = 150;
+    options.function_tolerance = 1e-16;
+    options.gradient_tolerance = 1e-16;
+    options.parameter_tolerance = 1e-16;
     options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.minimizer_progress_to_stdout = true;
     ceres::Solver::Summary summary;
@@ -1859,6 +1889,9 @@ double Calib::CeresCalibFlexibleTarget() {
     options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.max_num_iterations = 150;
     options.minimizer_progress_to_stdout = true;
+    options.function_tolerance = 1e-16;
+    options.gradient_tolerance = 1e-16;
+    options.parameter_tolerance = 1e-16;
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 

@@ -34,6 +34,7 @@ int main(int argc, char* argv[]) {
     bool libraw = false;
     bool plot_markers = false;
     bool only_green = false;
+    bool verbose = true;
     std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
@@ -155,11 +156,16 @@ int main(int argc, char* argv[]) {
     bool has_cached_calib = false;
     if (fs::is_regular_file(cache_file)) {
         try {
+            if (verbose) {
+                std::cout << "Reading cached calibration results..." << std::flush;
+            }
             cv::FileStorage fs(cache_file, cv::FileStorage::READ);
             cv::FileNode n = fs["calibration"];
             n >> calib;
             has_cached_calib = true;
             fs.release();
+            std::cout << " done." << std::endl;
+            calib.purgeInvalidPages();
         }
         catch (std::exception const& e) {
             std::cout << "Reading cache file failed with exception:" << std::endl
@@ -214,6 +220,8 @@ int main(int argc, char* argv[]) {
     for (auto const& it : detected_markers) {
         calib.addInputImage(it.first, it.second);
     }
+
+    calib.purgeInvalidPages();
 
     calib.openCVCalib();
 
