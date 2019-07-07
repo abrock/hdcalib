@@ -14,6 +14,8 @@
 
 #include "hdcalib.h"
 
+#include <valgrind/callgrind.h>
+
 namespace fs = boost::filesystem;
 
 void trim(std::string &s) {
@@ -26,8 +28,8 @@ void trim(std::string &s) {
 }
 
 int main(int argc, char* argv[]) {
-
-    ParallelTime t;
+    CALLGRIND_STOP_INSTRUMENTATION;
+    ParallelTime t, total_time;
     std::stringstream time_log;
     hdcalib::Calib calib;
     std::vector<std::string> input_files;
@@ -209,12 +211,17 @@ int main(int argc, char* argv[]) {
     time_log << "Invalidating cache: " << t.print() << std::endl;
     t.start();
 
+    CALLGRIND_START_INSTRUMENTATION;
+
     calib.prepareCalibration();
+
+    CALLGRIND_STOP_INSTRUMENTATION;
 
     time_log << "prepareCalibration: " << t.print() << std::endl;
     t.start();
 
     std::cout << "Times: " << std::endl << time_log.str() << std::endl;
+    std::cout << "Total time: " << total_time.print() << std::endl;
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
