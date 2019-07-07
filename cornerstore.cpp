@@ -56,16 +56,12 @@ void CornerStore::getPoints(
         std::vector<Point2f> &imagePoints,
         std::vector<Point3f> &objectPoints,
         hdcalib::Calib const& calib) const {
-    imagePoints.clear();
-    imagePoints.reserve(size());
-
-    objectPoints.clear();
-    objectPoints.reserve(size());
+    imagePoints.resize(size());
+    objectPoints.resize(size());
     for (size_t ii = 0; ii < size(); ++ii) {
-        if (calib.isValidPage(get(ii))) {
-            imagePoints.push_back(get(ii).p);
-            objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
-        }
+        hdmarker::Corner const& c = get(ii);
+        imagePoints[ii] = (c.p);
+        objectPoints[ii] = calib.getInitial3DCoord(c);
     }
 }
 

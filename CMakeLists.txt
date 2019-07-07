@@ -62,9 +62,20 @@ add_executable(hdcalib-marker-detection "marker-detection.cpp")
 
 add_executable(hdcalib-test-submarker-detection "test-submarker-detection.cpp")
 
-foreach(program hdcalib-tool extract-green hdcalib-localize-exception hdcalib-analyze-lf hdcalib-marker-detection)
+add_executable(hdcalib-speedtest-prepare-calibration "speedtest-prepare-calibration.cpp")
+
+foreach(program
+        hdcalib-tool
+        extract-green
+        hdcalib-localize-exception
+        hdcalib-analyze-lf
+        hdcalib-marker-detection
+        hdcalib-speedtest-prepare-calibration
+    )
     target_link_libraries(${program} hdcalib)
 endforeach()
+
+target_link_libraries(hdcalib-speedtest-prepare-calibration ParallelTime)
 
 find_package(GTest REQUIRED)
 add_executable(tests tests.cpp)

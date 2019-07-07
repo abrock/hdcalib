@@ -37,6 +37,9 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
 }
 
 void Calib::addInputImageAfterwards(const string filename, const std::vector<Corner> &corners) {
+    if (verbose) {
+        std::cout << "Adding image " << filename << "..." << std::flush;
+    }
     invalidateCache();
 
     rvecs.push_back(cv::Mat());
@@ -45,6 +48,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 
     insertSorted(imageFiles, rvecs, tvecs);
 
+    std::cout << "replacing corners..." << std::flush;
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
     ref.clean(cornerIdFactor);
@@ -56,7 +60,9 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         }
     }
 
+    std::cout << "preparing calibration..." << std::flush;
     prepareCalibration();
+    std::cout << "solvePnP..." << std::flush;
     bool const success = cv::solvePnP (
                 objectPoints[index],
                 imagePoints[index],
@@ -64,7 +70,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
                 distCoeffs,
                 rvecs[index],
                 tvecs[index]);
-
+    std::cout << "done." << std::endl;
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
