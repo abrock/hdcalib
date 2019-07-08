@@ -97,32 +97,35 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 
     } // #pragma omp critical (plotReprojectionErrors)
 
+    std::string const residuals_name = plot_name + ".residuals." + suffix;
+    std::string const residuals_data = residuals_name + ".data";
+    std::string const error_hist_data = plot_name + ".errors-hist." + suffix + ".data";
     plot_command << std::setprecision(16);
     plot_command << "set term svg enhanced background rgb \"white\";\n"
-                 << "set output \"" << plot_name << ".residuals." << suffix << ".svg\";\n"
+                 << "set output \"" << residuals_name << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
+                 << "plot " << plot.file1d(data, residuals_data)
                  << " u ($1-$3):($2-$4) w p pt 7 ps 0.17 notitle;\n"
                  << "set output \"" << plot_name << ".residuals-log." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
                  << "set logscale xy;\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
+                 << "plot \"" << residuals_data << "\""
                  << " u (abs($1-$3)):(abs($2-$4)) w p pt 7 ps 0.17 notitle;\n"
                  << "reset;\n"
                  << "set output \"" << plot_name + ".vectors." << suffix << ".svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
+                 << "plot \"" << residuals_data << "\""
                  << " u 1:2:($3-$1):($4-$2) w vectors notitle;\n"
                  << "reset;\n"
                  << "set output \"" << plot_name + ".vectors." << suffix << ".2.svg\";\n"
                  << "set title 'Reprojection Residuals';\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
+                 << "plot \"" << residuals_data << "\""
                  << " u 3:4:($1-$3):($2-$4) w vectors notitle;\n"
                  << "reset;\n"
                  << "set key out horiz;\n"
                  << "set output \"" << plot_name + ".images." << suffix << ".svg\";\n"
                  << "set title 'Reprojection vs. original';\n"
-                 << "plot " << plot.file1d(data, plot_name + ".residuals." + suffix + ".data")
+                 << "plot \"" << residuals_data << "\""
                  << " u 1:2 w p pt 7 ps 0.17 title 'detected', \"" << plot_name + ".residuals." + suffix << ".data\" u 3:4 w p pt 7 ps 0.17 title 'reprojected';\n"
                  << "set output \"" << plot_name + ".error-dist." << suffix << ".svg\";\n"
                  << "set title 'CDF of the Reprojection Error';\n"
@@ -137,11 +140,11 @@ void Calib::plotReprojectionErrors(const size_t image_index,
                  << "set title 'Reprojection Error Histogram';\n"
                  << "set xlabel 'error';\n"
                  << "set ylabel 'absolute frequency';\n"
-                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist." + suffix + ".data")
+                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), error_hist_data)
                  << " w boxes notitle;\n"
                  << "set output \"" << plot_name + ".error-hist-log." << suffix << ".svg\";\n"
                  << "set logscale xy;\n"
-                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), plot_name + ".errors-hist." + suffix + ".data")
+                 << "plot \"" << error_hist_data << "\""
                  << "w boxes notitle;\n";
 
     plot << plot_command.str();

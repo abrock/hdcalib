@@ -40,7 +40,7 @@ struct CornerIdSort
     }
 };
 
-void Calib::removeOutliers(const double threshold) {
+bool Calib::removeOutliers(const double threshold) {
     prepareCalibration();
     std::vector<hdmarker::Corner> outliers;
     for (size_t ii = 0; ii < data.size(); ++ii) {
@@ -50,7 +50,7 @@ void Calib::removeOutliers(const double threshold) {
                     outliers);
     }
     if (outliers.empty()) {
-        return;
+        return false;
     }
     CornerStore subtrahend(outliers);
     std::stringstream msg;
@@ -69,6 +69,7 @@ void Calib::removeOutliers(const double threshold) {
         std::cout << msg.str() << std::endl;
     }
     invalidateCache();
+    return true;
 }
 
 void Calib::getReprojections(

@@ -220,6 +220,17 @@ int main(int argc, char* argv[]) {
     time_log << "prepareCalibration: " << t.print() << std::endl;
     t.start();
 
+    calib.openCVCalib();
+
+    time_log << "openCVCalib: " << t.print() << std::endl;
+    t.start();
+
+    calib.plotReprojectionErrors();
+
+    time_log << "plotReprojectionErrors: " << t.print() << std::endl;
+    t.start();
+
+
     std::cout << "Times: " << std::endl << time_log.str() << std::endl;
     std::cout << "Total time: " << total_time.print() << std::endl;
 

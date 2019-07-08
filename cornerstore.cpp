@@ -52,19 +52,6 @@ void CornerStore::getMajorPoints(
     }
 }
 
-void CornerStore::getPoints(
-        std::vector<Point2f> &imagePoints,
-        std::vector<Point3f> &objectPoints,
-        hdcalib::Calib const& calib) const {
-    imagePoints.resize(size());
-    objectPoints.resize(size());
-    for (size_t ii = 0; ii < size(); ++ii) {
-        hdmarker::Corner const& c = get(ii);
-        imagePoints[ii] = (c.p);
-        objectPoints[ii] = calib.getInitial3DCoord(c);
-    }
-}
-
 CornerStore::CornerStore() :
     idx_adapt(*this),
     pos_adapt(*this),

@@ -569,7 +569,7 @@ public:
      * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
      * @param threshold error threshold in px.
      */
-    void removeOutliers(double const threshold = 2);
+    bool removeOutliers(double const threshold = 2);
 
     void only_green(bool only_green = true);
 

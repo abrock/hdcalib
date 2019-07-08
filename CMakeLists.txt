@@ -75,7 +75,12 @@ foreach(program
     target_link_libraries(${program} hdcalib)
 endforeach()
 
-target_link_libraries(hdcalib-speedtest-prepare-calibration ParallelTime)
+foreach(program
+        hdcalib-tool
+        hdcalib-speedtest-prepare-calibration
+        )
+    target_link_libraries(${program} ParallelTime)
+endforeach()
 
 find_package(GTest REQUIRED)
 add_executable(tests tests.cpp)
