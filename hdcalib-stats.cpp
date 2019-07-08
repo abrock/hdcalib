@@ -234,7 +234,7 @@ void Calib::plotResidualsByMarkerStats(
 
 void Calib::plotReprojectionErrors(const string prefix, const string suffix) {
     MarkerMap residuals_by_marker;
-//#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         plotReprojectionErrors(ii, residuals_by_marker, prefix, suffix);
     }
