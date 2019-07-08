@@ -29,7 +29,7 @@ void trim(std::string &s) {
     time_log << descr << ": " << t.print() << std::endl;\
     t.start();\
     std::cout << time_log.str() << "Total time: " << total_time.print() << std::endl << std::endl;\
-}
+    }
 
 int main(int argc, char* argv[]) {
 
@@ -47,6 +47,7 @@ int main(int argc, char* argv[]) {
     bool plot_markers = false;
     bool only_green = false;
     bool verbose = true;
+    bool gnuplot = false;
     std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
@@ -62,8 +63,8 @@ int main(int argc, char* argv[]) {
         cmd.add(effort_arg);
 
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
-                                          "Cache file for the calibration results. This makes use of the opencv filestorage capabilities so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
-                                          false, "", "Calibration cache.");
+                                               "Cache file for the calibration results. This makes use of the opencv filestorage capabilities so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
+                                               false, "", "Calibration cache.");
         cmd.add(cache_arg);
 
         TCLAP::SwitchArg demosaic_arg("d", "demosaic",
@@ -83,6 +84,10 @@ int main(int argc, char* argv[]) {
                                                            "In the case of demosaicing this means that the missing green pixels"
                                                            "are interpolated bilinear.", false);
         cmd.add(only_green_arg);
+
+        TCLAP::SwitchArg gnuplot_arg("", "gnuplot", "Use gnuplot for plotting residuals etc."
+                                     , false);
+        cmd.add(gnuplot_arg);
 
         TCLAP::MultiArg<std::string> textfile_arg("i",
                                                   "input",
@@ -106,6 +111,7 @@ int main(int argc, char* argv[]) {
         plot_markers = plot_markers_arg.getValue();
         std::vector<std::string> const textfiles = textfile_arg.getValue();
         cache_file = cache_arg.getValue();
+        gnuplot = gnuplot_arg.getValue();
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -135,7 +141,8 @@ int main(int argc, char* argv[]) {
                   << "demosaic: " << (demosaic ? "true" : "false") << std::endl
                   << "use libraw: " << (libraw ? "true" : "false") << std::endl
                   << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
-                  << "only green channel: " << (only_green ? "true" : "false") << std::endl;
+                  << "only green channel: " << (only_green ? "true" : "false") << std::endl
+                  << "Gnuplot: " << (gnuplot ? "true" : "false") << std::endl;
 
         calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
@@ -232,9 +239,10 @@ int main(int argc, char* argv[]) {
 
         TIMELOG("printObjectPointCorrectionsStats");
 
-        calib.plotReprojectionErrors("", "ceres3");
-
-        TIMELOG("plotReprojectionErrors ceres3");
+        if (gnuplot) {
+            calib.plotReprojectionErrors("", "ceres3");
+            TIMELOG("plotReprojectionErrors ceres3");
+        }
 
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
@@ -272,25 +280,28 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("openCVCalib");
 
-    calib.plotReprojectionErrors("", "initial");
-
-    TIMELOG("plotReprojectionErrors initial");
+    if (gnuplot) {
+        calib.plotReprojectionErrors("", "initial");
+        TIMELOG("plotReprojectionErrors initial");
+    }
 
     calib.prepareCalibration();
 
     TIMELOG("prepareCalibration");
 
-    calib.plotReprojectionErrors("", "initial-all-markers");
-
-    TIMELOG("plotReprojectionErrors initial all markers");
+    if (gnuplot) {
+        calib.plotReprojectionErrors("", "initial-all-markers");
+        TIMELOG("plotReprojectionErrors initial all markers");
+    }
 
     calib.CeresCalib();
 
     TIMELOG("CeresCalib");
 
-    calib.plotReprojectionErrors("", "ceres");
-
-    TIMELOG("plotReprojectionErrors ceres");
+    if (gnuplot) {
+        calib.plotReprojectionErrors("", "ceres");
+        TIMELOG("plotReprojectionErrors ceres");
+    }
 
     calib.removeOutliers(150);
 
@@ -300,9 +311,10 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("CeresCalib");
 
-    calib.plotReprojectionErrors("", "ceres2");
-
-    TIMELOG("plotReprojectionErrors ceres2");
+    if (gnuplot) {
+        calib.plotReprojectionErrors("", "ceres2");
+        TIMELOG("plotReprojectionErrors ceres2");
+    }
 
     calib.CeresCalibFlexibleTarget();
 
@@ -322,16 +334,17 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("printObjectPointCorrectionsStats");
 
-    calib.plotReprojectionErrors("", "ceres3");
-
-    TIMELOG("plotReprojectionErrors ceres3");
+    if (gnuplot) {
+        calib.plotReprojectionErrors("", "ceres3");
+        TIMELOG("plotReprojectionErrors ceres3");
+    }
 
     if (!cache_file.empty()) {
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
         fs.release();
         TIMELOG("Writing cache file");
-   }
+    }
 
 
     //  microbench_measure_output("app finish");
