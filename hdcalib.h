@@ -804,6 +804,7 @@ public:
             cv::Vec3d & col_vec);
 
     void printHist(std::ostream &out, const runningstats::Histogram &h, const double threshold = 0);
+    void getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

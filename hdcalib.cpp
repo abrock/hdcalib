@@ -301,141 +301,6 @@ CornerStore Calib::get(const string filename) const {
     throw std::runtime_error(std::string("File ") + filename + " not found in data.");
 }
 
-struct GridCost {
-    int const row;
-    int const col;
-
-    cv::Vec3d const p;
-    cv::Vec3d const p0;
-
-    GridCost(int const _row, int const _col, cv::Vec3d const & _p, cv::Vec3d const & _p0) : row(_row), col(_col), p(_p), p0(_p0) {}
-
-    template<class T>
-    bool operator () (
-            T const * const row_vec,
-            T const * const col_vec,
-            T * residuals) const {
-        for (size_t ii = 0; ii < 3; ++ii) {
-            residuals[ii] = T(p[ii]) - (T(p0[ii]) + T(row) * row_vec[ii] + T(col) * col_vec[ii]);
-        }
-        return true;
-    }
-};
-
-void Calib::analyzeGridLF(const size_t rows, const size_t cols, const std::vector<string> &images) {
-    cv::Vec3d row_vec, col_vec;
-    getGridVectors(rows, cols, images, row_vec, col_vec);
-
-    cv::Vec3d rect_rot;
-    getRectificationRotation(rows, cols, images, rect_rot);
-}
-
-void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec) {
-    prepareCalibration();
-    ceres::Problem problem;
-
-    std::string const& middle_name = images[images.size()/2];
-    CornerStore const& middle = data[middle_name];
-    size_t const& middle_id = getId(middle_name);
-
-    std::map<std::string, std::vector<GridCost* > > cost_functions;
-
-    size_t counter = 0;
-    for (int row = -int(rows/2); row <= int(rows/2); ++row) {
-        for (int col = -int(cols/2); col <= int(cols/2); ++col, ++counter) {
-            std::cout << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
-            if (0 == col && 0 == row) {
-                continue;
-            }
-            CornerStore const& current = data[images[counter]];
-            size_t const id = getId(images[counter]);
-            std::vector<GridCost* > & target_costs = cost_functions[images[counter]];
-            for (size_t ii = 0; ii < middle.size(); ++ii) {
-                hdmarker::Corner const& src = middle.get(ii);
-                std::vector<hdmarker::Corner> const _dst = current.findByID(src);
-                if (_dst.empty()) {
-                    continue;
-                }
-                //const F p[], T result[], const T R[], const T t[];
-                hdmarker::Corner const& dst = _dst.front();
-                if (src.page != dst.page || src.id.x != dst.id.x || src.id.y != dst.id.y) {
-                    continue;
-                }
-
-                cv::Vec3d src1, dst1;
-                src1 = get3DPoint(src, rvecs[middle_id], tvecs[middle_id]);
-                dst1 = get3DPoint(dst, rvecs[id], tvecs[id]);
-                GridCost * cost = new GridCost(row, col, src1, dst1);
-                ceres::CostFunction * cost_function = new ceres::AutoDiffCostFunction<GridCost, 3, 3, 3>(
-                            cost
-                            );
-                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(.5), row_vec.val, col_vec.val);
-                target_costs.push_back(cost);
-            }
-        }
-    }
-    ceres::Solver::Options options;
-    options.num_threads = threads;
-    options.max_num_iterations = 150;
-    options.linear_solver_type = ceres::DENSE_QR;
-    options.minimizer_progress_to_stdout = true;
-    options.function_tolerance = 1e-16;
-    options.gradient_tolerance = 1e-16;
-    options.parameter_tolerance = 1e-16;
-    ceres::Solver::Summary summary;
-    Solve(options, &problem, &summary);
-
-    std::cout << summary.FullReport() << "\n";
-
-    /* Global residual statistics */
-    runningstats::QuantileStats<double> g_res[3];
-    runningstats::QuantileStats<double> g_err[3];
-    for (const auto& it : cost_functions) {
-        /* Local residual statistics */
-        runningstats::QuantileStats<double> res[3];
-        runningstats::QuantileStats<double> err[3];
-
-        for (const auto cost : it.second) {
-            double residuals[3];
-            cost->operator()(row_vec.val, col_vec.val, residuals);
-            for (size_t ii = 0; ii < 3; ++ii) {
-                g_res[ii].push_unsafe(residuals[ii]);
-                res[ii].push_unsafe(residuals[ii]);
-                g_err[ii].push_unsafe(std::abs(residuals[ii]));
-                err[ii].push_unsafe(std::abs(residuals[ii]));
-            }
-        }
-
-        std::cout << "Residual stats for " << it.first << ":" << std::endl;
-        for (size_t ii = 0; ii < 3; ++ii) {
-            std::cout << res[ii].print() << std::endl;
-        }
-        std::cout << "Error stats for " << it.first << ":" << std::endl;
-        for (size_t ii = 0; ii < 3; ++ii) {
-            std::cout << err[ii].print() << std::endl;
-        }
-        std::cout << std::endl;
-    }
-    std::cout << "Residual stats for all images:" << std::endl;
-    for (size_t ii = 0; ii < 3; ++ii) {
-        std::cout << g_res[ii].print() << std::endl;
-    }
-    std::cout << "Error stats for all images:" << std::endl;
-    for (size_t ii = 0; ii < 3; ++ii) {
-        std::cout << g_err[ii].print() << std::endl;
-    }
-    std::cout << std::endl;
-
-    double const row_vec_length = std::sqrt(row_vec.dot(row_vec));
-    double const col_vec_length = std::sqrt(col_vec.dot(col_vec));
-    std::cout << "row_vec: " << row_vec << ", length: " << row_vec_length << std::endl
-              << "col_vec: " << col_vec << ", length: " << col_vec_length << std::endl;
-
-    double cos_alpha = row_vec.dot(col_vec) / (row_vec_length * col_vec_length);
-    std::cout << "cos alpha: " << cos_alpha << std::endl;
-    std::cout << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
-}
-
 CornerStore Calib::getUnion() const {
     CornerStore res;
     for (const auto& it : data) {
@@ -491,6 +356,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         read_cache_success = false;
     }
     if (read_cache_success) {
+        if (!validPages.empty()) {
+            corners = purgeInvalidPages(corners, validPages);
+        }
         corners = filter_duplicate_markers(corners);
         std::cout << "Got " << corners.size() << " corners from pointcache file" << std::endl;
     }
@@ -531,6 +399,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         read_submarkers_success = false;
     }
     if (read_submarkers_success) {
+        if (!validPages.empty()) {
+            submarkers = purgeInvalidPages(submarkers, validPages);
+        }
         submarkers = filter_duplicate_markers(submarkers);
         std::cout << "Got " << submarkers.size() << " submarkers from submarkers file" << std::endl;
     }
@@ -599,6 +470,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     if (!read_cache_success) {
         detect(img, corners, use_rgb, 0, 10, effort);
+        if (!validPages.empty()) {
+            corners = purgeInvalidPages(corners, validPages);
+        }
         corners = filter_duplicate_markers(corners);
 
         FileStorage pointcache(pointcache_file, FileStorage::WRITE);
@@ -640,6 +514,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             //hdmarker::refine_recursive(gray, corners, submarkers, recursionDepth, &msize);
             //piecewiseRefinement(gray, corners, submarkers, recursion_depth, msize);
             refineRecursiveByPage(gray, corners, submarkers, recursionDepth, msize);
+            if (!validPages.empty()) {
+                submarkers = purgeInvalidPages(submarkers, validPages);
+            }
             FileStorage submarker_cache(submarkers_file, FileStorage::WRITE);
             submarker_cache << "corners" << "[";
             for (hdmarker::Corner const& c : submarkers) {
