@@ -301,7 +301,8 @@ void Calib::read(const FileNode &node) {
     node["apertureWidth"] >> apertureWidth;
     node["apertureHeight"] >> apertureHeight;
     node["useOnlyGreen"] >> useOnlyGreen;
-    node["recursionDepth"] >> useOnlyGreen;
+    node["recursionDepth"] >> recursionDepth;
+    setRecursionDepth(recursionDepth);
 
     FileNode n = node["images"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
