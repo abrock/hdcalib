@@ -123,7 +123,7 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
                 ceres::CostFunction * cost_function = new ceres::AutoDiffCostFunction<GridCost, 3, 3, 3>(
                             cost
                             );
-                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(.5), row_vec.val, col_vec.val);
+                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(.001), row_vec.val, col_vec.val);
                 target_costs.push_back(cost);
             }
         }
@@ -247,7 +247,7 @@ void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vec
                 ceres::CostFunction * cost_function = new ceres::AutoDiffCostFunction<GridCost, 3, 3, 3>(
                             cost
                             );
-                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(.5), row_vec.val, col_vec.val);
+                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(.001), row_vec.val, col_vec.val);
                 target_costs.push_back(cost);
             }
         }

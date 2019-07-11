@@ -50,7 +50,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 
     std::cout << "replacing corners..." << std::flush;
     CornerStore & ref = data[filename];
-    ref.replaceCorners(corners);
+    ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
     ref.clean(cornerIdFactor);
 
     size_t index = 0;
@@ -77,7 +77,7 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
     invalidateCache();
 
     CornerStore & ref = data[filename];
-    ref.replaceCorners(corners);
+    ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
     ref.clean(cornerIdFactor);
     rvecs.push_back(rvec);
     tvecs.push_back(tvec);
