@@ -749,11 +749,14 @@ void Calib::findOutliers(
     std::vector<cv::Point2d> markers, projections;
     getReprojections(image_index, markers, projections);
 
+    runningstats::RunningStats inlier_stats, outlier_stats;
     for (size_t ii = 0; ii < markers.size(); ++ii) {
         double const error = distance(markers[ii], projections[ii]);
         if (error < threshold) {
+            inlier_stats.push_unsafe(error);
             continue;
         }
+        outlier_stats.push_unsafe(error);
         hdmarker::Corner c = data[imageFiles[image_index]].get(ii);
         outliers.push_back(c);
         if (verbose && verbose2) {
@@ -762,6 +765,9 @@ void Calib::findOutliers(
                          << markers[ii] << ", proj: " << projections[ii]
                             << ", dist: " << error << std::endl;
         }
+    }
+    if (verbose) {
+        std::cout << "Stats for " << imageFiles[image_index] << ": inliers: " << inlier_stats.print() << ", outliers: " << outlier_stats.print() << std::endl;
     }
 }
 
