@@ -20,8 +20,6 @@
 #include <array>
 
 #include <pstreams/pstream.h>
-#include <string>
-#include <iostream>
 
 std::string exec(std::string const command) {
     // run a process and create a streambuf that reads its stdout and stderr
