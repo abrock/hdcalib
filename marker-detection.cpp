@@ -34,6 +34,7 @@ int main(int argc, char* argv[]) {
     bool libraw = false;
     bool plot_markers = false;
     bool only_green = false;
+    int num_threads = 4;
     std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
@@ -132,7 +133,9 @@ int main(int argc, char* argv[]) {
 
     calib.setRecursionDepth(recursion_depth);
 
-//#pragma omp parallel for schedule(dynamic)
+    cv::setNumThreads(num_threads);
+    omp_set_num_threads(num_threads);
+
     for (size_t ii = 0; ii < input_files.size(); ++ii) {
         std::string const& input_file = input_files[ii];
         try {

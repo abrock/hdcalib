@@ -320,7 +320,8 @@ void Calib::read(const FileNode &node) {
         if (corners_node.type() != FileNode::SEQ) {
             throw std::runtime_error(std::string("Error while reading cached calibration result for image ") + name + ": Corners is not a sequence. Aborting.");
         }
-        for (FileNodeIterator corner_it = corners_node.begin(); corner_it != corners_node.end(); ++corner_it) { // Go through the node
+        const FileNodeIterator corner_end = corners_node.end();
+        for (FileNodeIterator corner_it = corners_node.begin(); corner_it != corner_end; ++corner_it) { // Go through the node
             hdmarker::Corner c;
             *corner_it >> c;
             corners.push_back(c);
