@@ -298,8 +298,8 @@ const T t[3]
     T& y = result[1];
     T z;
     z = R[6]*X + R[7]*Y + R[8]*Z + t[2];
-    if (0 == z) {
-        z = 1;
+    if (T(0) == z) {
+        z = T(1);
     }
     x = (R[0]*X + R[1]*Y + R[2]*Z + t[0])/z;
     y = (R[3]*X + R[4]*Y + R[5]*Z + t[1])/z;
@@ -315,6 +315,15 @@ const double focal[2],
 const double principal[2],
 const double R[9],
 const double t[3]
+);
+
+template void Calib::project(
+ceres::Jet<double, 3> const p[3],
+ceres::Jet<double, 3> result[2],
+const ceres::Jet<double, 3> focal[2],
+const ceres::Jet<double, 3> principal[2],
+const ceres::Jet<double, 3> R[9],
+const ceres::Jet<double, 3> t[3]
 );
 
 template<typename T>
@@ -423,6 +432,7 @@ void Calib::rot_vec2mat(const T vec[], T mat[]) {
 }
 
 template void Calib::rot_vec2mat(const double vec[], double mat[]);
+template void Calib::rot_vec2mat(const ceres::Jet<double, 3> vec[], ceres::Jet<double, 3> mat[]);
 
 ProjectionFunctor::ProjectionFunctor(
         const std::vector<Point2f> &_markers,

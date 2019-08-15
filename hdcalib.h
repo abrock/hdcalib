@@ -805,6 +805,18 @@ public:
 
     void printHist(std::ostream &out, const runningstats::Histogram &h, const double threshold = 0);
     void getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec);
+    void getIndividualRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot);
+private:
+    template<class RCOST>
+    void addImagePairToRectificationProblem(
+            const CornerStore &current,
+            const size_t current_id,
+            const CornerStore &next,
+            const size_t next_id,
+            std::vector<RCOST *> &target_costs,
+            ceres::Problem &problem,
+            const int8_t axis,
+            double rot_vec[]);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

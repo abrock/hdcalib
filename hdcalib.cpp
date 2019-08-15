@@ -781,10 +781,6 @@ Vec3d Calib::get3DPoint(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
     return cv::Vec3d(_result[0], _result[1], _result[2]);
 }
 
-void Calib::getRectificationRotation(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &rect_rot) {
-
-}
-
 template<class Point>
 double Calib::distance(const Point a, const Point b) {
     Point residual = a-b;

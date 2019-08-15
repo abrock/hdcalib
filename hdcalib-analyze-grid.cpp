@@ -28,6 +28,10 @@ struct GridCost {
     }
 };
 
+
+/**
+ * @brief The GridCostFreeCenter struct Does not work, don't use it. Estimation of the LF grid with the center not fixed.
+ */
 struct GridCostFreeCenter {
     int const row;
     int const col;
@@ -52,13 +56,16 @@ struct GridCostFreeCenter {
 
 void Calib::analyzeGridLF(const size_t rows, const size_t cols, const std::vector<string> &images) {
     cv::Vec3d row_vec, col_vec;
-    getGridVectors(rows, cols, images, row_vec, col_vec);
+    //getGridVectors(rows, cols, images, row_vec, col_vec);
 
     cv::Vec3d row_vec2, col_vec2;
-    getGridVectors2(rows, cols, images, row_vec2, col_vec2);
+    //getGridVectors2(rows, cols, images, row_vec2, col_vec2);
 
     cv::Vec3d rect_rot;
     getRectificationRotation(rows, cols, images, rect_rot);
+
+
+    getIndividualRectificationRotation(rows, cols, images, rect_rot);
 
     { // getGridVectors()
         double const row_vec_length = std::sqrt(row_vec.dot(row_vec));
@@ -85,6 +92,7 @@ void Calib::analyzeGridLF(const size_t rows, const size_t cols, const std::vecto
 }
 
 void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec) {
+    std::cout << "##### getGridVectors #####" << std::endl;
     prepareCalibration();
     ceres::Problem problem;
 
@@ -191,6 +199,7 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
 }
 
 void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec) {
+    std::cout << "##### getGridVectors2 #####" << std::endl;
     prepareCalibration();
     ceres::Problem problem;
 

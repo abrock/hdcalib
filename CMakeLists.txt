@@ -17,6 +17,7 @@ add_library(calib-stats hdcalib-stats.cpp)
 add_library(hdcalib-readwrite hdcalib-readwrite.cpp)
 add_library(hdcalib-ceres-calib hdcalib-ceres-calib.cpp)
 add_library(hdcalib-analyze-grid hdcalib-analyze-grid.cpp)
+add_library(hdcalib-rectify hdcalib-rectify.cpp)
 add_library(hdcalib hdcalib.cpp)
 
 include_directories("/usr/local/include/hdmarker")
@@ -35,12 +36,23 @@ include_directories(${CERES_INCLUDE_DIRS})
 target_link_libraries(cornerstore hdcalib)
 target_link_libraries(hdcalib-readwrite calib-stats)
 
+target_link_libraries(hdcalib-rectify
+    hdcalib-ceres-calib
+    hdcalib
+    ${CERES_LIBRARIES}
+)
+
+target_link_libraries(hdcalib-analyze-grid
+    hdcalib-rectify
+)
+
 target_link_libraries(hdcalib
   cornerstore
   calib-stats
   hdcalib-readwrite
   hdcalib-ceres-calib
   hdcalib-analyze-grid
+  hdcalib-rectify
   hdmarker
   ${OpenCV_LIBS}
   ${CERES_LIBRARIES}
