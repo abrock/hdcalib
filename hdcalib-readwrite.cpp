@@ -253,6 +253,41 @@ cv::Size Calib::read_raw_imagesize(const string &filename) {
     return cv::Size(S.width, S.height);
 }
 
+void Calib::paintSubmarkers(std::vector<Corner> const& submarkers, cv::Mat& image, int paint_size_factor) const {
+    for(size_t ii = 0; ii < submarkers.size(); ++ii) {
+        Corner const& c = submarkers[ii];
+
+        // Ignore markers outside the image (may occur in simulation)
+        if (c.p.x < 0 || c.p.y < 0 || c.p.x * paint_size_factor > image.cols || c.p.y * paint_size_factor > image.rows) {
+            continue;
+        }
+
+        cv::Mat image;
+
+        cv::Point2f local_shift(0,0);
+        if (c.id.x % 10 != 0 && c.id.y % 10 == 0) {
+            if (c.id.x % 10 == 3 || c.id.x % 10 == 7) {
+                local_shift.y = 16;
+            }
+        }
+
+
+        cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
+        std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
+        circle(image, paint_size_factor*c.p, 1, Scalar(0,0,0,0), 2);
+        circle(image, paint_size_factor*c.p, 1, Scalar(0,255,0,0));
+        putText(image, text.c_str(), local_shift+paint_size_factor*c.p, FONT_HERSHEY_PLAIN, .9, Scalar(0,0,0,0), 2, cv::LINE_AA);
+        putText(image, text.c_str(), local_shift+paint_size_factor*c.p, FONT_HERSHEY_PLAIN, .9, font_color, 1, cv::LINE_AA);
+        std::string const text_page = to_string(c.page);
+        double font_size = 2;
+        if (c.id.x % cornerIdFactor == 0 && c.id.y % cornerIdFactor == 0) {
+            cv::Point2f const point_page = paint_size_factor * (c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5));
+            putText(image, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, cv::LINE_AA);
+            putText(image, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, cv::LINE_AA);
+        }
+    }
+}
+
 void Calib::write(FileStorage &fs) const {
 
     fs << "{"

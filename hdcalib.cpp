@@ -140,11 +140,40 @@ Calib::Calib() {
     std::cout << "Number of concurrent threads: " << threads << std::endl;
 }
 
+void Calib::normalizeRotationVector(Mat &vector) {
+    cv::Mat mat(3,3, vector.type());
+    cv::Rodrigues(vector, mat);
+    cv::Rodrigues(mat, vector);
+}
+
+void Calib::normalizeRotationVector(double vector[]) {
+    cv::Mat_<double> vec(3,1);
+    for (size_t ii = 0; ii < 3; ++ii) {
+        vec(ii) = vector[ii];
+    }
+    normalizeRotationVector(vec);
+    for (size_t ii = 0; ii < 3; ++ii) {
+        vector[ii] = vec(ii);
+    }
+}
+
+double Calib::getMarkerSize() const {
+    return markerSize;
+}
+
 void Calib::invalidateCache() {
     preparedCalib = false;
     preparedOpenCVCalib = false;
     imagePoints.clear();
     objectPoints.clear();
+}
+
+int Calib::getCornerIdFactor() const {
+    return cornerIdFactor;
+}
+
+void Calib::setValidPages(const std::vector<int> &_pages) {
+    validPages = _pages;
 }
 
 void Calib::purgeInvalidPages() {
@@ -487,18 +516,6 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     printf("final score %zu corners\n", corners.size());
 
-
-    std::vector<cv::Scalar> const color_circle = {
-        cv::Scalar(255,255,255),
-        cv::Scalar(255,0,0),
-        cv::Scalar(0,255,0),
-        cv::Scalar(0,0,255),
-        cv::Scalar(255,255,0),
-        cv::Scalar(0,255,255),
-        cv::Scalar(255,0,255),
-    };
-
-
     Mat gray;
     if (img.channels() != 1) {
         cvtColor(img, gray, cv::COLOR_BGR2GRAY);
@@ -560,41 +577,17 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         //std::sort(submarkers.begin(), submarkers.end(), CornerIdSort());
         cv::Mat paint_submarkers = paint.clone();
         if (recursionDepth > 0) {
-            int paint_sm_factor = 2;
+            int paint_size_factor = 2;
             if (paint.cols < 3000 && paint.rows < 3000) {
-                paint_sm_factor = 5;
+                paint_size_factor = 5;
             }
-            cv::resize(paint_submarkers, paint_submarkers, cv::Size(), paint_sm_factor, paint_sm_factor, cv::INTER_NEAREST);
-            for(size_t ii = 0; ii < submarkers.size(); ++ii) {
-                Corner const& c = submarkers[ii];
-
-
-                cv::Point2f local_shift(0,0);
-                if (c.id.x % 10 != 0 && c.id.y % 10 == 0) {
-                    if (c.id.x % 10 == 3 || c.id.x % 10 == 7) {
-                        local_shift.y = 16;
-                    }
-                }
-
-
-                cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
-                std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
-                circle(paint_submarkers, paint_sm_factor*c.p, 1, Scalar(0,0,0,0), 2);
-                circle(paint_submarkers, paint_sm_factor*c.p, 1, Scalar(0,255,0,0));
-                putText(paint_submarkers, text.c_str(), local_shift+paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, .9, Scalar(0,0,0,0), 2, cv::LINE_AA);
-                putText(paint_submarkers, text.c_str(), local_shift+paint_sm_factor*c.p, FONT_HERSHEY_PLAIN, .9, font_color, 1, cv::LINE_AA);
-                std::string const text_page = to_string(c.page);
-                double font_size = 2;
-                if (c.id.x % cornerIdFactor == 0 && c.id.y % cornerIdFactor == 0) {
-                    cv::Point2f const point_page = paint_sm_factor * (c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5));
-                    putText(paint_submarkers, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, cv::LINE_AA);
-                    putText(paint_submarkers, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, cv::LINE_AA);
-                }
-            }
+            cv::resize(paint_submarkers, paint_submarkers, cv::Size(), paint_size_factor, paint_size_factor, cv::INTER_NEAREST);
+            paintSubmarkers(submarkers, paint_submarkers, paint_size_factor);
             imwrite(input_file + "-sub.png", paint_submarkers);
         }
         for(size_t ii = 0; ii < corners.size(); ++ii) {
             Corner const& c = corners[ii];
+
             Point2f p1, p2;
             cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
 

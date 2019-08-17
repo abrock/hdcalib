@@ -165,6 +165,11 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
 
     std::cout << summary.FullReport() << "\n";
 
+    Calib::normalizeRotationVector(rot_vec);
+
+    Solve(options, &problem, &summary);
+    std::cout << summary.FullReport() << "\n";
+
     /* Global residual statistics */
     runningstats::QuantileStats<double> g_res[2];
     runningstats::QuantileStats<double> g_err[2];
@@ -221,7 +226,15 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
     }
     std::cout << std::endl;
 
+
+    Calib::normalizeRotationVector(rot_vec);
+
+    rect_rot = cv::Vec3d(rot_vec[0], rot_vec[1], rot_vec[2]);
+
+    double const degree = std::sqrt(rect_rot.dot(rect_rot)) / M_PI * 180;
+
     std::cout << "Rotation vector: " << rot_vec[0] << ", " << rot_vec[1] << ", " << rot_vec[2] << std::endl;
+    std::cout << "Rotation: " <<  degree << "°" << std::endl;
 }
 
 void Calib::getIndividualRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot) {
@@ -294,9 +307,11 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
     options.gradient_tolerance = 1e-16;
     options.parameter_tolerance = 1e-16;
     ceres::Solver::Summary summary;
-    Solve(options, &problem, &summary);
+    ceres::Solve(options, &problem, &summary);
 
     std::cout << summary.FullReport() << "\n";
+
+
 
     /* Global residual statistics */
     runningstats::QuantileStats<double> g_res[2];

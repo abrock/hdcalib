@@ -519,10 +519,30 @@ class Calib
     bool preparedOpenCVCalib = false;
     bool preparedCalib = false;
 
+    std::vector<cv::Scalar> const color_circle = {
+        cv::Scalar(255,255,255),
+        cv::Scalar(255,0,0),
+        cv::Scalar(0,255,0),
+        cv::Scalar(0,0,255),
+        cv::Scalar(255,255,0),
+        cv::Scalar(0,255,255),
+        cv::Scalar(255,0,255),
+    };
+
 public:
     Calib();
 
+    static void normalizeRotationVector(cv::Mat & vector);
+
+    static void normalizeRotationVector(double vector[3]);
+
+    double getMarkerSize() const;
+
     void invalidateCache();
+
+    int getCornerIdFactor() const;
+
+    void setValidPages(std::vector<int> const& _pages);
 
     /**
      * @brief purgeInvalidPages Remove corners if the page number is not in the validPages vector.
@@ -806,6 +826,7 @@ public:
     void printHist(std::ostream &out, const runningstats::Histogram &h, const double threshold = 0);
     void getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec);
     void getIndividualRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot);
+    void paintSubmarkers(const std::vector<Corner> &submarkers, cv::Mat &image, int paint_size_factor) const;
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

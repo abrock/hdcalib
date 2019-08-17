@@ -45,7 +45,9 @@ void CornerStore::getMajorPoints(
     objectPoints.reserve(size());
     for (size_t ii = 0; ii < size(); ++ii) {
         hdmarker::Corner const& c = get(ii);
-        if (calib.isValidPage(c) && 0 == (c.id.x % 10) && 0 == (c.id.y % 10)) {
+        if (calib.isValidPage(c)
+                && 0 == (c.id.x % calib.getCornerIdFactor())
+                && 0 == (c.id.y % calib.getCornerIdFactor())) {
             imagePoints.push_back(get(ii).p);
             objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
         }

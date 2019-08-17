@@ -78,6 +78,8 @@ add_executable(hdcalib-test-submarker-detection "test-submarker-detection.cpp")
 
 add_executable(hdcalib-speedtest-prepare-calibration "speedtest-prepare-calibration.cpp")
 
+add_executable(hdcalib-simulate "simulate.cpp")
+
 foreach(program
         hdcalib-tool
         extract-green
@@ -85,6 +87,7 @@ foreach(program
         hdcalib-analyze-lf
         hdcalib-marker-detection
         hdcalib-speedtest-prepare-calibration
+        hdcalib-simulate
     )
     target_link_libraries(${program} hdcalib)
 endforeach()
@@ -92,6 +95,7 @@ endforeach()
 foreach(program
         hdcalib-tool
         hdcalib-speedtest-prepare-calibration
+        hdcalib-simulate
         )
     target_link_libraries(${program} ParallelTime)
 endforeach()
