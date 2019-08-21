@@ -30,6 +30,10 @@ void Calib::insertSorted(std::vector<T>& a, std::vector<T1>& b, std::vector<T2>&
 template void Calib::insertSorted(std::vector<std::string> &, std::vector<std::string> &, std::vector<std::string> &);
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners) {
+    if (hasCalibration) {
+        addInputImageAfterwards(filename, corners);
+        return;
+    }
     invalidateCache();
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);

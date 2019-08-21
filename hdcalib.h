@@ -529,6 +529,8 @@ class Calib
         cv::Scalar(255,0,255,255)
     };
 
+    bool hasCalibration = false;
+
 public:
     Calib();
 
