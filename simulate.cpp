@@ -156,7 +156,8 @@ int main(int argc, char* argv[]) {
                 }
             }
             std::string filename = std::to_string(ii) + ".png";
-            calib.addInputImage(filename, markers, rot_vec, t_vec);
+            //calib.addInputImage(filename, markers, rot_vec, t_vec);
+            calib.addInputImage(filename, markers);
             if (plot_synthetic_markers) {
                 cv::Mat_<cv::Vec3b> paint(2*image_scale, 2*image_scale, cv::Vec3b(50,50,50));
                 calib.paintSubmarkers(markers, paint, 1);
@@ -225,7 +226,8 @@ int main(int argc, char* argv[]) {
             }
             std::string filename = "lf-" + Calib::tostringLZ(grid_counter, 2) + ".png";
             lightfield.push_back(filename);
-            calib.addInputImage(filename, markers, rot_vec, t_vec);
+            //calib.addInputImage(filename, markers, rot_vec, t_vec);
+            calib.addInputImage(filename, markers);
             if (plot_synthetic_markers) {
                 cv::Mat_<cv::Vec3b> paint(2*image_scale, 2*image_scale, cv::Vec3b(50,50,50));
                 calib.paintSubmarkers(markers, paint, 1);

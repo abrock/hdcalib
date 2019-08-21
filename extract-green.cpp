@@ -16,7 +16,7 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
-    for (size_t ii = 1; ii < argc; ++ii) {
+    for (size_t ii = 1; ii < size_t(argc); ++ii) {
         hdcalib::Calib c;
         std::string const filename(argv[ii]);
         std::string const base = basename(filename);

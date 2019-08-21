@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 
 project(hdcalib)
 
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Werror -pedantic")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Wall -Werror -pedantic")
 
 FIND_PACKAGE(OpenCV REQUIRED)
 INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})

@@ -118,7 +118,7 @@ void localizeExceptionExternal(
     cv::imwrite("tmp.png", img);
     std::vector<hdmarker::Corner> corners;
     std::vector<hdmarker::Corner> corners2;
-    bool const use_rgb = false;
+    //bool const use_rgb = false;
     std::string result = exec(std::string("\"") + executable + + "\" tmp.png tmp-out.png");
     bool exists = result.find("hdmarker::runaway_subpattern") != std::string::npos;
     exists |= (result.find("ERROR: area already covered from different idx!") != std::string::npos);

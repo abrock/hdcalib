@@ -103,8 +103,8 @@ void Calib::getReprojections(
     rot_vec2mat(r, R);
 
     double dist[14];
-    for (size_t jj = 0; jj < 14; ++jj) {
-        dist[jj] = distCoeffs.cols > jj ? distCoeffs(jj) : 0;
+    for (int jj = 0; jj < 14; ++jj) {
+        dist[size_t(jj)] = distCoeffs.cols > jj ? distCoeffs(jj) : 0;
     }
 
     double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
@@ -222,7 +222,7 @@ void Calib::setRecursionDepth(int _recursionDepth) {
     cornerIdFactor = 1;
     if (recursionDepth > 0) {
         cornerIdFactor = 10;
-        for (size_t ii = 1; ii < recursionDepth; ++ii) {
+        for (int ii = 1; ii < recursionDepth; ++ii) {
             cornerIdFactor *= 5;
         }
     }

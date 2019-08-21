@@ -146,12 +146,9 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    bool has_cached_calib = false;
-
     cv::FileStorage fs(cache_file, cv::FileStorage::READ);
     cv::FileNode n = fs["calibration"];
     n >> calib;
-    has_cached_calib = true;
     fs.release();
 
     calib.printObjectPointCorrectionsStats();

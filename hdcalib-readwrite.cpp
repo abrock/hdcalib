@@ -80,6 +80,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
                 distCoeffs,
                 rvecs[index],
                 tvecs[index]);
+    ignore_unused(success);
     std::cout << "done." << std::endl;
 }
 
@@ -145,9 +146,8 @@ void Calib::normalize_raw_per_channel_inplace(Mat &input) {
 Mat Calib::read_raw(const string &filename) {
     LibRaw RawProcessor;
 
-
     auto& S = RawProcessor.imgdata.sizes;
-    auto& OUT = RawProcessor.imgdata.params;
+    //auto& OUT = RawProcessor.imgdata.params;
 
     int ret;
     if ((ret = RawProcessor.open_file(filename.c_str())) != LIBRAW_SUCCESS) {
@@ -232,7 +232,7 @@ Mat Calib::read_raw(const string &filename) {
             cv::minMaxIdx(result, &min, &max);
             std::cout << "original min/max: " << min << " / " << max << std::endl;
         }
-        result.forEach<uint16_t>([&](uint16_t& element, const int position[]) -> void
+        result.forEach<uint16_t>([&](uint16_t& element, const int []) -> void
         {
             element *= 4;
         }
@@ -420,7 +420,7 @@ void Calib::read(const FileNode &node) {
 
 void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
     float const min_val = std::min(white.x, std::min(white.y, white.z));
-    float const max_val = std::max(white.x, std::max(white.y, white.z));
+    //float const max_val = std::max(white.x, std::max(white.y, white.z));
     float const f_b = min_val / white.x;
     float const f_g = min_val / white.y;
     float const f_r = min_val / white.z;

@@ -849,6 +849,9 @@ private:
             double rot_vec[]);
 
     double ceres_tolerance = 1e-12;
+
+    template<class T>
+    void ignore_unused(T&) {}
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

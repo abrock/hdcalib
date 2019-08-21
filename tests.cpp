@@ -11,9 +11,9 @@
 #include "hdmarker.hpp"
 #include "hdcalib.h"
 
-std::random_device rd;
-std::default_random_engine engine(rd());
-std::normal_distribution<double> dist;
+static std::random_device rd;
+static std::default_random_engine engine(rd());
+static std::normal_distribution<double> dist;
 
 ::testing::AssertionResult RelativeNear(const double a, const double b, double delta) {
     double const diff = std::abs(a-b);
@@ -35,7 +35,7 @@ void getCornerGrid(
     hdmarker::Corner a;
     for (size_t ii = 0; ii < grid_width; ++ii) {
         for (size_t jj = 0; jj < grid_height; ++jj) {
-            a.id = cv::Point2i(ii, jj);
+            a.id = cv::Point2i(int(ii), int(jj));
             a.page = page;
             a.p = cv::Point2f(ii, jj) + offset;
             a.size = .5;
@@ -52,7 +52,7 @@ void getCornerGridConditional(
     hdmarker::Corner a;
     for (size_t ii = 0; ii < grid_width; ++ii) {
         for (size_t jj = 0; jj < grid_height; ++jj) {
-            a.id = cv::Point2i(ii, jj);
+            a.id = cv::Point2i(int(ii), int(jj));
             a.page = page;
             a.p = cv::Point2f(ii, jj);
             a.size = .5;
@@ -69,7 +69,7 @@ bool float_eq(float const a, float const b) {
     if (std::isnan(a) || std::isnan(b) || std::isinf(a) || std::isinf(b)) {
         return false;
     }
-    if (0 == a || 0 == b) {
+    if (std::abs(a) < std::numeric_limits<float>::epsilon() || std::abs(b) < std::numeric_limits<float>::epsilon()) {
         if (std::abs(a-b) < std::numeric_limits<float>::epsilon()) {
             return true;
         }
@@ -182,11 +182,11 @@ TEST(CornerStore, Adaptors) {
     for (size_t ii = store.size(); ii < num_markers; ++ii) {
         hdmarker::Corner x;
         x.p = cv::Point2f(ii*12+1,ii*12+2);
-        x.id = cv::Point2i(ii*12+3,ii*12+4);
+        x.id = cv::Point2i(int(ii*12+3),int(ii*12+4));
         x.pc[0] = cv::Point2f(ii*12+5,ii*12+6);
         x.pc[1] = cv::Point2f(ii*12+7,ii*12+8);
         x.pc[2] = cv::Point2f(ii*12+9,ii*12+10);
-        x.page = ii*12+11;
+        x.page = int(ii*12+11);
         x.size = ii*12+12;
 
         store.push_back(x);
@@ -287,7 +287,7 @@ TEST(CornerStore, find) {
     getCornerGrid(store, grid_width, grid_height);
     for (size_t ii = 0; ii < grid_width; ++ii) {
         for (size_t jj = 0; jj < grid_height; ++jj) {
-            a.id = cv::Point2i(ii, jj);
+            a.id = cv::Point2i(int(ii), int(jj));
             a.page = 0;
             a.p = cv::Point2f(ii, jj);
             a.size = .5;
@@ -302,13 +302,13 @@ TEST(CornerStore, find) {
         }
     }
 
-    std::uniform_real_distribution<float> dist_x(-.4, grid_width - .6);
-    std::uniform_real_distribution<float> dist_y(-.4, grid_height - .6);
+    std::uniform_real_distribution<float> dist_x(-.4f, float(grid_width) - .6f);
+    std::uniform_real_distribution<float> dist_y(-.4f, float(grid_height) - .6f);
     for (size_t ii = 0; ii < 10*1000; ++ii) {
         float const x = dist_x(engine);
         float const y = dist_y(engine);
-        cv::Point2i id(std::round(x), std::round(y));
-        std::vector<hdmarker::Corner> res = store.findByPos(x, y, 1);
+        cv::Point2i id(int(std::round(x)), int(std::round(y)));
+        std::vector<hdmarker::Corner> res = store.findByPos(double(x), double(y), 1);
         ASSERT_EQ(1, res.size());
         hdmarker::Corner const& r = res[0];
         EXPECT_NEAR(x, r.p.x, .50001);
@@ -328,7 +328,7 @@ TEST(CornerStore, find) {
 
     for (size_t ii = 0; ii < grid_width; ++ii) {
         for (size_t jj = 0; jj < grid_height; ++jj) {
-            a.id = cv::Point2i(ii, jj);
+            a.id = cv::Point2i(int(ii), int(jj));
             a.page = 0;
             a.p = cv::Point2f(ii, jj);
             a.size = .5;
@@ -346,8 +346,8 @@ TEST(CornerStore, find) {
     for (size_t ii = 0; ii < 10*1000; ++ii) {
         float const x = dist_x(engine);
         float const y = dist_y(engine);
-        cv::Point2i id(std::round(x), std::round(y));
-        std::vector<hdmarker::Corner> res = store.findByPos(x, y, 1);
+        cv::Point2i id(int(std::round(x)), int(std::round(y)));
+        std::vector<hdmarker::Corner> res = store.findByPos(double(x), double(y), 1);
         ASSERT_EQ(1, res.size());
         hdmarker::Corner const& r = res[0];
         EXPECT_NEAR(x, r.p.x, .50001);
@@ -417,7 +417,7 @@ TEST(CornerStore, copyConstructor) {
     size_t const grid_height = 50;
 
     getCornerGrid(store, grid_width, grid_height);
-    size_t const grid_size = store.size();
+    //size_t const grid_size = store.size();
 
     hdcalib::CornerStore copy = store;
 
@@ -876,8 +876,7 @@ TEST(CalibrationResult, project_simple) {
         double const X = dist(engine), Y = dist(engine), Z = square_p1(dist(engine)),
                 f_x = square_p1(dist(engine)), f_y = square_p1(dist(engine)),
                 p_x = dist(engine), p_y = dist(engine),
-                t_x = dist(engine), t_y = dist(engine), t_z = square_p1(dist(engine)),
-                r_a = dist(engine), r_b = dist(engine), r_c = dist(engine);
+                t_x = dist(engine), t_y = dist(engine), t_z = square_p1(dist(engine));
 
         cv::Mat_<double> camera_matrix = {f_x,0,p_x,   0,f_y,p_y,   0,0,1};
         camera_matrix = camera_matrix.reshape(3,3);
@@ -1117,7 +1116,7 @@ std::string random_string( size_t length ) {
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
             "abcdefghijklmnopqrstuvwxyz";
             const size_t max_index = (sizeof(charset) - 1);
-            return charset[ rand() % max_index ];
+            return charset[ size_t(rand()) % max_index ];
 };
 std::string str(length,0);
 std::generate_n( str.begin(), length, randchar );
@@ -1180,8 +1179,8 @@ TEST(Calib, get3DPoint) {
     cv::Mat_<double> tvec(3,1);
 
     for (size_t ii = 0; ii < 3; ++ii) {
-        rvec(ii) = 0;
-        tvec(ii) = ii;
+        rvec(int(ii)) = 0;
+        tvec(int(ii)) = ii;
     }
 
     store = c.get("test1");
@@ -1217,7 +1216,7 @@ std::string type2str(int type) {
   std::string r;
 
   uchar depth = type & CV_MAT_DEPTH_MASK;
-  uchar chans = 1 + (type >> CV_CN_SHIFT);
+  uchar chans = uchar(1 + (type >> CV_CN_SHIFT));
 
   switch ( depth ) {
     case CV_8U:  r = "8U"; break;
@@ -1231,7 +1230,7 @@ std::string type2str(int type) {
   }
 
   r += "C";
-  r += (chans+'0');
+  r += char(chans+'0');
 
   return r;
 }
@@ -1301,7 +1300,7 @@ int main(int argc, char** argv)
         size_t const grid_height = 50;
 
         getCornerGrid(store, grid_width, grid_height);
-        size_t const grid_size = store.size();
+        //size_t const grid_size = store.size();
 
         hdcalib::CornerStore copy = store;
 
