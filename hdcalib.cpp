@@ -711,6 +711,8 @@ double Calib::openCVCalib() {
 
     std::cout << "focal length factor: " << cameraMatrix(0,0) / focalLength << std::endl;
 
+    hasCalibration = true;
+
     return result_err;
 }
 

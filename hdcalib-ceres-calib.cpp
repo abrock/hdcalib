@@ -139,6 +139,8 @@ double Calib::CeresCalib() {
                   << "Distortion: " << (old_dist - distCoeffs) << std::endl;
     }
 
+    hasCalibration = true;
+
     return 0;
 }
 
