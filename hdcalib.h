@@ -520,13 +520,13 @@ class Calib
     bool preparedCalib = false;
 
     std::vector<cv::Scalar> const color_circle = {
-        cv::Scalar(255,255,255),
-        cv::Scalar(255,0,0),
-        cv::Scalar(0,255,0),
-        cv::Scalar(0,0,255),
-        cv::Scalar(255,255,0),
-        cv::Scalar(0,255,255),
-        cv::Scalar(255,0,255),
+        cv::Scalar(255,255,255,255),
+        cv::Scalar(255,0,0,255),
+        cv::Scalar(0,255,0,255),
+        cv::Scalar(0,0,255,255),
+        cv::Scalar(255,255,0,255),
+        cv::Scalar(0,255,255,255),
+        cv::Scalar(255,0,255,255)
     };
 
 public:
@@ -670,6 +670,8 @@ public:
     const T t[3]
     );
 
+    cv::Point2f project(cv::Vec3d const& point) const;
+
     template<class F, class T>
     static void project(
             F const p[3],
@@ -696,6 +698,8 @@ public:
 
     template<class T>
     static void rot_vec2mat(cv::Mat const& vec, T mat[9]);
+
+    static std::string tostringLZ(size_t num, size_t min_digits = 2);
 
     /**
      * @brief getRectificationRotation Find the rotation vector in object space needed for the rectification of the captured light field images.
@@ -826,7 +830,10 @@ public:
     void printHist(std::ostream &out, const runningstats::Histogram &h, const double threshold = 0);
     void getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec);
     void getIndividualRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot);
-    void paintSubmarkers(const std::vector<Corner> &submarkers, cv::Mat &image, int paint_size_factor) const;
+    void paintSubmarkers(const std::vector<Corner> &submarkers, cv::Mat &image, int const paint_size_factor) const;
+
+    void initializeCameraMatrix(double const focal_length, double const cx, double const cy);
+    void initialzeDistortionCoefficients();
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -838,6 +845,8 @@ private:
             ceres::Problem &problem,
             const int8_t axis,
             double rot_vec[]);
+
+    double ceres_tolerance = 1e-12;
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

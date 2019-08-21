@@ -38,9 +38,20 @@ int main(int argc, char* argv[]) {
     ParallelTime t, total_time;
     std::stringstream time_log;
 
+    std::string cache_file = "";
+
+    bool verbose2 = false;
+    bool plot_synthetic_markers = false;
+
     try {
         TCLAP::CmdLine cmd("hdcalib simulation tool", ' ', "0.1");
 
+        TCLAP::ValueArg<std::string> cache("c", "cache", "cache file", false, "", "filename");
+        cmd.add(cache);
+
+        cmd.parse(argc, argv);
+
+        cache_file = cache.getValue();
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
@@ -55,115 +66,192 @@ int main(int argc, char* argv[]) {
 
     Calib calib;
 
+    /**
+     * @brief image_scale f_x and f_y to be used in the simulation. Also half of the plotted image's width and height.
+     */
+    double const image_scale = 1000;
 
+    /**
+     * @brief marker_size value to be set for hdmarker::Corner::size, not to be confused with the physical dimension of a marker.
+     */
+    double const marker_size = 30;
 
+    /**
+     * @brief noise Gaussian noise added to the 2D location of the projected markers.
+     */
+    double const noise = 0.01;
+
+    /**
+     * @brief num_per_dir Number of markers per direction, total number is num_per_dir².
+     */
     int const num_per_dir = 30;
+
+    calib.setImageSize(cv::Mat_<double>(2*image_scale,2*image_scale));
+    calib.setRecursionDepth(0);
+    calib.setValidPages({0});
+
+
+
+    bool has_cached_calib = false;
+    if (fs::is_regular_file(cache_file)) {
+        try {
+            std::cout << "Reading cached calibration results..." << std::flush;
+            cv::FileStorage fs(cache_file, cv::FileStorage::READ);
+            cv::FileNode n = fs["calibration"];
+            n >> calib;
+            has_cached_calib = true;
+            fs.release();
+            std::cout << " done." << std::endl;
+            calib.purgeInvalidPages();
+        }
+        catch (std::exception const& e) {
+            std::cout << "Reading cache file failed with exception:" << std::endl
+                      << e.what() << std::endl;
+        }
+        TIMELOG("Reading cached result");
+    }
+
+    cv::Mat_<double> const tvec_offset = cv::Mat_<double>({-1, -1, 0})*double(calib.getMarkerSize()*num_per_dir)/2;
 
     std::random_device rd;
     std::default_random_engine engine(rd());
     std::normal_distribution<double> gauss;
 
-    double const image_scale = 500;
 
-    double const noise = 0.001;
+    if (!has_cached_calib) {
 
-    for (size_t ii = 0; ii < 100; ++ii) {
-        std::vector<hdmarker::Corner> markers;
+        calib.initializeCameraMatrix(image_scale, image_scale, image_scale);
 
+        runningstats::RunningStats global_stat_x, global_stat_y;
 
-        double const veclength = std::uniform_real_distribution<double>(.0001, .1)(engine);
-        double const depth = std::uniform_real_distribution<double>(90,110)(engine);
-
-        double rot_vec[3] = {gauss(engine), gauss(engine), gauss(engine)};
-        double const tmp_vec_length = std::sqrt(rot_vec[0]*rot_vec[0] + rot_vec[1]*rot_vec[1] + rot_vec[2]*rot_vec[2]);
-        for (size_t jj = 0; jj < 3; ++jj) {
-            rot_vec[jj] *= veclength / tmp_vec_length;
-        }
-
-        double rot_mat[9];
-
-        Calib::rot_vec2mat(rot_vec, rot_mat);
-
-        runningstats::RunningStats stat_x, stat_y;
-
-        for (int yy = 0; yy < num_per_dir; yy++) {
-            for (int xx = 0; xx < num_per_dir; xx++) {
-                cv::Point2i id(xx, yy);
-                int const page = 0;
-                Corner current(cv::Point2f(), id, page);
-                cv::Point3f loc3d = calib.getInitial3DCoord(current, 0);
-                loc3d = cv::Point3f(
-                            loc3d.x * rot_mat[0] + loc3d.y * rot_mat[1] + loc3d.z * rot_mat[2],
-                        loc3d.x * rot_mat[3] + loc3d.y * rot_mat[4] + loc3d.z * rot_mat[5],
-                        loc3d.x * rot_mat[6] + loc3d.y * rot_mat[7] + loc3d.z * rot_mat[8] + depth
-                        );
-
-                current.p = image_scale * cv::Point2f(loc3d.x/loc3d.z, loc3d.y/loc3d.z);
-                current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
-                markers.push_back(current);
-                stat_x.push(current.p.x);
-                stat_y.push(current.p.y);
-            }
-        }
-        std::string filename = std::to_string(ii) + ".png";
-        calib.addInputImage(filename, markers);
-        cv::Mat paint(1100, 1100, CV_8UC3);
-        calib.paintSubmarkers(markers, paint, 1);
-        cv::imwrite(filename, paint);
-        std::cout << "Marker position stats:" << std::endl
-                  << "x: " << stat_x.print() << std::endl
-                  << " y: " << stat_y.print() << std::endl;
-    }
-
-    calib.setImageSize(cv::Mat_<double>(10,10));
-    calib.setRecursionDepth(0);
-    calib.setValidPages({0});
-
-    TIMELOG("Setting up calibration images");
-
-    calib.openCVCalib();
-
-    TIMELOG("openCVCalib");
-
-    calib.CeresCalib();
-
-    TIMELOG("CeresCalib");
-
-    // Create 9x9 lightfield
-    int const grid = 4;
-    std::vector<std::string> lightfield;
-    for (int ii = -grid; ii <= grid; ++ii) {
-        for (int jj = -grid; jj <= grid; ++jj) {
-
+        for (size_t ii = 0; ii < 16; ++ii) {
             std::vector<hdmarker::Corner> markers;
 
-            for (int xx = 0; xx < num_per_dir; xx++) {
-                for (int yy = 0; yy < num_per_dir; yy++) {
-                    cv::Point2i id(xx, yy);
-                    int const page = 0;
-                    Corner current(cv::Point2f(), id, page);
-                    cv::Point3f loc3d = calib.getInitial3DCoord(current, 100);
-                    loc3d.x += 10*jj;
-                    loc3d.y += 10*ii;
 
-                    current.p = image_scale * cv::Point2f(loc3d.x / loc3d.z, loc3d.y/loc3d.z);
+            double const veclength = std::uniform_real_distribution<double>(.0001, .1)(engine);
+            double const depth = std::uniform_real_distribution<double>(90,110)(engine);
+
+            cv::Mat_<double> rot_vec = {3*gauss(engine), 3*gauss(engine), gauss(engine)};
+            rot_vec *= veclength / (std::sqrt(rot_vec.dot(rot_vec)));
+
+            cv::Mat_<double> const t_vec = cv::Mat_<double>({gauss(engine), gauss(engine), depth}) + tvec_offset;
+
+            runningstats::RunningStats stat_x, stat_y;
+
+            for (int yy = 0; yy < num_per_dir; yy++) {
+                for (int xx = 0; xx < num_per_dir; xx++) {
+                    int const page = 0;
+                    Corner current(cv::Point2f(), cv::Point2i(xx,yy), page);
+                    current.size = marker_size;
+                    cv::Vec3d loc3d = calib.get3DPoint(current, rot_vec, t_vec);
+
+                    current.p = calib.project(loc3d);
                     current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
                     markers.push_back(current);
+                    stat_x.push(current.p.x);
+                    stat_y.push(current.p.y);
+
+                    global_stat_x.push(current.p.x);
+                    global_stat_y.push(current.p.y);
                 }
             }
-            std::string filename = std::to_string(ii) + ";" + std::to_string(jj) + ".png";
-            calib.addInputImageAfterwards(filename, markers);
-            lightfield.push_back(filename);
+            std::string filename = std::to_string(ii) + ".png";
+            calib.addInputImage(filename, markers, rot_vec, t_vec);
+            if (plot_synthetic_markers) {
+                cv::Mat_<cv::Vec3b> paint(2*image_scale, 2*image_scale, cv::Vec3b(50,50,50));
+                calib.paintSubmarkers(markers, paint, 1);
+                cv::imwrite(filename, paint);
+            }
+            if (verbose2) {
+                std::cout << "Marker position stats:" << std::endl
+                          << "x: " << stat_x.print() << std::endl
+                          << " y: " << stat_y.print() << std::endl;
+            }
         }
+        std::cout << "Global marker position stats:" << std::endl
+                  << "x: " << global_stat_x.print() << std::endl
+                  << " y: " << global_stat_y.print() << std::endl;
+
+        TIMELOG("Setting up calibration images");
+
+        //*
+        calib.openCVCalib();
+
+        TIMELOG("openCVCalib");
+
+        calib.CeresCalib();
+
+        TIMELOG("CeresCalib");
+        // */
+
     }
 
-    TIMELOG("Setting up lightfield")
+    // Create 9x9 lightfield
+    int const grid = 3;
+    std::vector<std::string> lightfield;
 
-    calib.CeresCalib();
+    runningstats::RunningStats global_stat_x, global_stat_y;
+    size_t grid_counter = 0;
+    for (int ii = -grid; ii <= grid; ++ii) {
+        for (int jj = -grid; jj <= grid; ++jj, ++grid_counter) {
+            std::vector<hdmarker::Corner> markers;
 
-    TIMELOG("Second CeresCalib");
 
-    cv::Vec3d col_vec, row_vec, rot_vec;
+            double const depth = 100;
+            double const grid_size = 10;
+
+            cv::Mat_<double> rot_vec = {0,0,0};
+
+            cv::Mat_<double> const t_vec = cv::Mat_<double>({jj * grid_size, ii * grid_size, depth}) + tvec_offset;
+
+            runningstats::RunningStats stat_x, stat_y;
+
+            for (int yy = 0; yy < num_per_dir; yy++) {
+                for (int xx = 0; xx < num_per_dir; xx++) {
+                    int const page = 0;
+                    Corner current(cv::Point2f(), cv::Point2i(xx,yy), page);
+                    current.size = marker_size;
+                    cv::Vec3d loc3d = calib.get3DPoint(current, rot_vec, t_vec);
+
+                    current.p = calib.project(loc3d);
+                    current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
+                    markers.push_back(current);
+                    stat_x.push(current.p.x);
+                    stat_y.push(current.p.y);
+
+                    global_stat_x.push(current.p.x);
+                    global_stat_y.push(current.p.y);
+                }
+            }
+            std::string filename = "lf-" + Calib::tostringLZ(grid_counter, 2) + ".png";
+            lightfield.push_back(filename);
+            calib.addInputImage(filename, markers, rot_vec, t_vec);
+            if (plot_synthetic_markers) {
+                cv::Mat_<cv::Vec3b> paint(2*image_scale, 2*image_scale, cv::Vec3b(50,50,50));
+                calib.paintSubmarkers(markers, paint, 1);
+                cv::imwrite(filename, paint);
+            }
+            if (verbose2) {
+                std::cout << "Marker position stats:" << std::endl
+                          << "x: " << stat_x.print() << std::endl
+                          << " y: " << stat_y.print() << std::endl;
+            }
+        }
+    }
+    std::cout << "Global marker position stats:" << std::endl
+              << "x: " << global_stat_x.print() << std::endl
+              << " y: " << global_stat_y.print() << std::endl;
+
+    TIMELOG("Setting up lightfield");
+
+    //*
+    if (!has_cached_calib) {
+        calib.CeresCalib();
+        TIMELOG("Second CeresCalib");
+    }
+    // */
+
+    cv::Vec3d col_vec(4,-6,9), row_vec(2,9,-5), rot_vec;
     calib.getGridVectors(2*grid+1, 2*grid+1, lightfield, row_vec, col_vec);
 
     TIMELOG("getGridVectors");
@@ -171,6 +259,13 @@ int main(int argc, char* argv[]) {
     calib.getRectificationRotation(2*grid+1, 2*grid+1, lightfield, rot_vec);
 
     TIMELOG("getRectificationRotation");
+
+    if (!has_cached_calib && !cache_file.empty()) {
+        cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
+        fs << "calibration" << calib;
+        fs.release();
+        TIMELOG("Writing cache file");
+    }
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

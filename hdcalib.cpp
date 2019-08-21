@@ -764,6 +764,17 @@ void Calib::findOutliers(
     }
 }
 
+Point2f Calib::project(const Vec3d &point) const {
+    double const p[3] = {point[0], point[1], point[2]};
+    double result[2] = {0,0};
+    double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
+    double principal[2] = {cameraMatrix(0,2), cameraMatrix(1,2)};
+    double const  R[9] = {1,0,0,   0,1,0,   0,0,1};
+    double const t[3] = {0,0,0};
+    project(p, result, focal, principal, R, t);
+    return cv::Point2f(result[0], result[1]);
+}
+
 Vec3d Calib::get3DPoint(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
     cv::Mat_<double> rvec(_rvec);
     cv::Mat_<double> tvec(_tvec);
@@ -778,6 +789,14 @@ Vec3d Calib::get3DPoint(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
     get3DPoint(src, _result, rot, tvec_data);
 
     return cv::Vec3d(_result[0], _result[1], _result[2]);
+}
+
+string Calib::tostringLZ(size_t num, size_t min_digits) {
+    std::string result = std::to_string(num);
+    if (result.size() < min_digits) {
+        result = std::string(min_digits - result.size(), '0') + result;
+    }
+    return result;
 }
 
 template<class Point>

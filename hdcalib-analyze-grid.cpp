@@ -10,11 +10,20 @@ struct GridCost {
     cv::Vec3d const point;
     cv::Vec3d const center;
 
-    GridCost(int const _row, int const _col, cv::Vec3d const & _point, cv::Vec3d const & _center) :
+    double const weight;
+
+
+    GridCost(
+            int const _row,
+            int const _col,
+            cv::Vec3d const & _point,
+            cv::Vec3d const & _center,
+            double const _weight) :
         row(_row),
         col(_col),
         point(_point),
-        center(_center) {}
+        center(_center),
+        weight(_weight) {}
 
     template<class T>
     bool operator () (
@@ -22,7 +31,7 @@ struct GridCost {
             T const * const col_vec,
             T * residuals) const {
         for (size_t ii = 0; ii < 3; ++ii) {
-            residuals[ii] = T(point[ii]) - (T(center[ii]) + T(row) * row_vec[ii] + T(col) * col_vec[ii]);
+            residuals[ii] = weight * (T(point[ii]) - (T(center[ii]) + T(row) * row_vec[ii] + T(col) * col_vec[ii]));
         }
         return true;
     }
@@ -112,6 +121,7 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
             CornerStore const& current = data[images[counter]];
             size_t const id = getId(images[counter]);
             std::vector<GridCost* > & target_costs = cost_functions[images[counter]];
+            std::vector<cv::Vec3d> src_vec, dst_vec;
             for (size_t ii = 0; ii < middle.size(); ++ii) {
                 hdmarker::Corner const& src = middle.get(ii);
                 std::vector<hdmarker::Corner> const _dst = current.findByID(src);
@@ -123,11 +133,11 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
                 if (src.page != dst.page || src.id.x != dst.id.x || src.id.y != dst.id.y) {
                     continue;
                 }
-
-                cv::Vec3d src1, dst1;
-                src1 = get3DPoint(src, rvecs[middle_id], tvecs[middle_id]);
-                dst1 = get3DPoint(dst, rvecs[id], tvecs[id]);
-                GridCost * cost = new GridCost(row, col, src1, dst1);
+                src_vec.push_back(get3DPoint(src, rvecs[middle_id], tvecs[middle_id]));
+                dst_vec.push_back(get3DPoint(dst, rvecs[id], tvecs[id]));
+            }
+            for (size_t ii = 0; ii < src_vec.size(); ++ii) {
+                GridCost * cost = new GridCost(row, col, src_vec[ii], dst_vec[ii], 1.0/src_vec.size());
                 ceres::CostFunction * cost_function = new ceres::AutoDiffCostFunction<GridCost, 3, 3, 3>(
                             cost
                             );
@@ -141,9 +151,9 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
     options.max_num_iterations = 150;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = true;
-    options.function_tolerance = 1e-16;
-    options.gradient_tolerance = 1e-16;
-    options.parameter_tolerance = 1e-16;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 
@@ -237,22 +247,23 @@ void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vec
             CornerStore const& current = data[images[counter]];
             size_t const id = getId(images[counter]);
             std::vector<GridCost* > & target_costs = cost_functions[images[counter]];
-            for (size_t ii = 0; ii < intersection.size(); ++ii) {
-                std::vector<hdmarker::Corner> const _src = middle.findByID(intersection[ii]);
-                std::vector<hdmarker::Corner> const _dst = current.findByID(intersection[ii]);
-                if (_dst.empty() || _src.empty()) {
+            std::vector<cv::Vec3d> src_vec, dst_vec;
+            for (size_t ii = 0; ii < middle.size(); ++ii) {
+                hdmarker::Corner const& src = middle.get(ii);
+                std::vector<hdmarker::Corner> const _dst = current.findByID(src);
+                if (_dst.empty()) {
                     continue;
                 }
-                const auto& dst = _dst.front();
-                const auto& src = _src.front();
+                //const F p[], T result[], const T R[], const T t[];
+                hdmarker::Corner const& dst = _dst.front();
                 if (src.page != dst.page || src.id.x != dst.id.x || src.id.y != dst.id.y) {
                     continue;
                 }
-
-                cv::Vec3d src1, dst1;
-                src1 = get3DPoint(src, rvecs[middle_id], tvecs[middle_id]);
-                dst1 = get3DPoint(dst, rvecs[id], tvecs[id]);
-                GridCost * cost = new GridCost(row, col, src1, dst1);
+                src_vec.push_back(get3DPoint(src, rvecs[middle_id], tvecs[middle_id]));
+                dst_vec.push_back(get3DPoint(dst, rvecs[id], tvecs[id]));
+            }
+            for (size_t ii = 0; ii < src_vec.size(); ++ii) {
+                GridCost * cost = new GridCost(row, col, src_vec[ii], dst_vec[ii], 1.0/src_vec.size());
                 ceres::CostFunction * cost_function = new ceres::AutoDiffCostFunction<GridCost, 3, 3, 3>(
                             cost
                             );
@@ -266,9 +277,9 @@ void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vec
     options.max_num_iterations = 150;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = true;
-    options.function_tolerance = 1e-16;
-    options.gradient_tolerance = 1e-16;
-    options.parameter_tolerance = 1e-16;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 

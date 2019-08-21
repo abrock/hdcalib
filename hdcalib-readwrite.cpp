@@ -37,6 +37,12 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
 }
 
 void Calib::addInputImageAfterwards(const string filename, const std::vector<Corner> &corners) {
+    if (hasFile(filename)) {
+        if (verbose) {
+            std::cout << "Not adding duplicate image " << filename << std::endl;
+        }
+        return;
+    }
     if (verbose) {
         std::cout << "Adding image " << filename << "..." << std::flush;
     }
@@ -74,6 +80,9 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
+    if (hasFile(filename)) {
+        return;
+    }
     invalidateCache();
 
     CornerStore & ref = data[filename];
@@ -253,29 +262,28 @@ cv::Size Calib::read_raw_imagesize(const string &filename) {
     return cv::Size(S.width, S.height);
 }
 
-void Calib::paintSubmarkers(std::vector<Corner> const& submarkers, cv::Mat& image, int paint_size_factor) const {
+void Calib::paintSubmarkers(std::vector<Corner> const& submarkers, cv::Mat& image, const int paint_size_factor) const {
+    size_t paint_counter = 0;
     for(size_t ii = 0; ii < submarkers.size(); ++ii) {
         Corner const& c = submarkers[ii];
 
         // Ignore markers outside the image (may occur in simulation)
-        if (c.p.x < 0 || c.p.y < 0 || c.p.x * paint_size_factor > image.cols || c.p.y * paint_size_factor > image.rows) {
+        if (c.p.x < 0 || c.p.y < 0 || c.p.x * paint_size_factor + 1 > image.cols || c.p.y * paint_size_factor + 1 > image.rows) {
             continue;
         }
-
-        cv::Mat image;
+        paint_counter++;
 
         cv::Point2f local_shift(0,0);
-        if (c.id.x % 10 != 0 && c.id.y % 10 == 0) {
+        if (recursionDepth == 1 && c.id.x % 10 != 0 && c.id.y % 10 == 0) {
             if (c.id.x % 10 == 3 || c.id.x % 10 == 7) {
                 local_shift.y = 16;
             }
         }
 
-
         cv::Scalar const& font_color = color_circle[ii % color_circle.size()];
         std::string const text = to_string(c.id.x) + "/" + to_string(c.id.y) + "/" + to_string(c.page);
-        circle(image, paint_size_factor*c.p, 1, Scalar(0,0,0,0), 2);
-        circle(image, paint_size_factor*c.p, 1, Scalar(0,255,0,0));
+        circle(image, paint_size_factor*c.p, 1, Scalar(0,0,0,127), 2);
+        circle(image, paint_size_factor*c.p, 1, Scalar(0,255,0,127));
         putText(image, text.c_str(), local_shift+paint_size_factor*c.p, FONT_HERSHEY_PLAIN, .9, Scalar(0,0,0,0), 2, cv::LINE_AA);
         putText(image, text.c_str(), local_shift+paint_size_factor*c.p, FONT_HERSHEY_PLAIN, .9, font_color, 1, cv::LINE_AA);
         std::string const text_page = to_string(c.page);
@@ -286,6 +294,17 @@ void Calib::paintSubmarkers(std::vector<Corner> const& submarkers, cv::Mat& imag
             putText(image, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, cv::LINE_AA);
         }
     }
+}
+
+void Calib::initializeCameraMatrix(const double focal_length, const double cx, const double cy) {
+    cameraMatrix = cv::Mat_<double>::eye(3,3);
+    cameraMatrix(0,0) = cameraMatrix(1,1) = focal_length;
+    cameraMatrix(0,2) = cx;
+    cameraMatrix(1,2) = cy;
+}
+
+void Calib::initialzeDistortionCoefficients() {
+    distCoeffs *= 0;
 }
 
 void Calib::write(FileStorage &fs) const {
@@ -299,6 +318,14 @@ void Calib::write(FileStorage &fs) const {
        << "apertureHeight" << apertureHeight
        << "useOnlyGreen" << useOnlyGreen
        << "recursionDepth" << recursionDepth;
+
+    if (!validPages.empty()) {
+        fs << "validPages" << "[";
+        for (auto const val : validPages) {
+            fs << val;
+        }
+        fs << "]";
+    }
 
     fs << "images" << "[";
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
@@ -339,7 +366,17 @@ void Calib::read(const FileNode &node) {
     node["recursionDepth"] >> recursionDepth;
     setRecursionDepth(recursionDepth);
 
-    FileNode n = node["images"]; // Read string sequence - Get node
+    FileNode n = node["validPages"]; // Read string sequence - Get node
+    if (n.type() == FileNode::SEQ) {
+        for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
+            int val = 0;
+            *it >> val;
+            validPages.push_back(val);
+        }
+    }
+
+
+    n = node["images"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
         throw std::runtime_error("Error while reading cached calibration result: Images is not a sequence. Aborting.");
     }

@@ -105,9 +105,9 @@ double Calib::CeresCalib() {
     ceres::Solver::Options options;
     options.num_threads = threads;
     options.max_num_iterations = 150;
-    options.function_tolerance = 1e-16;
-    options.gradient_tolerance = 1e-16;
-    options.parameter_tolerance = 1e-16;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
     options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.minimizer_progress_to_stdout = true;
     ceres::Solver::Summary summary;
@@ -245,9 +245,9 @@ double Calib::CeresCalibFlexibleTarget() {
     options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.max_num_iterations = 150;
     options.minimizer_progress_to_stdout = true;
-    options.function_tolerance = 1e-16;
-    options.gradient_tolerance = 1e-16;
-    options.parameter_tolerance = 1e-16;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 

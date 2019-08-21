@@ -17,7 +17,7 @@ struct RectifyCost {
         axis(_axis),
         src_a(_src_a),
         src_b(_src_b),
-    cameraMatrix(_cameraMatrix) {}
+        cameraMatrix(_cameraMatrix) {}
 
     template<class T>
     void compute(
@@ -67,7 +67,7 @@ void Calib::addImagePairToRectificationProblem(
         ceres::Problem & problem,
         int8_t const axis,
         double rot_vec[3]
-        ) {
+) {
     for (size_t ii = 0; ii < current.size(); ++ii) {
         hdmarker::Corner const& src = current.get(ii);
         std::vector<hdmarker::Corner> const _dst = next.findByID(src);
@@ -118,14 +118,14 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
-                    current,
-                    current_id,
-                    next,
-                    next_id,
-                    target_costs,
-                    problem,
-                    0,
-                    rot_vec);
+                        current,
+                        current_id,
+                        next,
+                        next_id,
+                        target_costs,
+                        problem,
+                        0,
+                        rot_vec);
         }
     }
     counter = 0;
@@ -142,14 +142,14 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
-                    current,
-                    current_id,
-                    next,
-                    next_id,
-                    target_costs,
-                    problem,
-                    1,
-                    rot_vec);
+                        current,
+                        current_id,
+                        next,
+                        next_id,
+                        target_costs,
+                        problem,
+                        1,
+                        rot_vec);
         }
     }
     ceres::Solver::Options options;
@@ -157,9 +157,9 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
     options.max_num_iterations = 150;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = true;
-    options.function_tolerance = 1e-16;
-    options.gradient_tolerance = 1e-16;
-    options.parameter_tolerance = 1e-16;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 
@@ -202,17 +202,23 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
             }
         }
 
-        std::cout << "Residual stats for " << it.first << ":" << std::endl;
+        if (verbose2) {
+            std::cout << "Residual stats for " << it.first << ":" << std::endl;
+            for (size_t ii = 0; ii < 2; ++ii) {
+                if (verbose2) {
+                    std::cout << res[ii].print() << std::endl;
+                }
+            }
+            std::cout << "Error stats for " << it.first << ":" << std::endl;
+            for (size_t ii = 0; ii < 2; ++ii) {
+                std::cout << err[ii].print() << std::endl;
+            }
+            std::cout << std::endl;
+        }
         for (size_t ii = 0; ii < 2; ++ii) {
-            std::cout << res[ii].print() << std::endl;
             res[ii].plotHistAndCDF(std::string("rect-local-residuals-")
-                             + std::to_string(counter) + "-" + std::to_string(ii), .1);
+                                   + std::to_string(counter) + "-" + std::to_string(ii), .1);
         }
-        std::cout << "Error stats for " << it.first << ":" << std::endl;
-        for (size_t ii = 0; ii < 2; ++ii) {
-            std::cout << err[ii].print() << std::endl;
-        }
-        std::cout << std::endl;
         counter++;
     }
     std::cout << "Residual stats for all images:" << std::endl;
@@ -263,14 +269,14 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
-                    current,
-                    current_id,
-                    next,
-                    next_id,
-                    target_costs,
-                    problem,
-                    0,
-                    rot_vecs[counter].data());
+                        current,
+                        current_id,
+                        next,
+                        next_id,
+                        target_costs,
+                        problem,
+                        0,
+                        rot_vecs[counter].data());
         }
     }
     counter = 0;
@@ -288,14 +294,14 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
-                    current,
-                    current_id,
-                    next,
-                    next_id,
-                    target_costs,
-                    problem,
-                    1,
-                    rot_vecs[counter].data());
+                        current,
+                        current_id,
+                        next,
+                        next_id,
+                        target_costs,
+                        problem,
+                        1,
+                        rot_vecs[counter].data());
         }
     }
     ceres::Solver::Options options;
@@ -303,9 +309,9 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
     options.max_num_iterations = 150;
     options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.minimizer_progress_to_stdout = true;
-    options.function_tolerance = 1e-16;
-    options.gradient_tolerance = 1e-16;
-    options.parameter_tolerance = 1e-16;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
@@ -335,7 +341,7 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
         for (size_t ii = 0; ii < 2; ++ii) {
             std::cout << res[ii].print() << std::endl;
             res[ii].plotHistAndCDF(std::string("individual-rect-local-residuals-")
-                             + std::to_string(counter) + "-" + std::to_string(ii), .1);
+                                   + std::to_string(counter) + "-" + std::to_string(ii), .1);
         }
         std::cout << "Error stats for " << it.first << ":" << std::endl;
         for (size_t ii = 0; ii < 2; ++ii) {
