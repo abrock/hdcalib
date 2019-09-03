@@ -96,7 +96,6 @@ void Calib::addImagePairToRectificationProblem(
 }
 
 void Calib::getRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot) {
-    std::cout << "##### getRectificationRotation #####" << std::endl;
     prepareCalibration();
     ceres::Problem problem;
 
@@ -107,7 +106,7 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
     size_t counter = 0;
     for (int row = -int(rows/2); row <= int(rows/2); ++row) {
         for (int col = -int(cols/2); col <= int(cols/2); ++col, ++counter) {
-            std::cout << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
+            clog::L(__func__, 2) << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
             if (col == int(cols/2)) {
                 continue;
             }
@@ -131,7 +130,7 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
     counter = 0;
     for (int row = -int(rows/2); row <= int(rows/2); ++row) {
         for (int col = -int(cols/2); col <= int(cols/2); ++col, ++counter) {
-            std::cout << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
+            clog::L(__func__, 2) << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
             if (row == int(rows/2)) {
                 continue;
             }
@@ -163,12 +162,9 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 
-    std::cout << summary.FullReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
 
     Calib::normalizeRotationVector(rot_vec);
-
-    Solve(options, &problem, &summary);
-    std::cout << summary.FullReport() << "\n";
 
     /* Global residual statistics */
     runningstats::QuantileStats<double> g_res[2];
@@ -202,18 +198,15 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
             }
         }
 
-        if (verbose2) {
-            std::cout << "Residual stats for " << it.first << ":" << std::endl;
-            for (size_t ii = 0; ii < 2; ++ii) {
-                if (verbose2) {
-                    std::cout << res[ii].print() << std::endl;
-                }
+        clog::L(__func__, 2) << "Residual stats for " << it.first << ":" << std::endl;
+        for (size_t ii = 0; ii < 2; ++ii) {
+            if (verbose2) {
+                clog::L(__func__, 2) << res[ii].print() << std::endl;
             }
-            std::cout << "Error stats for " << it.first << ":" << std::endl;
-            for (size_t ii = 0; ii < 2; ++ii) {
-                std::cout << err[ii].print() << std::endl;
-            }
-            std::cout << std::endl;
+        }
+        clog::L(__func__, 2) << "Error stats for " << it.first << ":" << std::endl;
+        for (size_t ii = 0; ii < 2; ++ii) {
+            clog::L(__func__, 2) << err[ii].print() << std::endl;
         }
         for (size_t ii = 0; ii < 2; ++ii) {
             res[ii].plotHistAndCDF(std::string("rect-local-residuals-")
@@ -221,16 +214,16 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
         }
         counter++;
     }
-    std::cout << "Residual stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Residual stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 2; ++ii) {
-        std::cout << g_res[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_res[ii].print() << std::endl;
         g_res[ii].plotHistAndCDF(std::string("rect-global-residuals-") + std::to_string(ii), .1);
     }
-    std::cout << "Error stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Error stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 2; ++ii) {
-        std::cout << g_err[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_err[ii].print() << std::endl;
     }
-    std::cout << std::endl;
+    clog::L(__func__, 1) << std::endl;
 
 
     Calib::normalizeRotationVector(rot_vec);
@@ -239,12 +232,11 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
 
     double const degree = std::sqrt(rect_rot.dot(rect_rot)) / M_PI * 180;
 
-    std::cout << "Rotation vector: " << rot_vec[0] << ", " << rot_vec[1] << ", " << rot_vec[2] << std::endl;
-    std::cout << "Rotation: " <<  degree << "°" << std::endl;
+    clog::L(__func__, 1) << "Rotation vector: " << rot_vec[0] << ", " << rot_vec[1] << ", " << rot_vec[2] << std::endl;
+    clog::L(__func__, 1) << "Rotation: " <<  degree << "°" << std::endl;
 }
 
 void Calib::getIndividualRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot) {
-    std::cout << "##### getRectificationRotation #####" << std::endl;
     prepareCalibration();
     ceres::Problem problem;
 
@@ -257,7 +249,7 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
     size_t counter = 0;
     for (int row = -int(rows/2); row <= int(rows/2); ++row) {
         for (int col = -int(cols/2); col <= int(cols/2); ++col, ++counter) {
-            std::cout << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
+            clog::L(__func__, 2) << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
             size_t next_counter = counter+1;
             if (col == int(cols/2)) {
                 next_counter = counter-1;
@@ -282,7 +274,7 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
     counter = 0;
     for (int row = -int(rows/2); row <= int(rows/2); ++row) {
         for (int col = -int(cols/2); col <= int(cols/2); ++col, ++counter) {
-            std::cout << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
+            clog::L(__func__, 2) << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
             size_t next_counter = counter+cols;
             if (row == int(rows/2)) {
                 next_counter = counter-cols;
@@ -315,7 +307,7 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-    std::cout << summary.FullReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
 
 
 
@@ -337,36 +329,35 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
             err[cost->axis].push_unsafe(std::abs(residuals[0]));
         }
 
-        std::cout << "Residual stats for " << it.first << ":" << std::endl;
+        clog::L(__func__, 2) << "Residual stats for " << it.first << ":" << std::endl;
         for (size_t ii = 0; ii < 2; ++ii) {
-            std::cout << res[ii].print() << std::endl;
+            clog::L(__func__, 2) << res[ii].print() << std::endl;
             res[ii].plotHistAndCDF(std::string("individual-rect-local-residuals-")
                                    + std::to_string(counter) + "-" + std::to_string(ii), .1);
         }
-        std::cout << "Error stats for " << it.first << ":" << std::endl;
+        clog::L(__func__, 2) << "Error stats for " << it.first << ":" << std::endl;
         for (size_t ii = 0; ii < 2; ++ii) {
-            std::cout << err[ii].print() << std::endl;
+            clog::L(__func__, 2) << err[ii].print() << std::endl;
         }
-        std::cout << std::endl;
         counter++;
     }
-    std::cout << "Residual stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Residual stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 2; ++ii) {
-        std::cout << g_res[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_res[ii].print() << std::endl;
         g_res[ii].plotHistAndCDF(std::string("individual-rect-global-residuals-") + std::to_string(ii), .1);
     }
-    std::cout << "Error stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Error stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 2; ++ii) {
-        std::cout << g_err[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_err[ii].print() << std::endl;
     }
-    std::cout << std::endl;
+    clog::L(__func__, 1) << std::endl;
 
-    std::cout << "Rotation vectors: " << std::endl;
+    clog::L(__func__, 1) << "Rotation vectors: " << std::endl;
     for (size_t ii = 0; ii < rot_vecs.size(); ++ii) {
         for (size_t jj = 0; jj < 3; ++jj) {
-            std::cout << rot_vecs[ii][jj] << ", ";
+            clog::L(__func__, 1) << rot_vecs[ii][jj] << ", ";
         }
-        std::cout << std::endl;
+        clog::L(__func__, 1) << std::endl;
     }
 }
 

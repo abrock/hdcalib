@@ -42,14 +42,10 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
 
 void Calib::addInputImageAfterwards(const string filename, const std::vector<Corner> &corners) {
     if (hasFile(filename)) {
-        if (verbose) {
-            std::cout << "Not adding duplicate image " << filename << std::endl;
-        }
+        clog::L(__func__, 2) << "Not adding duplicate image " << filename << std::endl;
         return;
     }
-    if (verbose) {
-        std::cout << "Adding image " << filename << "..." << std::flush;
-    }
+    clog::L(__func__, 2) << "Adding image " << filename << "..." << std::flush;
     invalidateCache();
 
     rvecs.push_back(cv::Mat());
@@ -58,7 +54,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 
     insertSorted(imageFiles, rvecs, tvecs);
 
-    std::cout << "replacing corners..." << std::flush;
+    clog::L(__func__, 2) << "replacing corners..." << std::flush;
     CornerStore & ref = data[filename];
     ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
     ref.clean(cornerIdFactor);
@@ -70,9 +66,9 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         }
     }
 
-    std::cout << "preparing calibration..." << std::flush;
+    clog::L(__func__, 2) << "preparing calibration..." << std::flush;
     prepareCalibration();
-    std::cout << "solvePnP..." << std::flush;
+    clog::L(__func__, 2) << "solvePnP..." << std::flush;
     bool const success = cv::solvePnP (
                 objectPoints[index],
                 imagePoints[index],
@@ -81,7 +77,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
                 rvecs[index],
                 tvecs[index]);
     ignore_unused(success);
-    std::cout << "done." << std::endl;
+    clog::L(__func__, 2) << "done." << std::endl;
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
@@ -166,13 +162,13 @@ Mat Calib::read_raw(const string &filename) {
 
     if (verbose) {
         printf("Unpacked....\n");
-        std::cout << "Color matrix (top left corner):" << std::endl;
+        clog::L(__func__, 2) << "Color matrix (top left corner):" << std::endl;
         for (size_t ii = 0; ii < 6 && ii < S.width; ++ii) {
             for (size_t jj = 0; jj < 6 && jj < S.height; ++jj) {
-                std::cout << RawProcessor.COLOR(ii, jj) << ":"
-                          << RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)] << " ";
+                clog::L(__func__, 2) << RawProcessor.COLOR(ii, jj) << ":"
+                        << RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)] << " ";
             }
-            std::cout << std::endl;
+            clog::L(__func__, 2) << std::endl;
         }
         runningstats::Histogram r(1),g(1),b(1);
         for (int jj = 0; jj < S.height; ++jj) {
@@ -187,22 +183,22 @@ Mat Calib::read_raw(const string &filename) {
             }
         }
         double const hist_threshold = 0.001;
-        std::cout << "R-channel histogram:" << std::endl;
+        clog::L(__func__, 2) << "R-channel histogram:" << std::endl;
         printHist(std::cout, r, hist_threshold);
-        std::cout << "G-channel histogram:" << std::endl;
+        clog::L(__func__, 2) << "G-channel histogram:" << std::endl;
         printHist(std::cout, g, hist_threshold);
-        std::cout << "B-channel histogram:" << std::endl;
+        clog::L(__func__, 2) << "B-channel histogram:" << std::endl;
         printHist(std::cout, b, hist_threshold);
 
-        std::cout << "model2: " << RawProcessor.imgdata.color.model2 << std::endl;
-        std::cout << "UniqueCameraModel: " << RawProcessor.imgdata.color.UniqueCameraModel << std::endl;
-        std::cout << "LocalizedCameraModel: " << RawProcessor.imgdata.color.LocalizedCameraModel << std::endl;
+        clog::L(__func__, 2) << "model2: " << RawProcessor.imgdata.color.model2 << std::endl;
+        clog::L(__func__, 2) << "UniqueCameraModel: " << RawProcessor.imgdata.color.UniqueCameraModel << std::endl;
+        clog::L(__func__, 2) << "LocalizedCameraModel: " << RawProcessor.imgdata.color.LocalizedCameraModel << std::endl;
 
-        std::cout << "desc: " << RawProcessor.imgdata.other.desc << std::endl;
-        std::cout << "artist: " << RawProcessor.imgdata.other.artist << std::endl;
+        clog::L(__func__, 2) << "desc: " << RawProcessor.imgdata.other.desc << std::endl;
+        clog::L(__func__, 2) << "artist: " << RawProcessor.imgdata.other.artist << std::endl;
 
-        std::cout << "make: " << RawProcessor.imgdata.idata.make << std::endl;
-        std::cout << "model: " << RawProcessor.imgdata.idata.model << std::endl;
+        clog::L(__func__, 2) << "make: " << RawProcessor.imgdata.idata.make << std::endl;
+        clog::L(__func__, 2) << "model: " << RawProcessor.imgdata.idata.model << std::endl;
     }
 
     if (!(RawProcessor.imgdata.idata.filters || RawProcessor.imgdata.idata.colors == 1)) {
@@ -223,24 +219,18 @@ Mat Calib::read_raw(const string &filename) {
 
     if ("Sony" == std::string(RawProcessor.imgdata.idata.make)
             && "ILCE-7RM2" == std::string(RawProcessor.imgdata.idata.model)) {
-        if (verbose) {
-            std::cout << "Known camera detected, scaling result" << std::endl;
-        }
+        clog::L(__func__, 2) << "Known camera detected, scaling result" << std::endl;
         //result *= 4;
         double min = 0, max = 0;
-        if (verbose) {
-            cv::minMaxIdx(result, &min, &max);
-            std::cout << "original min/max: " << min << " / " << max << std::endl;
-        }
+        cv::minMaxIdx(result, &min, &max);
+        clog::L(__func__, 2) << "original min/max: " << min << " / " << max << std::endl;
         result.forEach<uint16_t>([&](uint16_t& element, const int []) -> void
         {
             element *= 4;
         }
         );
-        if (verbose) {
-            cv::minMaxIdx(result, &min, &max);
-            std::cout << "scaled min/max: " << min << " / " << max << std::endl;
-        }
+        cv::minMaxIdx(result, &min, &max);
+        clog::L(__func__, 2) << "scaled min/max: " << min << " / " << max << std::endl;
     }
 
 
@@ -258,10 +248,9 @@ cv::Size Calib::read_raw_imagesize(const string &filename) {
         throw std::runtime_error(std::string("Cannot open file ") + filename + ", "
                                  + libraw_strerror(ret) + "\r\n");
     }
-    if (verbose) {
-        printf("Image size: %dx%d\nRaw size: %dx%d\n", S.width, S.height, S.raw_width, S.raw_height);
-        printf("Margins: top=%d, left=%d\n", S.top_margin, S.left_margin);
-    }
+    clog::L(__func__, 2) << "Image size: " << S.width << "x" << S.height << std::endl
+            << "Raw size: " << S.raw_width << "x" << S.raw_height << std::endl
+            << "Margins: top=" << S.top_margin << ", left=" << S.left_margin << std::endl;
 
     return cv::Size(S.width, S.height);
 }

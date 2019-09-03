@@ -26,6 +26,24 @@ static std::normal_distribution<double> dist;
                                              << " which exceeds " << delta;
 }
 
+::testing::AssertionResult rot4_eq(const double a[4], const double b[4],
+const double threshold = 1e-12) {
+    if (std::abs(a[3]) < 100*std::numeric_limits<double>::min()
+            && std::abs(a[3]) < 100 * std::numeric_limits<double>::min())
+        return ::testing::AssertionSuccess();
+    for (size_t ii = 0; ii < 3; ++ii) {
+        if (std::abs(a[ii] - b[ii]) > threshold) {
+            return ::testing::AssertionFailure()
+                    << "The difference between a[" << ii
+                    << "] and b[" << ii << "] is " << std::abs(a[ii] - b[ii])
+                    << ", which exceeds " << threshold << ", where a["
+                    << ii << "] evaluates to " << a[ii]
+                    << " and b[" << ii << "] evaluates to " << b[ii];
+        }
+    }
+    return ::testing::AssertionSuccess();
+}
+
 void getCornerGrid(
         hdcalib::CornerStore & store,
         size_t const grid_width = 50,
@@ -1201,16 +1219,175 @@ void printMarkers(std::vector<hdmarker::Corner> const& corners) {
     std::cout << std::endl;
 }
 
-TEST(Calib, piecewiseRefinement) {
-    cv::Mat img = cv::imread("test1.png");
-    std::vector<hdmarker::Corner> first, second, third;
-    hdmarker::detect(img, first, false, 10, 5);
-    printMarkers(first);
-    double marker_size = 6.35;
-    hdcalib::Calib::piecewiseRefinement(img, first, second, 1, marker_size);
-    std::cout << "Resulting marker size: " << marker_size << std::endl;
-    printMarkers(second);
+TEST(Calib, rot4_rot3) {
+    using namespace hdcalib;
+
+    runningstats::RunningStats diff_stats[3];
+    std::discrete_distribution<int> zero_dice {1,1};
+
+    for (size_t jj = 0; jj < 10*1000; ++jj) {
+
+        double const src[3] = {dist(engine), dist(engine), dist(engine)};
+        double const rotation[3] = {zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine)};
+        double rot3_mat[9];
+        double translation[3] = {0,0,0};
+        Calib::rot_vec2mat(rotation, rot3_mat);
+        double rot3_result[3];
+        Calib::get3DPoint(src, rot3_result, rot3_mat, translation);
+
+        double rot4_mat[9];
+        double rot4_vec[4];
+        Calib::rot3_rot4(rotation, rot4_vec);
+        Calib::rot4_vec2mat(rot4_vec, rot4_mat);
+        double rot4_result[3];
+        Calib::get3DPoint(src, rot4_result, rot4_mat, translation);
+
+        for (size_t ii = 0; ii < 3; ++ii) {
+            diff_stats[ii].push(rot3_result[ii] - rot4_result[ii]);
+            EXPECT_NEAR(rot3_result[ii], rot4_result[ii], 1e-12);
+        }
+    }
+
+    std::cout << "rot3 - rot4 result stats:" << std::endl;
+    for (size_t ii = 0; ii < 3; ++ii) {
+        std::cout << diff_stats[ii].print() << std::endl;
+    }
+
 }
+
+TEST(Calib, rot4_rot3_backwards) {
+    using namespace hdcalib;
+
+    runningstats::RunningStats diff_stats[3];
+
+    std::discrete_distribution<int> zero_dice {1,1};
+
+    for (size_t jj = 0; jj < 10*1000; ++jj) {
+
+        double const src[3] = {dist(engine), dist(engine), dist(engine)};
+        double const rotation[4] = {zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine)};
+        double rot3_mat[9];
+        double rot3_vec[3];
+        double translation[3] = {0,0,0};
+        Calib::rot4_rot3(rotation, rot3_vec);
+        Calib::rot_vec2mat(rot3_vec, rot3_mat);
+        double rot3_result[3];
+        Calib::get3DPoint(src, rot3_result, rot3_mat, translation);
+
+        double rot4_mat[9];
+        Calib::rot4_vec2mat(rotation, rot4_mat);
+        double rot4_result[3];
+        Calib::get3DPoint(src, rot4_result, rot4_mat, translation);
+
+        bool has_error = false;
+        for (size_t ii = 0; ii < 3; ++ii) {
+            diff_stats[ii].push(rot3_result[ii] - rot4_result[ii]);
+            EXPECT_NEAR(rot3_result[ii], rot4_result[ii], 1e-12);
+            if (std::abs(rot3_result[ii] - rot4_result[ii]) > 1e-12) {
+                has_error = true;
+            }
+        }
+        if (has_error) {
+            std::cout << "rotation: " << rotation[0] << ", " << rotation[1] << ", " << rotation[2] << ", " << rotation[3] << std::endl;
+            Calib::rot4_rot3(rotation, rot3_vec);
+            Calib::rot4_vec2mat(rotation, rot4_mat);
+        }
+    }
+
+    std::cout << "rot3 - rot4 backwards result stats:" << std::endl;
+    for (size_t ii = 0; ii < 3; ++ii) {
+        std::cout << diff_stats[ii].print() << std::endl;
+    }
+
+}
+
+TEST(Calib, rot3_rot4_rot3_conversion) {
+    using namespace hdcalib;
+
+    runningstats::RunningStats diff_stats[3];
+
+    std::discrete_distribution<int> zero_dice {1,1};
+
+    for (size_t jj = 0; jj < 10*1000; ++jj) {
+
+        double const rotation[3] = {zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine)};
+        cv::Mat_<double> const rvec3_src = {rotation[0], rotation[1], rotation[2]};
+        std::vector<double> intermediate = Calib::rot3_rot4<double>(rvec3_src);
+        EXPECT_EQ(4, intermediate.size());
+
+        cv::Mat_<double> rvec3_dst;
+        Calib::rot4_rot3(intermediate.data(), rvec3_dst);
+        for (int ii = 0; ii < 3; ++ii) {
+            EXPECT_NEAR(rvec3_src(ii), rvec3_dst(ii), 1e-12);
+            diff_stats[ii].push_unsafe(rvec3_src(ii) - rvec3_dst(ii));
+        }
+
+    }
+
+    std::cout << "rot3 - rot4 - rot3 result stats:" << std::endl;
+    for (size_t ii = 0; ii < 3; ++ii) {
+        std::cout << diff_stats[ii].print() << std::endl;
+    }
+
+}
+
+bool rot4_zero(double const vec[4]) {
+    return std::abs(vec[3]) < 100*std::numeric_limits<double>::min();
+}
+
+TEST(Calib, rot4_rot3_rot4_conversion) {
+    using namespace hdcalib;
+
+    runningstats::RunningStats diff_stats[4];
+
+    std::discrete_distribution<int> zero_dice {1,1};
+
+    for (size_t jj = 0; jj < 10*1000; ++jj) {
+
+        double rotation[4] = {zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine),
+                                    zero_dice(engine)*dist(engine)};
+
+        Calib::normalize_rot4(rotation, rotation);
+
+        cv::Mat_<double> intermediate;
+        Calib::rot4_rot3<double>(rotation, intermediate);
+
+        double rvec4_dst[4];
+        Calib::rot3_rot4(intermediate, rvec4_dst);
+
+        bool failed = false;
+        EXPECT_TRUE(rot4_eq(rotation, rvec4_dst));
+        if (!rot4_zero(rotation)) {
+            for (size_t ii = 0; ii < 4; ++ii) {
+                diff_stats[ii].push_unsafe(rotation[ii] - rvec4_dst[ii]);
+                if (std::abs(rotation[ii] - rvec4_dst[ii]) > 1e-12) {
+                    failed = true;
+                }
+            }
+        }
+        if (failed) {
+            Calib::rot4_rot3<double>(rotation, intermediate);
+            Calib::rot3_rot4(intermediate, rvec4_dst);
+        }
+
+    }
+
+    std::cout << "rot4 - rot3 - rot4 result stats:" << std::endl;
+    for (size_t ii = 0; ii < 4; ++ii) {
+        std::cout << diff_stats[ii].print() << std::endl;
+    }
+
+}
+
 
 std::string type2str(int type) {
   std::string r;
@@ -1235,130 +1412,7 @@ std::string type2str(int type) {
   return r;
 }
 
-int main(int argc, char** argv)
-{
-    cv::Mat img = cv::imread("test3.png", cv::IMREAD_GRAYSCALE);
-    std::cout << "Type: " << type2str(img.type()) << std::endl;
-    if (img.channels() != 1) {
-        cv::cvtColor(img, img, CV_BGR2GRAY);
-    }
-    std::cout << "Type: " << type2str(img.type()) << std::endl;
-    std::vector<hdmarker::Corner> first, second, third;
-    hdmarker::detect(img, first,false,0,10, 0.5, 3);
-    printMarkers(first);
-    double marker_size = 6.35;
-    hdcalib::Calib::piecewiseRefinement(img, first, second, 1, marker_size);
-    std::cout << "Resulting marker size: " << marker_size << std::endl;
-    printMarkers(second);
-
-
-    {
-        //* Use this code if the tests fail with unexpected exceptions.
-        hdcalib::CornerStore store;
-        hdcalib::CornerIndexAdaptor idx_adapt(store);
-        hdcalib::CornerPositionAdaptor pos_adapt(store);
-
-        // We create a hdmarker::Corner with a different value for each property.
-        hdmarker::Corner a;
-        a.p = cv::Point2f(1,2);
-        a.id = cv::Point2i(3,4);
-        a.pc[0] = cv::Point2f(5,6);
-        a.pc[1] = cv::Point2f(7,8);
-        a.pc[2] = cv::Point2f(9,10);
-        a.page = 11;
-        a.size = 12;
-
-        store.push_back(a);
-
-        getCornerGrid(store, 10, 10);
-
-        store.purgeUnlikely(1);
-
-    }
-
-    {
-        hdcalib::CornerStore store;
-        hdmarker::Corner a, b;
-
-        a.p = cv::Point2f(1,2);
-        a.id = cv::Point2i(3,4);
-        a.pc[0] = cv::Point2f(5,6);
-        a.pc[1] = cv::Point2f(7,8);
-        a.pc[2] = cv::Point2f(9,10);
-        a.page = 11;
-        a.size = 12;
-
-        b.p = cv::Point2f(1,2);
-        b.id = cv::Point2i(3,4);
-        b.pc[0] = cv::Point2f(5,6);
-        b.pc[1] = cv::Point2f(7,8);
-        b.pc[2] = cv::Point2f(9,10);
-        b.page = 42;
-        b.size = 12;
-
-        size_t const grid_width = 50;
-        size_t const grid_height = 50;
-
-        getCornerGrid(store, grid_width, grid_height);
-        //size_t const grid_size = store.size();
-
-        hdcalib::CornerStore copy = store;
-
-        EXPECT_EQ(copy.size(), store.size());
-        EXPECT_EQ(copy.size(), 2500);
-        EXPECT_EQ(store.size(), 2500);
-
-        EXPECT_FALSE(store.hasID(a));
-        EXPECT_FALSE(copy.hasID(a));
-        EXPECT_FALSE(store.hasID(b));
-        EXPECT_FALSE(copy.hasID(b));
-
-        store.push_back(a);
-
-        EXPECT_EQ(copy.size(), 2500);
-        EXPECT_EQ(store.size(), 2501);
-
-        EXPECT_TRUE(store.hasID(a));
-        EXPECT_FALSE(copy.hasID(a));
-        EXPECT_FALSE(store.hasID(b));
-        EXPECT_FALSE(copy.hasID(b));
-
-        copy.push_back(b);
-
-        EXPECT_EQ(copy.size(), 2501);
-        EXPECT_EQ(store.size(), 2501);
-
-        EXPECT_TRUE(store.hasID(a));
-        EXPECT_FALSE(copy.hasID(a));
-        EXPECT_FALSE(store.hasID(b));
-        EXPECT_TRUE(copy.hasID(b));
-
-        std::map<std::string, hdcalib::CornerStore> map;
-        map["store"] = store;
-        map["copy"] = copy;
-
-        EXPECT_EQ(map["store"].size(), 2501);
-        EXPECT_EQ(map["copy"].size(), 2501);
-
-        map["store"].intersect(map["copy"]);
-        EXPECT_EQ(map["store"].size(), 2500);
-        EXPECT_EQ(map["copy"].size(), 2501);
-
-        map["copy"].intersect(map["store"]);
-        EXPECT_EQ(map["store"].size(), 2500);
-        EXPECT_EQ(map["copy"].size(), 2500);
-
-        map["copy"].intersect(map["copy"]);
-        map["store"].intersect(map["store"]);
-        EXPECT_EQ(map["store"].size(), 2500);
-        EXPECT_EQ(map["copy"].size(), 2500);
-
-    }
-
-    //return 0;
-    // */
-
+int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     std::cout << "RUN_ALL_TESTS return value: " << RUN_ALL_TESTS() << std::endl;
-
 }

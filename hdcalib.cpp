@@ -4,6 +4,7 @@
 #include <opencv2/optflow.hpp>
 #include <opencv2/video/tracking.hpp>
 #include <runningstats/runningstats.h>
+#include <catlogger/catlogger.h>
 #include "gnuplot-iostream.h"
 
 
@@ -53,8 +54,7 @@ bool Calib::removeOutliers(const double threshold) {
         return false;
     }
     CornerStore subtrahend(outliers);
-    std::stringstream msg;
-    msg << "Outlier percentage by image:" << std::endl;
+    clog::L(__func__, 2) << "Outlier percentage by image:" << std::endl;
     runningstats::RunningStats percent_stats;
     for (auto& it : data) {
         size_t const before = it.second.size();
@@ -62,12 +62,9 @@ bool Calib::removeOutliers(const double threshold) {
         size_t const after = it.second.size();
         double const percent = (double(before - after)/before)*100.0;
         percent_stats.push(percent);
-        msg << it.first << ": removed " << (before-after) << " out of " << before << " corners (" << percent << "%)" << std::endl;
+        clog::L(__func__, 2) << it.first << ": removed " << (before-after) << " out of " << before << " corners (" << percent << "%)" << std::endl;
     }
-    msg << "Removeal percentage stats: " << percent_stats.print() << std::endl;
-    if (verbose) {
-        std::cout << msg.str() << std::endl;
-    }
+    clog::L(__func__, 1) << "Removeal percentage stats: " << percent_stats.print() << std::endl;
     invalidateCache();
     return true;
 }
@@ -137,7 +134,7 @@ char Calib::color(const int ii, const int jj) {
 }
 
 Calib::Calib() {
-    std::cout << "Number of concurrent threads: " << threads << std::endl;
+    clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
 void Calib::normalizeRotationVector(Mat &vector) {
@@ -149,11 +146,11 @@ void Calib::normalizeRotationVector(Mat &vector) {
 void Calib::normalizeRotationVector(double vector[]) {
     cv::Mat_<double> vec(3,1);
     for (size_t ii = 0; ii < 3; ++ii) {
-        vec(ii) = vector[ii];
+        vec(int(ii)) = vector[ii];
     }
     normalizeRotationVector(vec);
     for (size_t ii = 0; ii < 3; ++ii) {
-        vector[ii] = vec(ii);
+        vector[ii] = vec(int(ii));
     }
 }
 
@@ -178,15 +175,17 @@ void Calib::setValidPages(const std::vector<int> &_pages) {
 
 void Calib::purgeInvalidPages() {
     invalidateCache();
+    runningstats::RunningStats percent_stats;
     for (auto& it : data) {
         std::vector<hdmarker::Corner> cleaned = purgeInvalidPages(it.second.getCorners(), validPages);
         if (cleaned.size() < it.second.size()) {
-            if (verbose) {
-                std::cout << "In image " << it.first << " removed " << it.second.size() - cleaned.size() << " out of " << it.second.size() << " corners" << std::endl;
-            }
+            clog::L(__func__, 2) << "In image " << it.first << " removed " << it.second.size() - cleaned.size() << " out of " << it.second.size() << " corners" << std::endl;
+            double const percentage = it.second.size() > 0 ? 100.0*double(it.second.size() - cleaned.size())/it.second.size() : 100;
+            percent_stats.push_unsafe(percentage);
             it.second.replaceCorners(cleaned);
         }
     }
+    clog::L(__func__, 1) << percent_stats.print();
 }
 
 std::vector<Corner> Calib::purgeInvalidPages(const std::vector<Corner> &in, const std::vector<int> &valid_pages) {
@@ -246,7 +245,7 @@ void Calib::prepareOpenCVCalibration() {
     imageFiles.resize(data.size());
 
     size_t ii = 0;
-    for (std::pair<std::string, CornerStore> const& it : data) {
+    for (std::pair<const std::string, CornerStore> const& it : data) {
         it.second.getMajorPoints(imagePoints[ii], objectPoints[ii], *this);
         imageFiles[ii] = it.first;
         ++ii;
@@ -272,7 +271,7 @@ void Calib::only_green(bool only_green) {
 
 std::vector<double> Calib::mat2vec(const Mat &in) {
     std::vector<double> result;
-    result.reserve(in.cols*in.rows);
+    result.reserve(size_t(in.cols*in.rows));
     cv::Mat_<double> _in(in);
     for (auto const& it : _in) {
         result.push_back(it);
@@ -289,14 +288,14 @@ cv::Mat_<double> Calib::vec2mat(const std::vector<double> &in) {
 }
 
 std::vector<double> Calib::point2vec3f(const Point3f &in) {
-    return {in.x, in.y, in.z};
+    return {double(in.x), double(in.y), double(in.z)};
 }
 
 Point3f Calib::vec2point3f(const std::vector<double> &in) {
     if (in.size() < 3) {
         throw std::runtime_error("Less than 3 elements in input vector.");
     }
-    return cv::Point3f(in[0], in[1], in[2]);
+    return cv::Point3f(float(in[0]), float(in[1]), float(in[2]));
 }
 
 Point3f Calib::getInitial3DCoord(const Corner &c, const double z) const {
@@ -304,7 +303,7 @@ Point3f Calib::getInitial3DCoord(const Corner &c, const double z) const {
 }
 
 Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
-    cv::Point3f res(c.x, c.y, z);
+    cv::Point3f res(float(c.x), float(c.y), float(z));
     switch (c.z) {
     case 1: res.x += cornerIdFactor * 32; break;
     case 2: res.x += cornerIdFactor * 64; break;
@@ -316,8 +315,8 @@ Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
     case 7: res.x += cornerIdFactor * 32; break;
     }
 
-    res.x *= markerSize / cornerIdFactor;
-    res.y *= markerSize / cornerIdFactor;
+    res.x *= float(markerSize / cornerIdFactor);
+    res.y *= float(markerSize / cornerIdFactor);
 
     return res;
 }
@@ -380,7 +379,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
     }
     catch (const Exception& e) {
-        std::cout << "Reading pointcache file failed with exception: " << std::endl
+        clog::L(__func__, 0) << "Reading pointcache file failed with exception: " << std::endl
                   << e.what() << std::endl;
         read_cache_success = false;
     }
@@ -389,7 +388,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             corners = purgeInvalidPages(corners, validPages);
         }
         corners = filter_duplicate_markers(corners);
-        std::cout << "Got " << corners.size() << " corners from pointcache file" << std::endl;
+        clog::L(__func__, 2) << "Got " << corners.size() << " corners from pointcache file" << std::endl;
     }
 
     bool read_submarkers_success = false;
@@ -423,8 +422,8 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
     }
     catch (const Exception& e) {
-        std::cout << "Reading pointcache file failed with exception: " << std::endl
-                  << e.what() << std::endl;
+        clog::L(__func__, 0) << "Reading pointcache file failed with exception: " << std::endl
+                     << e.what() << std::endl;
         read_submarkers_success = false;
     }
     if (read_submarkers_success) {
@@ -432,7 +431,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             submarkers = purgeInvalidPages(submarkers, validPages);
         }
         submarkers = filter_duplicate_markers(submarkers);
-        std::cout << "Got " << submarkers.size() << " submarkers from submarkers file" << std::endl;
+        clog::L(__func__, 2) << "Got " << submarkers.size() << " submarkers from submarkers file" << std::endl;
     }
 
     if (!resolutionKnown || 0 == imageSize.width || 0 == imageSize.height) {
@@ -457,14 +456,14 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             setImageSize(img);
             double min_val = 0, max_val = 0;
             cv::minMaxIdx(img, &min_val, &max_val);
-            std::cout << "Image min/max: " << min_val << " / " << max_val << std::endl;
+            clog::L(__func__, 2) << "Image min/max: " << min_val << " / " << max_val << std::endl;
 
             cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
         }
         else {
             img = cv::imread(input_file);
             setImageSize(img);
-            std::cout << "Input file " << input_file << " image size: " << img.size() << std::endl;
+            clog::L(__func__, 2) << "Input file " << input_file << " image size: " << img.size() << std::endl;
         }
         if (useOnlyGreen) {
             if (img.channels() > 1) {
@@ -474,7 +473,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             }
         }
         if (img.channels() == 1 && (img.depth() == CV_16U || img.depth() == CV_16S)) {
-            std::cout << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
+            clog::L(__func__, 0) << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
             img.convertTo(img, CV_8UC1, 1.0 / 256.0);
         }
         paint = img.clone();
@@ -484,17 +483,17 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         cv::merge(tmp, 3, paint);
     }
     if (paint.depth() == CV_16U || paint.depth() == CV_16S) {
-        std::cout << "Input image 16 bit, converting for painting to 8 bit." << std::endl;
+        clog::L(__func__, 1) << "Input image 16 bit, converting for painting to 8 bit." << std::endl;
         paint.convertTo(paint, CV_8UC3, 1.0 / 256.0);
     }
-    std::cout << "Paint type: " << paint.type() << std::endl;
-    std::cout << "Paint depth: " << paint.depth() << std::endl;
-    std::cout << "Input image size of file " << input_file << ": " << img.size << std::endl;
+    clog::L(__func__, 0) << "Paint type: " << paint.type() << std::endl;
+    clog::L(__func__, 0) << "Paint depth: " << paint.depth() << std::endl;
+    clog::L(__func__, 0) << "Input image size of file " << input_file << ": " << img.size << std::endl;
 
     Marker::init();
 
     if (img.depth() == CV_16U || img.depth() == CV_16S) {
-        std::cout << "Input image for marker detection 16 bit, converting for painting to 8 bit." << std::endl;
+        clog::L(__func__, 0) << "Input image for marker detection 16 bit, converting for painting to 8 bit." << std::endl;
         paint.convertTo(paint, CV_8UC1, 1.0 / 256.0);
     }
     if (!read_cache_success) {
@@ -525,7 +524,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
 
     if (recursionDepth > 0) {
-        std::cout << "Drawing sub-markers" << std::endl;
+        clog::L(__func__, 0) << "Drawing sub-markers" << std::endl;
         double msize = 1.0;
         if (!read_submarkers_success) {
             //hdmarker::refine_recursive(gray, corners, submarkers, recursionDepth, &msize);
@@ -553,9 +552,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
 
         if (submarkers.size() <= corners.size()) {
-            std::cout << "Warning: Number of submarkers (" << std::to_string(submarkers.size())
-                      << ") smaller than or equal to the number of corners (" << std::to_string(corners.size()) << "), in input file"
-                      << input_file << ", scaling ids." << std::endl;
+            clog::L(__func__, 0) << "Warning: Number of submarkers (" << std::to_string(submarkers.size())
+                                     << ") smaller than or equal to the number of corners (" << std::to_string(corners.size()) << "), in input file"
+                                     << input_file << ", scaling ids." << std::endl;
             int factor = 10;
             for (int ii = 1; ii < recursionDepth; ++ii) {
                 factor *=5;
@@ -567,11 +566,11 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
     }
 
-    std::cout << "Purging duplicate submarkers: " << submarkers.size() << " -> ";
+    clog::L(__func__, 1) << "Purging duplicate submarkers: " << submarkers.size() << " -> ";
     CornerStore c(submarkers);
     c.purgeDuplicates();
     submarkers = c.getCorners();
-    std::cout << submarkers.size() << std::endl;
+    clog::L(__func__, 1) << submarkers.size() << std::endl;
 
     if (plotMarkers) {
         //std::sort(submarkers.begin(), submarkers.end(), CornerIdSort());
@@ -599,9 +598,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
             std::string const text_page = to_string(c.page);
             double font_size = 2;
-            cv::Point2f const point_page = c.p + cv::Point2f(c.size/2 - font_size*5, c.size/2 - font_size*5);
+            cv::Point2f const point_page = c.p + (c.size/2 - float(font_size*5))*cv::Point2f(1,1);
             putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, Scalar(0,0,0,0), 2, cv::LINE_AA);
-            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[c.page % color_circle.size()], 1, cv::LINE_AA);
+            putText(paint, text_page.c_str(), point_page, FONT_HERSHEY_PLAIN, font_size, color_circle[size_t(c.page) % color_circle.size()], 1, cv::LINE_AA);
         }
         imwrite(input_file + "-1.png", paint);
     }
@@ -624,7 +623,7 @@ std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {
         if (a.id.x == 32 || a.id.y == 32) {
             for (size_t jj = 0; jj < in.size(); ++jj) {
                 const hdmarker::Corner& b = in[jj];
-                if (cv::norm(a.p-b.p) < (a.size + b.size)/20) {
+                if (cv::norm(a.p-b.p) < double(a.size + b.size)/20) {
                     has_duplicate = true;
                     break;
                 }
@@ -651,7 +650,7 @@ double Calib::openCVCalib() {
         cameraMatrix = (Mat_<double>(3,3) << 12937, 0, 4083, 0, 12978, 2636, 0, 0, 1);
         flags |= CALIB_USE_INTRINSIC_GUESS;
     }
-    std::cout << "Initial camera matrix: " << std::endl << cameraMatrix << std::endl;
+    clog::L(__func__, 1) << "Initial camera matrix: " << std::endl << cameraMatrix << std::endl;
 
     double result_err = cv::calibrateCamera (
                 objectPoints,
@@ -667,21 +666,21 @@ double Calib::openCVCalib() {
                 flags
                 );
 
-    std::cout << "RMSE: " << result_err << std::endl;
-    std::cout << "Camera Matrix: " << std::endl << cameraMatrix << std::endl;
-    std::cout << "distCoeffs: " << std::endl << distCoeffs << std::endl;
-    std::cout << "stdDevIntrinsics: " << std::endl << stdDevIntrinsics << std::endl;
-    std::cout << "stdDevExtrinsics: " << std::endl << stdDevExtrinsics << std::endl;
-    std::cout << "perViewErrors: " << std::endl << perViewErrors << std::endl;
+    clog::L(__func__, 1) << "RMSE: " << result_err << std::endl
+                              << "Camera Matrix: " << std::endl << cameraMatrix << std::endl
+                              << "distCoeffs: " << std::endl << distCoeffs << std::endl;
+    clog::L(__func__, 2) << "stdDevIntrinsics: " << std::endl << stdDevIntrinsics << std::endl
+                              << "stdDevExtrinsics: " << std::endl << stdDevExtrinsics << std::endl
+                              << "perViewErrors: " << std::endl << perViewErrors << std::endl;
 
-    std::cout << "rvecs: " << std::endl;
+    clog::L(__func__, 2) << "rvecs: " << std::endl;
     for (auto const& rvec: rvecs) {
-        std::cout << rvec << std::endl;
+        clog::L(__func__, 2) << rvec << std::endl;
     }
 
-    std::cout << "tvecs: " << std::endl;
+    clog::L(__func__, 2) << "tvecs: " << std::endl;
     for (auto const& tvec: tvecs) {
-        std::cout << tvec << std::endl;
+        clog::L(__func__, 2) << tvec << std::endl;
     }
 
     cv::calibrationMatrixValues (
@@ -697,19 +696,19 @@ double Calib::openCVCalib() {
                 );
 
     double const pixel_size = apertureWidth / imageSize.width;
-    std::cout << "calibrationMatrixValues: " << std::endl
-              << "fovx: " << fovx << std::endl
-              << "fovy: " << fovy << std::endl
-              << "focalLength: " << focalLength << std::endl
-              << "principalPoint: " << principalPoint << std::endl
-              << "aspectRatio: " << aspectRatio << std::endl
-              << "input image size: " << imageSize << std::endl
-              << "pixel size (um): " << pixel_size * 1000 << std::endl << std::endl;
+    clog::L(__func__, 1) << "calibrationMatrixValues: " << std::endl
+                              << "fovx: " << fovx << std::endl
+                              << "fovy: " << fovy << std::endl
+                              << "focalLength: " << focalLength << std::endl
+                              << "principalPoint: " << principalPoint << std::endl
+                              << "aspectRatio: " << aspectRatio << std::endl
+                              << "input image size: " << imageSize << std::endl
+                              << "pixel size (um): " << pixel_size * 1000 << std::endl << std::endl;
 
     cv::Point2d principal_point_offset = principalPoint - cv::Point2d(apertureWidth/2, apertureHeight/2);
-    std::cout << "principal point offset: " << principal_point_offset << "mm; ~" << principal_point_offset/pixel_size << "px" << std::endl;
+    clog::L(__func__, 1) << "principal point offset: " << principal_point_offset << "mm; ~" << principal_point_offset/pixel_size << "px" << std::endl;
 
-    std::cout << "focal length factor: " << cameraMatrix(0,0) / focalLength << std::endl;
+    clog::L(__func__, 1) << "focal length factor: " << cameraMatrix(0,0) / focalLength << std::endl;
 
     hasCalibration = true;
 
@@ -754,16 +753,12 @@ void Calib::findOutliers(
         outlier_stats.push_unsafe(error);
         hdmarker::Corner c = data[imageFiles[image_index]].get(ii);
         outliers.push_back(c);
-        if (verbose && verbose2) {
-            std::cout << "found outlier in image " << imageFiles[image_index]
-                         << ": id " << c.id << ", " << c.page << ", marker: "
-                         << markers[ii] << ", proj: " << projections[ii]
-                            << ", dist: " << error << std::endl;
-        }
+        clog::L(__func__, 3) << "found outlier in image " << imageFiles[image_index]
+                   << ": id " << c.id << ", " << c.page << ", marker: "
+                   << markers[ii] << ", proj: " << projections[ii]
+                      << ", dist: " << error << std::endl;
     }
-    if (verbose) {
-        std::cout << "Stats for " << imageFiles[image_index] << ": inliers: " << inlier_stats.print() << ", outliers: " << outlier_stats.print() << std::endl;
-    }
+    clog::L(__func__, 2) << "Stats for " << imageFiles[image_index] << ": inliers: " << inlier_stats.print() << ", outliers: " << outlier_stats.print() << std::endl;
 }
 
 Point2f Calib::project(const Vec3d &point) const {
@@ -774,7 +769,7 @@ Point2f Calib::project(const Vec3d &point) const {
     double const  R[9] = {1,0,0,   0,1,0,   0,0,1};
     double const t[3] = {0,0,0};
     project(p, result, focal, principal, R, t);
-    return cv::Point2f(result[0], result[1]);
+    return cv::Point2f(float(result[0]), float(result[1]));
 }
 
 Vec3d Calib::get3DPoint(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
@@ -782,7 +777,7 @@ Vec3d Calib::get3DPoint(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
     cv::Mat_<double> tvec(_tvec);
     cv::Point3f _src = getInitial3DCoord(c);
     _src += objectPointCorrections[getSimpleId(c)];
-    double src[3] = {_src.x, _src.y, _src.z};
+    double src[3] = {double(_src.x), double(_src.y), double(_src.z)};
     double rot[9];
     double rvec_data[3] = {rvec(0), rvec(1), rvec(2)};
     double tvec_data[3] = {tvec(0), tvec(1), tvec(2)};
@@ -804,7 +799,7 @@ string Calib::tostringLZ(size_t num, size_t min_digits) {
 template<class Point>
 double Calib::distance(const Point a, const Point b) {
     Point residual = a-b;
-    return std::sqrt(residual.dot(residual));
+    return std::sqrt(double(residual.dot(residual)));
 }
 
 //template double Calib::distance<cv::Point_<float> >(const cv::Point_<float>, const cv::Point_<float>);
@@ -831,4 +826,7 @@ void Calib::get3DPoint(const F p[], T result[], const T R[], const T t[]) {
     y = R[3]*X + R[4]*Y + R[5]*Z + t[1];
 }
 
-}
+template void Calib::get3DPoint(const double [], double [], const double [], const double []);
+
+
+} // namespace hdcalib

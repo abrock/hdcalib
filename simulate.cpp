@@ -35,13 +35,15 @@ void trim(std::string &s) {
 
 int main(int argc, char* argv[]) {
 
+    clog::Logger::getInstance().addListener(std::cout);
+
     ParallelTime t, total_time;
     std::stringstream time_log;
 
     std::string cache_file = "";
 
     bool verbose2 = false;
-    bool plot_synthetic_markers = false;
+    bool plot_synthetic_markers = true;
 
     try {
         TCLAP::CmdLine cmd("hdcalib simulation tool", ' ', "0.1");
@@ -69,7 +71,7 @@ int main(int argc, char* argv[]) {
     /**
      * @brief image_scale f_x and f_y to be used in the simulation. Also half of the plotted image's width and height.
      */
-    double const image_scale = 1000;
+    double const image_scale = 3240;
 
     /**
      * @brief marker_size value to be set for hdmarker::Corner::size, not to be confused with the physical dimension of a marker.
@@ -79,15 +81,15 @@ int main(int argc, char* argv[]) {
     /**
      * @brief noise Gaussian noise added to the 2D location of the projected markers.
      */
-    double const noise = 0.01;
+    double const noise = 0.1;
 
     /**
      * @brief num_per_dir Number of markers per direction, total number is num_per_dir².
      */
-    int const num_per_dir = 30;
+    int const num_per_dir = 150;
 
     calib.setImageSize(cv::Mat_<double>(2*image_scale,2*image_scale));
-    calib.setRecursionDepth(0);
+    calib.setRecursionDepth(1);
     calib.setValidPages({0});
 
 
@@ -191,6 +193,11 @@ int main(int argc, char* argv[]) {
     int const grid = 3;
     std::vector<std::string> lightfield;
 
+
+    double const grid_angle = .1;
+    cv::Mat_<double> gt_rot_vec = {0,0,-std::sin(grid_angle)};
+    cv::Mat_<double> gt_row_vec{std::cos(grid_angle*M_PI/180),std::sin(grid_angle*M_PI/180),0};
+    cv::Mat_<double> gt_col_vec{-std::sin(grid_angle*M_PI/180),std::cos(grid_angle*M_PI/180),0};
     runningstats::RunningStats global_stat_x, global_stat_y;
     size_t grid_counter = 0;
     for (int ii = -grid; ii <= grid; ++ii) {
@@ -199,11 +206,8 @@ int main(int argc, char* argv[]) {
 
 
             double const depth = 100;
-            double const grid_size = 10;
 
-            cv::Mat_<double> rot_vec = {0,0,0};
-
-            cv::Mat_<double> const t_vec = cv::Mat_<double>({jj * grid_size, ii * grid_size, depth}) + tvec_offset;
+            cv::Mat_<double> const t_vec = cv::Mat_<double>({0,0, depth}) + jj * gt_row_vec + ii * gt_col_vec + tvec_offset;
 
             runningstats::RunningStats stat_x, stat_y;
 
@@ -212,7 +216,7 @@ int main(int argc, char* argv[]) {
                     int const page = 0;
                     Corner current(cv::Point2f(), cv::Point2i(xx,yy), page);
                     current.size = marker_size;
-                    cv::Vec3d loc3d = calib.get3DPoint(current, rot_vec, t_vec);
+                    cv::Vec3d loc3d = calib.get3DPoint(current, gt_rot_vec, t_vec);
 
                     current.p = calib.project(loc3d);
                     current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
@@ -268,6 +272,14 @@ int main(int argc, char* argv[]) {
         fs.release();
         TIMELOG("Writing cache file");
     }
+
+    clog::L("result", 0) << "Ground truth rectification: " << gt_rot_vec << std::endl
+                         << "Estimated rectification: " << rot_vec << std::endl
+                         << "difference: " << (gt_rot_vec - rot_vec) << std::endl
+                         << "normalized difference: " << 2*(gt_rot_vec - rot_vec)/(cv::norm(gt_rot_vec) + cv::norm(rot_vec)) << std::endl;
+
+    std::cout << "Level 1 log entries: " << std::endl;
+    clog::Logger::getInstance().printAll(std::cout, 1);
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

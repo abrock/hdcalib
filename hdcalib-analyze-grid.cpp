@@ -79,29 +79,28 @@ void Calib::analyzeGridLF(const size_t rows, const size_t cols, const std::vecto
     { // getGridVectors()
         double const row_vec_length = std::sqrt(row_vec.dot(row_vec));
         double const col_vec_length = std::sqrt(col_vec.dot(col_vec));
-        std::cout << "getGridVectors():" << std::endl;
-        std::cout << "row_vec: " << row_vec << ", length: " << row_vec_length << std::endl
-                  << "col_vec: " << col_vec << ", length: " << col_vec_length << std::endl;
+        clog::L(__func__, 1) << "getGridVectors():" << std::endl;
+        clog::L(__func__, 1) << "row_vec: " << row_vec << ", length: " << row_vec_length << std::endl
+                                    << "col_vec: " << col_vec << ", length: " << col_vec_length << std::endl;
 
         double cos_alpha = row_vec.dot(col_vec) / (row_vec_length * col_vec_length);
-        std::cout << "cos alpha: " << cos_alpha << std::endl;
-        std::cout << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
+        clog::L(__func__, 1) << "cos alpha: " << cos_alpha << std::endl
+                                    << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
     }
     { // getGridVectors2()
         double const row_vec_length = std::sqrt(row_vec2.dot(row_vec2));
         double const col_vec_length = std::sqrt(col_vec2.dot(col_vec2));
-        std::cout << "getGridVectors2():" << std::endl;
-        std::cout << "row_vec: " << row_vec2 << ", length: " << row_vec_length << std::endl
-                  << "col_vec: " << col_vec2 << ", length: " << col_vec_length << std::endl;
+        clog::L(__func__, 1) << "getGridVectors2():" << std::endl
+                                    << "row_vec: " << row_vec2 << ", length: " << row_vec_length << std::endl
+                                    << "col_vec: " << col_vec2 << ", length: " << col_vec_length << std::endl;
 
         double cos_alpha = row_vec2.dot(col_vec2) / (row_vec_length * col_vec_length);
-        std::cout << "cos alpha: " << cos_alpha << std::endl;
-        std::cout << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
+        clog::L(__func__, 1) << "cos alpha: " << cos_alpha << std::endl
+                                    << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
     }
 }
 
 void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec) {
-    std::cout << "##### getGridVectors #####" << std::endl;
     prepareCalibration();
     ceres::Problem problem;
 
@@ -114,7 +113,7 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
     size_t counter = 0;
     for (int row = -int(rows/2); row <= int(rows/2); ++row) {
         for (int col = -int(cols/2); col <= int(cols/2); ++col, ++counter) {
-            std::cout << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
+            clog::L(__func__, 2) << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
             if (0 == col && 0 == row) {
                 continue;
             }
@@ -157,7 +156,7 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 
-    std::cout << summary.FullReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
 
     /* Global residual statistics */
     runningstats::QuantileStats<double> g_res[3];
@@ -178,38 +177,37 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
             }
         }
 
-        std::cout << "Residual stats for " << it.first << ":" << std::endl;
+        clog::L(__func__, 2) << "Residual stats for " << it.first << ":" << std::endl;
         for (size_t ii = 0; ii < 3; ++ii) {
-            std::cout << res[ii].print() << std::endl;
+            clog::L(__func__, 2) << res[ii].print() << std::endl;
         }
-        std::cout << "Error stats for " << it.first << ":" << std::endl;
+        clog::L(__func__, 2) << "Error stats for " << it.first << ":" << std::endl;
         for (size_t ii = 0; ii < 3; ++ii) {
-            std::cout << err[ii].print() << std::endl;
+            clog::L(__func__, 2) << err[ii].print() << std::endl;
         }
-        std::cout << std::endl;
+        clog::L(__func__, 2) << std::endl;
     }
-    std::cout << "Residual stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Residual stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 3; ++ii) {
-        std::cout << g_res[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_res[ii].print() << std::endl;
     }
-    std::cout << "Error stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Error stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 3; ++ii) {
-        std::cout << g_err[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_err[ii].print() << std::endl;
     }
-    std::cout << std::endl;
+    clog::L(__func__, 1) << std::endl;
 
     double const row_vec_length = std::sqrt(row_vec.dot(row_vec));
     double const col_vec_length = std::sqrt(col_vec.dot(col_vec));
-    std::cout << "row_vec: " << row_vec << ", length: " << row_vec_length << std::endl
-              << "col_vec: " << col_vec << ", length: " << col_vec_length << std::endl;
+    clog::L(__func__, 1) << "row_vec: " << row_vec << ", length: " << row_vec_length << std::endl
+                                 << "col_vec: " << col_vec << ", length: " << col_vec_length << std::endl;
 
     double cos_alpha = row_vec.dot(col_vec) / (row_vec_length * col_vec_length);
-    std::cout << "cos alpha: " << cos_alpha << std::endl;
-    std::cout << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
+    clog::L(__func__, 1) << "cos alpha: " << cos_alpha << std::endl
+                                 << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
 }
 
 void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec) {
-    std::cout << "##### getGridVectors2 #####" << std::endl;
     prepareCalibration();
     ceres::Problem problem;
 
@@ -240,7 +238,7 @@ void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vec
     size_t counter = 0;
     for (int row = -int(rows/2); row <= int(rows/2); ++row) {
         for (int col = -int(cols/2); col <= int(cols/2); ++col, ++counter) {
-            std::cout << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
+            clog::L(__func__, 2) << "row: " << row << ", col: " << col << ", counter: " << counter << ", name: " << images[counter] << std::endl;
             if (0 == col && 0 == row) {
                 continue;
             }
@@ -283,7 +281,7 @@ void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vec
     ceres::Solver::Summary summary;
     Solve(options, &problem, &summary);
 
-    std::cout << summary.FullReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
 
     /* Global residual statistics */
     runningstats::QuantileStats<double> g_res[3];
@@ -304,40 +302,40 @@ void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vec
             }
         }
 
-        std::cout << "Residual stats for " << it.first << ":" << std::endl;
+        clog::L(__func__, 2) << "Residual stats for " << it.first << ":" << std::endl;
         for (size_t ii = 0; ii < 3; ++ii) {
-            std::cout << res[ii].print() << std::endl;
+            clog::L(__func__, 2) << res[ii].print() << std::endl;
         }
-        std::cout << "Error stats for " << it.first << ":" << std::endl;
+        clog::L(__func__, 2) << "Error stats for " << it.first << ":" << std::endl;
         for (size_t ii = 0; ii < 3; ++ii) {
-            std::cout << err[ii].print() << std::endl;
+            clog::L(__func__, 2) << err[ii].print() << std::endl;
         }
-        std::cout << std::endl;
+        clog::L(__func__, 2) << std::endl;
     }
-    std::cout << "Residual stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Residual stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 3; ++ii) {
-        std::cout << g_res[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_res[ii].print() << std::endl;
     }
-    std::cout << "Error stats for all images:" << std::endl;
+    clog::L(__func__, 1) << "Error stats for all images:" << std::endl;
     for (size_t ii = 0; ii < 3; ++ii) {
-        std::cout << g_err[ii].print() << std::endl;
+        clog::L(__func__, 1) << g_err[ii].print() << std::endl;
     }
-    std::cout << std::endl;
+    clog::L(__func__, 1) << std::endl;
 
-    std::cout << "Intersection size: " << intersection.size() << std::endl;
+    clog::L(__func__, 1) << "Intersection size: " << intersection.size() << std::endl;
 
     for (size_t ii = 0; ii < images.size(); ++ii) {
-        std::cout << "Corners in image " << images[ii] << ": " << data[images[ii]].size() << ", shares " << middle_marker_percentage[ii].getPercent() << "% with center view" <<  std::endl;
+        clog::L(__func__, 1) << "Corners in image " << images[ii] << ": " << data[images[ii]].size() << ", shares " << middle_marker_percentage[ii].getPercent() << "% with center view" <<  std::endl;
     }
 
     double const row_vec_length = std::sqrt(row_vec.dot(row_vec));
     double const col_vec_length = std::sqrt(col_vec.dot(col_vec));
-    std::cout << "row_vec: " << row_vec << ", length: " << row_vec_length << std::endl
-              << "col_vec: " << col_vec << ", length: " << col_vec_length << std::endl;
+    clog::L(__func__, 1) << "row_vec: " << row_vec << ", length: " << row_vec_length << std::endl
+            << "col_vec: " << col_vec << ", length: " << col_vec_length << std::endl;
 
     double cos_alpha = row_vec.dot(col_vec) / (row_vec_length * col_vec_length);
-    std::cout << "cos alpha: " << cos_alpha << std::endl;
-    std::cout << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
+    clog::L(__func__, 1) << "cos alpha: " << cos_alpha << std::endl;
+    clog::L(__func__, 1) << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
 }
 
 } // namespace hdcalib

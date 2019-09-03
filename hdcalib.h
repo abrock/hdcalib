@@ -24,6 +24,10 @@
 #include "nanoflann.hpp"
 
 #include <runningstats/runningstats.h>
+#include <catlogger/catlogger.h>
+
+
+#include <glog/logging.h>
 
 namespace hdcalib {
 using namespace std;
@@ -286,12 +290,49 @@ public:
 
 };
 
+template<int LENGTH>
+struct VecLengthFunctor {
+    double const target_square_length;
+    VecLengthFunctor(double const _target_square_length);
+
+    template<class T>
+    bool operator() (T const * const vec, T * residual) const;
+};
+
 class ProjectionFunctor {
     std::vector<cv::Point2f> const& markers;
     std::vector<cv::Point3f> const& points;
 
 public:
     ProjectionFunctor(std::vector<cv::Point2f> const& _markers,
+                      std::vector<cv::Point3f> const& _points);
+    /*
+    1, // focal length x
+    1, // focal length y
+    1, // principal point x
+    1, // principal point y
+    3, // rotation vector for the target
+    3, // translation vector for the target
+    14 // distortion coefficients
+    */
+    template<class T>
+    bool operator()(
+            T const* const f_x,
+            T const* const f_y,
+            T const* const c_x,
+            T const* const c_y,
+            T const* const rvec,
+            T const* const tvec,
+            T const* const dist,
+            T* residuals) const;
+};
+
+class ProjectionFunctorRot4 {
+    std::vector<cv::Point2f> const& markers;
+    std::vector<cv::Point3f> const& points;
+
+public:
+    ProjectionFunctorRot4(std::vector<cv::Point2f> const& _markers,
                       std::vector<cv::Point3f> const& _points);
     /*
     1, // focal length x
@@ -534,6 +575,9 @@ class Calib
 public:
     Calib();
 
+    template<class T, class U>
+    static void normalize_rot4(T const in[4], U out[4]);
+
     static void normalizeRotationVector(cv::Mat & vector);
 
     static void normalizeRotationVector(double vector[3]);
@@ -693,12 +737,76 @@ public:
     const T t[3]
     );
 
+    /**
+     * @brief get3DPoint calculates the 3D point of a hdmarker::Corner given a rotation and translation vector.
+     * It takes into account the correction of the 3D point.
+     * @param c
+     * @param _rvec
+     * @param _tvec
+     * @return
+     */
     cv::Vec3d get3DPoint(hdmarker::Corner const& c, cv::Mat const& _rvec, cv::Mat const& _tvec);
 
     template<class T>
+    /**
+     * @brief rot_vec2mat converts a Rodriguez rotation vector (with 3 entries) to a 3x3 rotation matrix.
+     * @param vec
+     * @param mat
+     */
     static void rot_vec2mat(T const vec[3], T mat[9]);
 
     template<class T>
+    /**
+     * @brief rot4_vec2mat converts a 4-entry rotation vector (first three entries describe the axis, the fourth the amount of rotation)
+     * into a 3x3 rotation matrix. This avoids the case analysis of the 3-entry Rodriguez vector which
+     * @param vec
+     * @param mat
+     */
+    static void rot4_vec2mat(T const vec[4], T mat[9]);
+
+    template<class T>
+    /**
+     * @brief rot3_rot4 Converts a (3-entry) Rodrigues rotation vector to a equivalent rotation vector with 4 components:
+     * The first three denote the rotation axis while the fourth gives the amount of rotation.
+     * @param rvec
+     * @param vec
+     */
+    static void rot3_rot4(cv::Mat const& rvec, T vec[4]);
+
+    template<class T>
+    /**
+     * @brief rot3_rot4 Converts a (3-entry) Rodrigues rotation vector to a equivalent rotation vector with 4 components:
+     * The first three denote the rotation axis while the fourth gives the amount of rotation.
+     * @param rvec
+     * @param vec
+     */
+    static void rot3_rot4(T const src[3], T vec[4]);
+
+    template<class T>
+    static std::vector<T> rot3_rot4(cv::Mat const& rvec);
+
+    template<class T>
+    /**
+     * @brief rot4_rot3 Converts a (4-entry) rotation vector to a equivalent Rodrigues rotation vector with 3 components.
+     * @param rvec
+     * @param vec
+     */
+    static void rot4_rot3(T const vec[4], Mat &rvec);
+
+    template<class T>
+    /**
+     * @brief rot4_rot3 Converts a (4-entry) rotation vector to a equivalent Rodrigues rotation vector with 3 components.
+     * @param rvec
+     * @param vec
+     */
+    static void rot4_rot3(T const vec[4], T rvec[3]);
+
+    template<class T>
+    /**
+     * @brief rot_vec2mat converts a Rodriguez rotation vector (with 3 entries) to a 3x3 rotation matrix.
+     * @param vec
+     * @param mat
+     */
     static void rot_vec2mat(cv::Mat const& vec, T mat[9]);
 
     static std::string tostringLZ(size_t num, size_t min_digits = 2);
@@ -722,6 +830,8 @@ public:
     double openCVCalib();
 
     double CeresCalib();
+
+    double CeresCalibRot4();
 
     /**
      * @brief CeresCalibFlexibleTarget calibrates the camera using a bundle adjustment
