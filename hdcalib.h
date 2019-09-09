@@ -572,8 +572,27 @@ class Calib
 
     bool hasCalibration = false;
 
+    cv::Mat_<double> rectification;
+
+    /**
+     * @brief undistortion Map for undistortion and rectification at the same time.
+     */
+    cv::Mat_<cv::Vec2f> undistortRectifyMap;
+
 public:
     Calib();
+
+    /**
+     * @brief calculateUndistortion calculates the undistortion map using cv::initUndistortRectifyMap from OpenCV.
+     * @return
+     */
+    cv::Mat calculateUndistortRectifyMap();
+
+    /**
+     * @brief getCachedUndistortRectifyMap returns the cached undistortRectifyMap and creates it if neccessary.
+     * @return
+     */
+    cv::Mat getCachedUndistortRectifyMap();
 
     template<class T, class U>
     static void normalize_rot4(T const in[4], U out[4]);

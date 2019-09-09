@@ -137,6 +137,35 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
+Mat Calib::calculateUndistortRectifyMap() {
+    cv::Mat_<double> newCameraMatrix = cameraMatrix.clone();
+    // We want the principal point at the image center in the resulting images.
+    newCameraMatrix(0,2) = imageSize.width/2;
+    newCameraMatrix(1,2) = imageSize.height/2;
+    cv::Mat tmp_dummy;
+    cv::Mat rectification_3x3;
+    if (rectification.size() != Size(3,3)) {
+        cv::Rodrigues(rectification, rectification_3x3);
+    }
+    cv::initUndistortRectifyMap(cameraMatrix,
+                                distCoeffs,
+                                rectification_3x3,
+                                newCameraMatrix,
+                                imageSize,
+                                CV_32FC2,
+                                undistortRectifyMap,
+                                tmp_dummy);
+
+    return undistortRectifyMap;
+}
+
+Mat Calib::getCachedUndistortRectifyMap() {
+    if (undistortRectifyMap.size() != imageSize) {
+        calculateUndistortRectifyMap();
+    }
+    return undistortRectifyMap;
+}
+
 void Calib::normalizeRotationVector(Mat &vector) {
     cv::Mat mat(3,3, vector.type());
     cv::Rodrigues(vector, mat);
