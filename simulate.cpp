@@ -81,12 +81,14 @@ int main(int argc, char* argv[]) {
     /**
      * @brief noise Gaussian noise added to the 2D location of the projected markers.
      */
-    double const noise = 0.1;
+    double const noise = 0.0;
 
     /**
      * @brief num_per_dir Number of markers per direction, total number is num_per_dir².
      */
     int const num_per_dir = 150;
+
+    double const mean_depth = 50;
 
     calib.setImageSize(cv::Mat_<double>(2*image_scale,2*image_scale));
     calib.setRecursionDepth(1);
@@ -113,7 +115,10 @@ int main(int argc, char* argv[]) {
         TIMELOG("Reading cached result");
     }
 
-    cv::Mat_<double> const tvec_offset = cv::Mat_<double>({-1, -1, 0})*double(calib.getMarkerSize()*num_per_dir)/2;
+    cv::Mat_<double> const tvec_offset =
+            .5 *
+            cv::Mat_<double>({-1, -1, 0}) *
+            calib.getMarkerSize()*num_per_dir/calib.getCornerIdFactor();
 
     std::random_device rd;
     std::default_random_engine engine(rd());
@@ -131,7 +136,7 @@ int main(int argc, char* argv[]) {
 
 
             double const veclength = std::uniform_real_distribution<double>(.0001, .1)(engine);
-            double const depth = std::uniform_real_distribution<double>(90,110)(engine);
+            double const depth = std::uniform_real_distribution<double>(mean_depth*.9, mean_depth*1.1)(engine);
 
             cv::Mat_<double> rot_vec = {3*gauss(engine), 3*gauss(engine), gauss(engine)};
             rot_vec *= veclength / (std::sqrt(rot_vec.dot(rot_vec)));
@@ -190,24 +195,22 @@ int main(int argc, char* argv[]) {
     }
 
     // Create 9x9 lightfield
-    int const grid = 3;
+    int const grid = 4;
     std::vector<std::string> lightfield;
 
 
-    double const grid_angle = .1;
-    cv::Mat_<double> gt_rot_vec = {0,0,-std::sin(grid_angle)};
+    double const grid_angle = 10;
+    cv::Mat_<double> gt_rot_vec = {0,0,-std::sin(grid_angle*M_PI/180)};
     cv::Mat_<double> gt_row_vec{std::cos(grid_angle*M_PI/180),std::sin(grid_angle*M_PI/180),0};
     cv::Mat_<double> gt_col_vec{-std::sin(grid_angle*M_PI/180),std::cos(grid_angle*M_PI/180),0};
     runningstats::RunningStats global_stat_x, global_stat_y;
     size_t grid_counter = 0;
+    std::map<std::string, cv::Mat> plots;
     for (int ii = -grid; ii <= grid; ++ii) {
         for (int jj = -grid; jj <= grid; ++jj, ++grid_counter) {
             std::vector<hdmarker::Corner> markers;
 
-
-            double const depth = 100;
-
-            cv::Mat_<double> const t_vec = cv::Mat_<double>({0,0, depth}) + jj * gt_row_vec + ii * gt_col_vec + tvec_offset;
+            cv::Mat_<double> const t_vec = cv::Mat_<double>({0,0, mean_depth}) + jj * gt_row_vec + ii * gt_col_vec + tvec_offset;
 
             runningstats::RunningStats stat_x, stat_y;
 
@@ -235,6 +238,7 @@ int main(int argc, char* argv[]) {
             if (plot_synthetic_markers) {
                 cv::Mat_<cv::Vec3b> paint(2*image_scale, 2*image_scale, cv::Vec3b(50,50,50));
                 calib.paintSubmarkers(markers, paint, 1);
+                plots[filename] = paint;
                 cv::imwrite(filename, paint);
             }
             if (verbose2) {
@@ -266,7 +270,7 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("getRectificationRotation");
 
-    if (!has_cached_calib && !cache_file.empty()) {
+    if (!cache_file.empty()) {
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
         fs.release();
@@ -280,6 +284,22 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Level 1 log entries: " << std::endl;
     clog::Logger::getInstance().printAll(std::cout, 1);
+
+    cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap();
+
+    TIMELOG("getCachedUndistortRectifyMap");
+
+    for (auto const& it : plots) {
+        cv::Mat remapped;
+        cv::remap(it.second, remapped, remap, cv::Mat(), cv::INTER_LINEAR);
+        clog::L("remapping", 3) << "Remapped image " << it.first;
+        cv::imwrite(std::string("remapped-") + it.first, remapped);
+        clog::L("remapping", 3) << "Saved remapped image";
+    }
+
+    TIMELOG("Remapping all synthetic images");
+
+    std::cout << time_log.str() << std::endl;
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
