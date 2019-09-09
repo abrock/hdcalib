@@ -229,8 +229,10 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
     Calib::normalizeRotationVector(rot_vec);
 
     rect_rot = cv::Vec3d(rot_vec[0], rot_vec[1], rot_vec[2]);
+    rectification = cv::Mat_<double>{rot_vec[0], rot_vec[1], rot_vec[2]};
 
     double const degree = std::sqrt(rect_rot.dot(rect_rot)) / M_PI * 180;
+
 
     clog::L(__func__, 1) << "Rotation vector: " << rot_vec[0] << ", " << rot_vec[1] << ", " << rot_vec[2] << std::endl;
     clog::L(__func__, 1) << "Rotation: " <<  degree << "°" << std::endl;

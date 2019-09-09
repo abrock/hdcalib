@@ -310,7 +310,8 @@ void Calib::write(FileStorage &fs) const {
        << "apertureWidth" << apertureWidth
        << "apertureHeight" << apertureHeight
        << "useOnlyGreen" << useOnlyGreen
-       << "recursionDepth" << recursionDepth;
+       << "recursionDepth" << recursionDepth
+       << "rectification" << rectification;
 
     if (!validPages.empty()) {
         fs << "validPages" << "[";
@@ -357,6 +358,7 @@ void Calib::read(const FileNode &node) {
     node["apertureHeight"] >> apertureHeight;
     node["useOnlyGreen"] >> useOnlyGreen;
     node["recursionDepth"] >> recursionDepth;
+    node["rectification"] >> rectification;
     setRecursionDepth(recursionDepth);
 
     FileNode n = node["validPages"]; // Read string sequence - Get node
