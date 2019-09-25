@@ -628,7 +628,12 @@ public:
 
     static void piecewiseRefinement(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
 
-    static void refineRecursiveByPage(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
+    static void refineRecursiveByPage(
+            cv::Mat &img,
+            std::vector<hdmarker::Corner> const& in,
+            std::vector<hdmarker::Corner> & out,
+            const int recursion_depth,
+            double & markerSize);
 
     /**
      * @brief prepareCalibration fills the containers imagePoints, objectPoints and imageFiles.
@@ -965,6 +970,44 @@ public:
 
     void initializeCameraMatrix(double const focal_length, double const cx, double const cy);
     void initialzeDistortionCoefficients();
+
+    template<class Point>
+    static bool validPixel(Point const& p, cv::Size const& image_size);
+
+    struct RectifyCost {
+        int8_t const axis;
+        cv::Vec3d const src_a;
+        cv::Vec3d const src_b;
+
+        cv::Mat_<double> const& cameraMatrix;
+
+        float const weight;
+
+        RectifyCost(int8_t const _axis,
+                    cv::Vec3d const _src_a,
+                    cv::Vec3d const _src_b,
+                    cv::Mat_<double> const& _cameraMatrix,
+                    float const _weight = 1);
+
+        template<class T>
+        void compute(
+                T const * const rot_vec,
+                T * result1,
+                T * result2
+                ) const;
+
+        template<class T>
+        bool operator () (
+                T const * const rot_vec,
+                T * residuals) const;
+    };
+
+    void rectificationResidualsPlotsAndStats(
+            const char *log_name,
+            const std::map<std::string, std::vector<RectifyCost *> > &cost_functions,
+            double rot_vec[3],
+            bool plot);
+
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

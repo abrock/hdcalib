@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 2.8)
 
 project(hdcalib)
 
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Wall -Werror -pedantic")
+#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Wall -Werror -pedantic")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Wall -pedantic")
 
 FIND_PACKAGE(OpenCV REQUIRED)
 INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
@@ -64,7 +65,6 @@ target_link_libraries(hdcalib
   ${Boost_IOSTREAMS_LIBRARY}
   ${RUNNINGSTATS_LIBRARIES}
   ${CATLOGGER_LIBRARIES}
-  ${CERES_LIBRARIES}
   raw
 )
 
@@ -84,6 +84,8 @@ add_executable(hdcalib-speedtest-prepare-calibration "speedtest-prepare-calibrat
 
 add_executable(hdcalib-simulate "simulate.cpp")
 
+add_executable(hdcalib-rectify-tool rectify.cpp)
+
 foreach(program
         hdcalib-tool
         extract-green
@@ -92,6 +94,7 @@ foreach(program
         hdcalib-marker-detection
         hdcalib-speedtest-prepare-calibration
         hdcalib-simulate
+        hdcalib-rectify-tool
     )
     target_link_libraries(${program} hdcalib)
 endforeach()
@@ -100,6 +103,7 @@ foreach(program
         hdcalib-tool
         hdcalib-speedtest-prepare-calibration
         hdcalib-simulate
+        hdcalib-rectify-tool
         )
     target_link_libraries(${program} ParallelTime)
 endforeach()
@@ -120,3 +124,10 @@ target_link_libraries(valgrind-tests
   hdcalib
   ${GTEST_BOTH_LIBRARIES}
 )
+
+add_executable(hdcalib-compare-images compare-images.cpp)
+
+target_link_libraries(hdcalib-compare-images
+      ${OpenCV_LIBS}
+      ${RUNNINGSTATS_LIBRARIES}
+    )

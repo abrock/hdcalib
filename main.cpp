@@ -32,6 +32,7 @@ void trim(std::string &s) {
     }
 
 int main(int argc, char* argv[]) {
+    clog::Logger::getInstance().addListener(std::cout);
 
     ParallelTime t, total_time;
     std::stringstream time_log;
@@ -346,6 +347,8 @@ int main(int argc, char* argv[]) {
         TIMELOG("Writing cache file");
     }
 
+    std::cout << "Level 1 log entries: " << std::endl;
+    clog::Logger::getInstance().printAll(std::cout, 1);
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

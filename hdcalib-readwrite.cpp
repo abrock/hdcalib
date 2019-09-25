@@ -182,13 +182,6 @@ Mat Calib::read_raw(const string &filename) {
                 }
             }
         }
-        double const hist_threshold = 0.001;
-        clog::L(__func__, 2) << "R-channel histogram:" << std::endl;
-        printHist(std::cout, r, hist_threshold);
-        clog::L(__func__, 2) << "G-channel histogram:" << std::endl;
-        printHist(std::cout, g, hist_threshold);
-        clog::L(__func__, 2) << "B-channel histogram:" << std::endl;
-        printHist(std::cout, b, hist_threshold);
 
         clog::L(__func__, 2) << "model2: " << RawProcessor.imgdata.color.model2 << std::endl;
         clog::L(__func__, 2) << "UniqueCameraModel: " << RawProcessor.imgdata.color.UniqueCameraModel << std::endl;
@@ -485,7 +478,11 @@ void Calib::piecewiseRefinement(cv::Mat & img, const std::vector<Corner> &in, st
     }
 }
 
-void Calib::refineRecursiveByPage(Mat &img, const std::vector<Corner> &in, std::vector<Corner> &out, int recursion_depth, double &markerSize) {
+void Calib::refineRecursiveByPage(Mat &img,
+                                  const std::vector<Corner> &in,
+                                  std::vector<Corner> &out,
+                                  int const recursion_depth,
+                                  double &markerSize) {
     std::map<int, std::vector<hdmarker::Corner> > pages;
     for (const hdmarker::Corner& c : in) {
         pages[c.page].push_back(c);
@@ -495,6 +492,7 @@ void Calib::refineRecursiveByPage(Mat &img, const std::vector<Corner> &in, std::
     for (const auto& it : pages) {
         _markerSize = markerSize;
         std::vector<hdmarker::Corner> _out;
+        clog::L(__func__, 2) << "Refining page " << it.first << ", recursion depth " << recursion_depth << std::endl;
         hdmarker::refine_recursive(img, it.second, _out, recursion_depth, &_markerSize);
         out.insert(out.end(), _out.begin(), _out.end());
     }

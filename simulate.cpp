@@ -91,6 +91,7 @@ int main(int argc, char* argv[]) {
     double const mean_depth = 50;
 
     calib.setImageSize(cv::Mat_<double>(2*image_scale,2*image_scale));
+    cv::Size image_size(2*image_scale,2*image_scale);
     calib.setRecursionDepth(1);
     calib.setValidPages({0});
 
@@ -154,12 +155,14 @@ int main(int argc, char* argv[]) {
 
                     current.p = calib.project(loc3d);
                     current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
-                    markers.push_back(current);
-                    stat_x.push(current.p.x);
-                    stat_y.push(current.p.y);
+                    if (Calib::validPixel(current.p, image_size)) {
+                        markers.push_back(current);
+                        stat_x.push(current.p.x);
+                        stat_y.push(current.p.y);
 
-                    global_stat_x.push(current.p.x);
-                    global_stat_y.push(current.p.y);
+                        global_stat_x.push(current.p.x);
+                        global_stat_y.push(current.p.y);
+                    }
                 }
             }
             std::string filename = std::to_string(ii) + ".png";
@@ -200,9 +203,11 @@ int main(int argc, char* argv[]) {
 
 
     double const grid_angle = 10;
+    double const grid_scale = 17.5;
+
     cv::Mat_<double> gt_rot_vec = {0,0,-std::sin(grid_angle*M_PI/180)};
-    cv::Mat_<double> gt_row_vec{std::cos(grid_angle*M_PI/180),std::sin(grid_angle*M_PI/180),0};
-    cv::Mat_<double> gt_col_vec{-std::sin(grid_angle*M_PI/180),std::cos(grid_angle*M_PI/180),0};
+    cv::Mat_<double> gt_row_vec{grid_scale*std::cos(grid_angle*M_PI/180),grid_scale*std::sin(grid_angle*M_PI/180),0};
+    cv::Mat_<double> gt_col_vec{-grid_scale*std::sin(grid_angle*M_PI/180),grid_scale*std::cos(grid_angle*M_PI/180),0};
     runningstats::RunningStats global_stat_x, global_stat_y;
     size_t grid_counter = 0;
     std::map<std::string, cv::Mat> plots;
@@ -223,12 +228,15 @@ int main(int argc, char* argv[]) {
 
                     current.p = calib.project(loc3d);
                     current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
-                    markers.push_back(current);
-                    stat_x.push(current.p.x);
-                    stat_y.push(current.p.y);
 
-                    global_stat_x.push(current.p.x);
-                    global_stat_y.push(current.p.y);
+                    if (Calib::validPixel(current.p, image_size)) {
+                        markers.push_back(current);
+                        stat_x.push(current.p.x);
+                        stat_y.push(current.p.y);
+
+                        global_stat_x.push(current.p.x);
+                        global_stat_y.push(current.p.y);
+                    }
                 }
             }
             std::string filename = "lf-" + Calib::tostringLZ(grid_counter, 2) + ".png";
@@ -264,6 +272,9 @@ int main(int argc, char* argv[]) {
     cv::Vec3d col_vec(4,-6,9), row_vec(2,9,-5), rot_vec;
     calib.getGridVectors(2*grid+1, 2*grid+1, lightfield, row_vec, col_vec);
 
+    clog::L("row-vector difference", 0) << row_vec + gt_col_vec << std::endl;
+    clog::L("column-vector difference", 0) << col_vec + gt_row_vec << std::endl;
+
     TIMELOG("getGridVectors");
 
     calib.getRectificationRotation(2*grid+1, 2*grid+1, lightfield, rot_vec);
@@ -282,9 +293,6 @@ int main(int argc, char* argv[]) {
                          << "difference: " << (gt_rot_vec - rot_vec) << std::endl
                          << "normalized difference: " << 2*(gt_rot_vec - rot_vec)/(cv::norm(gt_rot_vec) + cv::norm(rot_vec)) << std::endl;
 
-    std::cout << "Level 1 log entries: " << std::endl;
-    clog::Logger::getInstance().printAll(std::cout, 1);
-
     cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap();
 
     TIMELOG("getCachedUndistortRectifyMap");
@@ -298,6 +306,9 @@ int main(int argc, char* argv[]) {
     }
 
     TIMELOG("Remapping all synthetic images");
+
+    std::cout << "Level 1 log entries: " << std::endl;
+    clog::Logger::getInstance().printAll(std::cout, 1);
 
     std::cout << time_log.str() << std::endl;
 

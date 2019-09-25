@@ -25,6 +25,7 @@ void trim(std::string &s) {
 }
 
 int main(int argc, char* argv[]) {
+    clog::Logger::getInstance().addListener(std::cout);
 
     hdcalib::Calib calib;
     std::vector<std::string> input_files;
@@ -154,6 +155,15 @@ int main(int argc, char* argv[]) {
     calib.printObjectPointCorrectionsStats();
 
     calib.analyzeGridLF(rows, cols, input_files);
+
+    std::cout << "Level 1 log entries: " << std::endl;
+    clog::Logger::getInstance().printAll(std::cout, 1);
+
+    if (!cache_file.empty()) {
+        cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
+        fs << "calibration" << calib;
+        fs.release();
+    }
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

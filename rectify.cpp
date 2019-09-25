@@ -1,15 +1,10 @@
-/**
-* @file main.cpp
-* @brief demo calibration application of hdmarker/hdcalib
-*
-* @author Alexander Brock
-* @date 02/20/2019
-*/
+#include <iostream>
 
 #include <exception>
 #include <boost/filesystem.hpp>
 
 #include <tclap/CmdLine.h>
+#include <ParallelTime/paralleltime.h>
 
 #include "hdcalib.h"
 
@@ -24,31 +19,29 @@ void trim(std::string &s) {
     }).base(), s.end());
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char ** argv) {
+
     clog::Logger::getInstance().addListener(std::cout);
 
     hdcalib::Calib calib;
     std::vector<std::string> input_files;
-    int recursion_depth = -1;
-    float effort = 0.5;
     bool demosaic = false;
     bool libraw = false;
-    bool plot_markers = false;
     bool only_green = false;
-    int num_threads = 4;
+    fs::path output_dir;
     std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
-        TCLAP::ValueArg<int> recursive_depth_arg("r", "recursion",
-                                                 "Recursion depth of the sub-marker detection. Set this to the actual recursion depth of the used target.",
-                                                 false, -1, "int");
-        cmd.add(recursive_depth_arg);
+        TCLAP::ValueArg<std::string> cache_arg("c", "cache",
+                                               "Cache file for the calibration results. This makes use of the opencv filestorage capabilities so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
+                                               true, "", "Calibration cache.");
+        cmd.add(cache_arg);
 
-        TCLAP::ValueArg<float> effort_arg("e", "effort",
-                                          "Effort value for the marker detection.",
-                                          false, .5, "float");
-        cmd.add(effort_arg);
+        TCLAP::ValueArg<std::string> output_arg("o", "output",
+                                               "Output directory for rectified images. Subdirectories will be created automatically as needed.",
+                                               true, "", "Output directorys.");
+        cmd.add(output_arg);
 
         TCLAP::SwitchArg demosaic_arg("d", "demosaic",
                                       "Use this flag if the input images are raw images and demosaicing should be used.",
@@ -59,9 +52,6 @@ int main(int argc, char* argv[]) {
                                       "Use this flag if the input images are raw images which must be read using LibRaw since OpenCV cannot read them. This implies -d.",
                                       false);
         cmd.add(read_raw_arg);
-
-        TCLAP::SwitchArg plot_markers_arg("p", "plot", "Use this flag if the detected markers should be painted into the input images", false);
-        cmd.add(plot_markers_arg);
 
         TCLAP::SwitchArg only_green_arg("g", "only-green", "Set this flag true if only the green channel of a bayer image should be used."
                                                            "In the case of demosaicing this means that the missing green pixels"
@@ -75,13 +65,6 @@ int main(int argc, char* argv[]) {
                                                   "Text file with a list of input images.");
         cmd.add(textfile_arg);
 
-        TCLAP::MultiArg<int> valid_pages("",
-                                                  "valid",
-                                                  "Page number of a valid corner.",
-                                                  false,
-                                                  "Page number of a valid corner.");
-        cmd.add(valid_pages);
-
         TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input_img", "Input images, should contain markers.", false, "Input images.");
         cmd.add(input_img_arg);
 
@@ -89,13 +72,15 @@ int main(int argc, char* argv[]) {
 
 
         input_files = input_img_arg.getValue();
-        recursion_depth = recursive_depth_arg.getValue();
-        effort = effort_arg.getValue();
         libraw = read_raw_arg.getValue();
         only_green = only_green_arg.getValue();
         demosaic = demosaic_arg.getValue() || libraw;
-        plot_markers = plot_markers_arg.getValue();
         std::vector<std::string> const textfiles = textfile_arg.getValue();
+        cache_file = cache_arg.getValue();
+
+
+        output_dir = output_arg.getValue();
+        fs::create_directories(output_dir);
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -107,8 +92,13 @@ int main(int argc, char* argv[]) {
                 trim(line);
                 if (fs::is_regular_file(line)) {
                     input_files.push_back(line);
+                    fs::path p(line);
+                    if (p.has_parent_path()) {
+                        fs::create_directories(output_dir / p.parent_path());
+                    }
                 }
             }
+            fs::copy_file(file, output_dir / fs::path(file), fs::copy_option::overwrite_if_exists);
         }
 
         if (input_files.empty()) {
@@ -118,25 +108,13 @@ int main(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
 
-        if (!valid_pages.getValue().empty()) {
-            calib.setValidPages(valid_pages.getValue());
-            std::cout << "Valid pages: ";
-            for (auto page : valid_pages.getValue()) {
-                std::cout << page << ", ";
-            }
-            std::cout << std::endl;
-        }
-
         std::cout << "Parameters: " << std::endl
                   << "Number of input files: " << input_files.size() << std::endl
-                  << "recursion depth: " << recursion_depth << std::endl
-                  << "effort: " << effort << std::endl
                   << "demosaic: " << (demosaic ? "true" : "false") << std::endl
                   << "use libraw: " << (libraw ? "true" : "false") << std::endl
-                  << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
-                  << "only green channel: " << (only_green ? "true" : "false") << std::endl;
+                  << "only green channel: " << (only_green ? "true" : "false") << std::endl
+                  << "output directory: " << output_dir << std::endl;
 
-        calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
     }
     catch (TCLAP::ArgException const & e) {
@@ -148,20 +126,36 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    calib.setRecursionDepth(recursion_depth);
-
-    cv::setNumThreads(num_threads);
-    omp_set_num_threads(num_threads);
-
-    for (size_t ii = 0; ii < input_files.size(); ++ii) {
-        std::string const& input_file = input_files[ii];
+    bool has_cached_calib = false;
+    if (fs::is_regular_file(cache_file)) {
         try {
-            calib.getCorners(input_file, effort, demosaic, libraw);
+            clog::L(__func__, 2) << "Reading cached calibration results..." << std::flush;
+            cv::FileStorage fs(cache_file, cv::FileStorage::READ);
+            cv::FileNode n = fs["calibration"];
+            n >> calib;
+            has_cached_calib = true;
+            fs.release();
+            std::cout << " done." << std::endl;
+            calib.purgeInvalidPages();
         }
-        catch (const std::exception &e) {
-            std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
+        catch (std::exception const& e) {
+            std::cout << "Reading cache file failed with exception:" << std::endl
                       << e.what() << std::endl;
+            return EXIT_FAILURE;
         }
+        catch (...) {
+            std::cout << "Unknown exception." << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
+    else {
+        std::cout << "Calibration cache argument must be a regular file." << std::endl;
+        return EXIT_FAILURE;
+    }
+
+
+    for (auto const& file : input_files) {
+
     }
 
     return EXIT_SUCCESS;

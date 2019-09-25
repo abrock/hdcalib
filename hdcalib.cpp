@@ -527,6 +527,15 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     if (!read_cache_success) {
         detect(img, corners, use_rgb, 0, 10, effort);
+        std::map<int, int> counter;
+        for (auto const& it : corners) {
+            counter[it.page]++;
+        }
+        clog::L(__func__, 2) << "Detected page stats: " << std::endl;
+        for (auto const& it : counter) {
+            clog::L(__func__, 2) << it.first << ": " << it.second << std::endl;
+        }
+
         if (!validPages.empty()) {
             corners = purgeInvalidPages(corners, validPages);
         }
@@ -856,6 +865,13 @@ void Calib::get3DPoint(const F p[], T result[], const T R[], const T t[]) {
 }
 
 template void Calib::get3DPoint(const double [], double [], const double [], const double []);
+
+template<class Point>
+bool Calib::validPixel(const Point &p, const Size &image_size) {
+    return p.x >= 0 && p.y >= 0 && p.x+1 <= image_size.width && p.y+1 <= image_size.height;
+}
+
+template bool Calib::validPixel(const cv::Point2f&, const cv::Size&);
 
 
 } // namespace hdcalib

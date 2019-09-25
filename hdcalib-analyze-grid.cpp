@@ -65,10 +65,10 @@ struct GridCostFreeCenter {
 
 void Calib::analyzeGridLF(const size_t rows, const size_t cols, const std::vector<string> &images) {
     cv::Vec3d row_vec, col_vec;
-    //getGridVectors(rows, cols, images, row_vec, col_vec);
+    getGridVectors(rows, cols, images, row_vec, col_vec);
 
     cv::Vec3d row_vec2, col_vec2;
-    //getGridVectors2(rows, cols, images, row_vec2, col_vec2);
+    getGridVectors2(rows, cols, images, row_vec2, col_vec2);
 
     cv::Vec3d rect_rot;
     getRectificationRotation(rows, cols, images, rect_rot);
