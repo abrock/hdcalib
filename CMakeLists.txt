@@ -19,8 +19,9 @@ add_library(hdcalib-readwrite hdcalib-readwrite.cpp)
 add_library(hdcalib-ceres-calib hdcalib-ceres-calib.cpp)
 add_library(hdcalib-analyze-grid hdcalib-analyze-grid.cpp)
 add_library(hdcalib-rectify hdcalib-rectify.cpp)
+add_library(hdcalib-lensfun hdcalib-lensfun.cpp)
 add_library(hdcalib hdcalib.cpp)
-
+add_library(hdcalib-cornercolor cornercolor.cpp)
 include_directories("/usr/local/include/hdmarker")
 
 find_package(Ceres REQUIRED)
@@ -55,6 +56,7 @@ target_link_libraries(hdcalib
   calib-stats
   hdcalib-readwrite
   hdcalib-ceres-calib
+  hdcalib-cornercolor
   hdcalib-analyze-grid
   hdcalib-rectify
   hdmarker
@@ -86,10 +88,13 @@ add_executable(hdcalib-simulate "simulate.cpp")
 
 add_executable(hdcalib-rectify-tool rectify.cpp)
 
+add_executable(hdcalib-analyze-detection-rates analyze-detection-rates.cpp)
+
 foreach(program
         hdcalib-tool
         extract-green
         hdcalib-localize-exception
+        hdcalib-analyze-detection-rates
         hdcalib-analyze-lf
         hdcalib-marker-detection
         hdcalib-speedtest-prepare-calibration
@@ -100,6 +105,7 @@ foreach(program
 endforeach()
 
 foreach(program
+        hdcalib-analyze-detection-rates
         hdcalib-tool
         hdcalib-speedtest-prepare-calibration
         hdcalib-simulate

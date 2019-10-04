@@ -150,49 +150,47 @@ Mat Calib::read_raw(const string &filename) {
         throw std::runtime_error(std::string("Cannot open file ") + filename + ", "
                                  + libraw_strerror(ret) + "\r\n");
     }
-    if (verbose) {
-        printf("Image size: %dx%d\nRaw size: %dx%d\n", S.width, S.height, S.raw_width, S.raw_height);
-        printf("Margins: top=%d, left=%d\n", S.top_margin, S.left_margin);
-    }
+    clog::L(__func__, 2) << "Image size: " << S.width << " x " << S.height
+                         << ", Raw size: " << S.raw_width << " x " << S.raw_height << std::endl;
+    clog::L(__func__, 2) << "Margins: top = " << S.top_margin << ", left = " << S.left_margin << std::endl;
 
     if ((ret = RawProcessor.unpack()) != LIBRAW_SUCCESS) {
         throw std::runtime_error(std::string("Cannot unpack file ") + filename + ", "
                                  + libraw_strerror(ret) + "\r\n");
     }
 
-    if (verbose) {
-        printf("Unpacked....\n");
-        clog::L(__func__, 2) << "Color matrix (top left corner):" << std::endl;
-        for (size_t ii = 0; ii < 6 && ii < S.width; ++ii) {
-            for (size_t jj = 0; jj < 6 && jj < S.height; ++jj) {
-                clog::L(__func__, 2) << RawProcessor.COLOR(ii, jj) << ":"
-                        << RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)] << " ";
-            }
-            clog::L(__func__, 2) << std::endl;
+    clog::L(__func__, 2) << "Unpacked...." << std::endl;
+    clog::L(__func__, 2) << "Color matrix (top left corner):" << std::endl;
+    for (size_t ii = 0; ii < 6 && ii < S.width; ++ii) {
+        for (size_t jj = 0; jj < 6 && jj < S.height; ++jj) {
+            clog::L(__func__, 2) << RawProcessor.COLOR(ii, jj) << ":"
+                                 << RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)] << " ";
         }
-        runningstats::Histogram r(1),g(1),b(1);
-        for (int jj = 0; jj < S.height; ++jj) {
-            int global_counter = jj * S.raw_width;
-            for (size_t ii = 0; ii < S.height; ++ii, ++global_counter) {
-                int const value = RawProcessor.imgdata.rawdata.raw_image[global_counter];
-                switch(RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)]) {
-                case 'R': r.push(value); break;
-                case 'G': g.push(value); break;
-                case 'B': b.push(value); break;
-                }
-            }
-        }
-
-        clog::L(__func__, 2) << "model2: " << RawProcessor.imgdata.color.model2 << std::endl;
-        clog::L(__func__, 2) << "UniqueCameraModel: " << RawProcessor.imgdata.color.UniqueCameraModel << std::endl;
-        clog::L(__func__, 2) << "LocalizedCameraModel: " << RawProcessor.imgdata.color.LocalizedCameraModel << std::endl;
-
-        clog::L(__func__, 2) << "desc: " << RawProcessor.imgdata.other.desc << std::endl;
-        clog::L(__func__, 2) << "artist: " << RawProcessor.imgdata.other.artist << std::endl;
-
-        clog::L(__func__, 2) << "make: " << RawProcessor.imgdata.idata.make << std::endl;
-        clog::L(__func__, 2) << "model: " << RawProcessor.imgdata.idata.model << std::endl;
+        clog::L(__func__, 2) << std::endl;
     }
+    runningstats::Histogram r(1),g(1),b(1);
+    for (int jj = 0; jj < S.height; ++jj) {
+        int global_counter = jj * S.raw_width;
+        for (size_t ii = 0; ii < S.height; ++ii, ++global_counter) {
+            int const value = RawProcessor.imgdata.rawdata.raw_image[global_counter];
+            switch(RawProcessor.imgdata.idata.cdesc[RawProcessor.COLOR(ii, jj)]) {
+            case 'R': r.push(value); break;
+            case 'G': g.push(value); break;
+            case 'B': b.push(value); break;
+            }
+        }
+    }
+
+    clog::L(__func__, 2) << "model2: " << RawProcessor.imgdata.color.model2 << std::endl;
+    clog::L(__func__, 2) << "UniqueCameraModel: " << RawProcessor.imgdata.color.UniqueCameraModel << std::endl;
+    clog::L(__func__, 2) << "LocalizedCameraModel: " << RawProcessor.imgdata.color.LocalizedCameraModel << std::endl;
+
+    clog::L(__func__, 2) << "desc: " << RawProcessor.imgdata.other.desc << std::endl;
+    clog::L(__func__, 2) << "artist: " << RawProcessor.imgdata.other.artist << std::endl;
+
+    clog::L(__func__, 2) << "make: " << RawProcessor.imgdata.idata.make << std::endl;
+    clog::L(__func__, 2) << "model: " << RawProcessor.imgdata.idata.model << std::endl;
+
 
     if (!(RawProcessor.imgdata.idata.filters || RawProcessor.imgdata.idata.colors == 1)) {
         throw std::runtime_error(

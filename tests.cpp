@@ -1388,6 +1388,78 @@ TEST(Calib, rot4_rot3_rot4_conversion) {
 
 }
 
+#include "cornercolor.h"
+
+TEST(CornerColor, all) {
+    using namespace hdcalib;
+
+    // Test the main markers at recursion levels 0-3
+    for (int rec = 0; rec <= 3; ++rec) {
+        int const factor = Calib::computeCornerIdFactor(rec);
+        for (int ii = 0; ii < 32; ++ii) {
+            EXPECT_EQ(2, CornerColor::getColor(factor*cv::Point2i(ii,ii), 0, rec));
+            EXPECT_EQ(2, CornerColor::getColor(factor*cv::Point2i(ii,ii % 2), 0, rec));
+            EXPECT_EQ(2, CornerColor::getColor(factor*cv::Point2i(ii % 2, ii), 0, rec));
+        }
+        for (int ii = 0; ii < 31; ++ii) {
+            EXPECT_EQ(3, CornerColor::getColor(factor*cv::Point2i(ii+1,ii), 0, rec));
+            EXPECT_EQ(3, CornerColor::getColor(factor*cv::Point2i(ii,ii+1), 0, rec));
+            EXPECT_EQ(3, CornerColor::getColor(factor*cv::Point2i(ii+1,ii % 2), 0, rec));
+            EXPECT_EQ(3, CornerColor::getColor(factor*cv::Point2i(ii % 2, ii+1), 0, rec));
+        }
+    }
+
+    // Test the submarkers at the fringe at recursion level 1.
+    for (int main = 0; main < 32; ++main) {
+        for (int xx : {1,3,5,7,9}) {
+            EXPECT_EQ((main+1) % 2, CornerColor::getColor({10*main + xx,1}, 0, 1));
+        }
+    }
+
+    // Test the submarkers at the fringe at recursion levels 2-3.
+    for (int rec = 2; rec <= 3; ++rec) {
+        int const factor = Calib::computeCornerIdFactor(rec);
+        for (int main = 0; main < 32; ++main) {
+            for (int xx = 1; xx < factor; xx += 2) {
+                EXPECT_EQ((main+rec) % 2, CornerColor::getColor({factor*main + xx,1}, 0, rec));
+            }
+        }
+    }
+
+    // Test a couple of black submarkers at level 1 by hand.
+    for (cv::Point2i const & id : {
+         cv::Point2i{7,3},
+         cv::Point2i{5,5},
+         cv::Point2i{9,5},
+         cv::Point2i{3,7},
+         cv::Point2i{7,7},
+
+         cv::Point2i{13,5},
+         cv::Point2i{15,5},
+         cv::Point2i{17,5},
+}) {
+        EXPECT_EQ(0, CornerColor::getColor(id, 0, 1));
+    }
+
+    // Test a couple of white submarkers at level 1 by hand.
+    for (cv::Point2i const & id : {
+         cv::Point2i{3,3},
+         cv::Point2i{5,3},
+         cv::Point2i{3,5},
+         cv::Point2i{9,3},
+         cv::Point2i{7,5},
+
+         cv::Point2i{5,7},
+         cv::Point2i{9,7},
+         cv::Point2i{3,9},
+         cv::Point2i{5,9},
+         cv::Point2i{7,9},
+         cv::Point2i{9,9},
+}) {
+        EXPECT_EQ(1, CornerColor::getColor(id, 0, 1));
+    }
+}
+
 
 std::string type2str(int type) {
   std::string r;

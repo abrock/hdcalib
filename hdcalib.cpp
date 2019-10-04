@@ -198,6 +198,17 @@ int Calib::getCornerIdFactor() const {
     return cornerIdFactor;
 }
 
+int Calib::computeCornerIdFactor(const int recursion_depth) {
+    int result = 1;
+    if (recursion_depth > 0) {
+        result = 10;
+        for (int ii = 1; ii < recursion_depth; ++ii) {
+            result *= 5;
+        }
+    }
+    return result;
+}
+
 void Calib::setValidPages(const std::vector<int> &_pages) {
     validPages = _pages;
 }
@@ -245,15 +256,9 @@ bool Calib::isValidPage(const Corner &c) const {
     return isValidPage(c.page);
 }
 
-void Calib::setRecursionDepth(int _recursionDepth) {
+void Calib::setRecursionDepth(int const _recursionDepth) {
     recursionDepth = _recursionDepth;
-    cornerIdFactor = 1;
-    if (recursionDepth > 0) {
-        cornerIdFactor = 10;
-        for (int ii = 1; ii < recursionDepth; ++ii) {
-            cornerIdFactor *= 5;
-        }
-    }
+    cornerIdFactor = computeCornerIdFactor(recursionDepth);
 }
 
 void Calib::scaleCornerIds(std::vector<Corner> &corners, int factor) {
@@ -368,6 +373,35 @@ CornerStore Calib::getUnion() const {
     return res;
 }
 
+std::vector<hdmarker::Corner> Calib::readCorners(
+        const std::string& input_file,
+        int &width,
+        int &height) {
+    std::vector<hdmarker::Corner> corners;
+    FileStorage pointcache(input_file, FileStorage::READ);
+    FileNode n = pointcache["corners"]; // Read string sequence - Get node
+    if (n.type() != FileNode::SEQ) {
+        throw std::runtime_error("Corners is not a sequence! FAIL");
+    }
+
+    FileNodeIterator it = n.begin(), it_end = n.end(); // Go through the node
+    for (; it != it_end; ++it) {
+        hdmarker::Corner c;
+        *it >> c;
+        corners.push_back(c);
+    }
+    if (pointcache["imageWidth"].isInt() && pointcache["imageHeight"].isInt()) {
+        pointcache["imageWidth"] >> width;
+        pointcache["imageHeight"] >> height;
+    }
+    return corners;
+}
+
+std::vector<Corner> Calib::readCorners(const string &input_file) {
+    int width = 0, height = 0;
+    return readCorners(input_file, width, height);
+}
+
 vector<Corner> Calib::getCorners(const std::string input_file,
                                  const float effort,
                                  const bool demosaic,
@@ -381,30 +415,14 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     bool read_cache_success = false;
     try {
         if (fs::exists(pointcache_file)) {
+            int width = 0, height = 0;
+            corners = readCorners(pointcache_file, width, height);
+            if (0 != width && 0 != height) {
+                imageSize.width = width;
+                imageSize.height = height;
+                resolutionKnown = true;
+            }
             read_cache_success = true;
-            FileStorage pointcache(pointcache_file, FileStorage::READ);
-            FileNode n = pointcache["corners"]; // Read string sequence - Get node
-            if (n.type() != FileNode::SEQ) {
-                read_cache_success = false;
-                throw std::runtime_error("Corners is not a sequence! FAIL");
-            }
-
-            FileNodeIterator it = n.begin(), it_end = n.end(); // Go through the node
-            for (; it != it_end; ++it) {
-                hdmarker::Corner c;
-                *it >> c;
-                corners.push_back(c);
-            }
-            if (pointcache["imageWidth"].isInt() && pointcache["imageHeight"].isInt()) {
-                int width = 0, height = 0;
-                pointcache["imageWidth"] >> width;
-                pointcache["imageHeight"] >> height;
-                if (0 != width && 0 != height) {
-                    imageSize.width = width;
-                    imageSize.height = height;
-                    resolutionKnown = true;
-                }
-            }
         }
     }
     catch (const Exception& e) {
@@ -423,30 +441,12 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     bool read_submarkers_success = false;
     try {
         if (fs::exists(submarkers_file)) {
-            read_submarkers_success = true;
-            FileStorage pointcache(submarkers_file, FileStorage::READ);
-            FileNode n = pointcache["corners"]; // Read string sequence - Get node
-            if (n.type() != FileNode::SEQ) {
-                read_submarkers_success = false;
-                throw std::runtime_error("Corners is not a sequence! FAIL");
-            }
-
-            FileNodeIterator it = n.begin(), it_end = n.end(); // Go through the node
-            for (; it != it_end; ++it) {
-                hdmarker::Corner c;
-                *it >> c;
-                submarkers.push_back(c);
-            }
-
-            if (pointcache["imageWidth"].isInt() && pointcache["imageHeight"].isInt()) {
-                int width = 0, height = 0;
-                pointcache["imageWidth"] >> width;
-                pointcache["imageHeight"] >> height;
-                if (0 != width && 0 != height) {
-                    imageSize.width = width;
-                    imageSize.height = height;
-                    resolutionKnown = true;
-                }
+            int width = 0, height = 0;
+            submarkers = readCorners(submarkers_file, width, height);
+            if (0 != width && 0 != height) {
+                imageSize.width = width;
+                imageSize.height = height;
+                resolutionKnown = true;
             }
         }
     }
@@ -475,32 +475,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
 
     if (plotMarkers || !read_cache_success || (recursionDepth > 0 && !read_submarkers_success)) {
-        if (demosaic) {
-            if (raw) {
-                img = read_raw(input_file);
-            }
-            else {
-                img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
-            }
-            setImageSize(img);
-            double min_val = 0, max_val = 0;
-            cv::minMaxIdx(img, &min_val, &max_val);
-            clog::L(__func__, 2) << "Image min/max: " << min_val << " / " << max_val << std::endl;
+        img = readImage(input_file, demosaic, raw, useOnlyGreen);
+        setImageSize(img);
 
-            cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
-        }
-        else {
-            img = cv::imread(input_file);
-            setImageSize(img);
-            clog::L(__func__, 2) << "Input file " << input_file << " image size: " << img.size() << std::endl;
-        }
-        if (useOnlyGreen) {
-            if (img.channels() > 1) {
-                cv::Mat split[3];
-                cv::split(img, split);
-                img = split[1];
-            }
-        }
         if (img.channels() == 1 && (img.depth() == CV_16U || img.depth() == CV_16S)) {
             clog::L(__func__, 0) << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
             img.convertTo(img, CV_8UC1, 1.0 / 256.0);
@@ -650,6 +627,38 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     return corners;
 
+}
+
+Mat Calib::readImage(std::string const& input_file,
+                     bool const demosaic,
+                     bool const raw,
+                     bool const useOnlyGreen) {
+    cv::Mat img;
+    if (demosaic) {
+        if (raw) {
+            img = read_raw(input_file);
+        }
+        else {
+            img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
+        }
+        double min_val = 0, max_val = 0;
+        cv::minMaxIdx(img, &min_val, &max_val);
+        clog::L(__func__, 2) << "Image min/max: " << min_val << " / " << max_val << std::endl;
+
+        cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
+    }
+    else {
+        img = cv::imread(input_file);
+        clog::L(__func__, 2) << "Input file " << input_file << " image size: " << img.size() << std::endl;
+    }
+    if (useOnlyGreen) {
+        if (img.channels() > 1) {
+            cv::Mat split[3];
+            cv::split(img, split);
+            img = split[1];
+        }
+    }
+    return img;
 }
 
 std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {

@@ -24,12 +24,13 @@ int main(int argc, char ** argv) {
     clog::Logger::getInstance().addListener(std::cout);
 
     hdcalib::Calib calib;
-    std::vector<std::string> input_files;
+    std::map<std::string, std::vector<std::string> > input_files;
     bool demosaic = false;
     bool libraw = false;
     bool only_green = false;
     fs::path output_dir;
     std::string cache_file;
+    size_t num_files = 0;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -71,7 +72,9 @@ int main(int argc, char ** argv) {
         cmd.parse(argc, argv);
 
 
-        input_files = input_img_arg.getValue();
+        input_files[""] = input_img_arg.getValue();
+        num_files += input_img_arg.getValue().size();
+
         libraw = read_raw_arg.getValue();
         only_green = only_green_arg.getValue();
         demosaic = demosaic_arg.getValue() || libraw;
@@ -91,7 +94,8 @@ int main(int argc, char ** argv) {
             while (std::getline(in, line)) {
                 trim(line);
                 if (fs::is_regular_file(line)) {
-                    input_files.push_back(line);
+                    input_files[file].push_back(line);
+                    num_files++;
                     fs::path p(line);
                     if (p.has_parent_path()) {
                         fs::create_directories(output_dir / p.parent_path());
@@ -153,9 +157,29 @@ int main(int argc, char ** argv) {
         return EXIT_FAILURE;
     }
 
+    const cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap();
 
-    for (auto const& file : input_files) {
-
+    size_t ii = 0;
+    for (const auto& it : input_files) {
+        std::stringstream cache;
+        for (const auto& file : it.second) {
+            ii++;
+            clog::L(__func__, 1) << "Remapping file " << ii << " out of " << num_files << ": " << file << std::endl;
+            const cv::Mat img = hdcalib::Calib::readImage(file, demosaic, libraw, only_green);
+            cv::Mat remapped;
+            cv::remap(img, remapped, remap, cv::Mat(), cv::INTER_LINEAR);
+            std::string added_extension = "";
+            if (fs::extension(file) != ".png") {
+                added_extension = ".png";
+            }
+            fs::path output_path = output_dir / (file + added_extension);
+            cv::imwrite(output_path.string(), remapped);
+            cache << (file + added_extension) << std::endl;
+        }
+        if (!it.first.empty()) {
+            std::ofstream out((output_dir/it.first).string());
+            out << cache.str();
+        }
     }
 
     return EXIT_SUCCESS;

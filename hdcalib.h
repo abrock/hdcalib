@@ -239,13 +239,19 @@ public:
      */
     bool purge32();
 
-
     /**
      * @brief hasID checks if a given hdmarker::Corner (identified by id and page) exists in the CornerStore.
      * @param ref corner we search.
      * @return true if the corner exists.
      */
     bool hasID(hdmarker::Corner const& ref) const;
+
+    /**
+     * @brief hasID checks if a given hdmarker::Corner (identified by id and page) exists in the CornerStore.
+     * @param ref corner we search.
+     * @return true if the corner exists.
+     */
+    bool hasID(hdmarker::Corner const& ref, hdmarker::Corner & found) const;
 
     /**
      * @brief size returns the number of elements currently stored.
@@ -607,6 +613,8 @@ public:
 
     int getCornerIdFactor() const;
 
+    static int computeCornerIdFactor(int const recursion_depth);
+
     void setValidPages(std::vector<int> const& _pages);
 
     /**
@@ -620,7 +628,7 @@ public:
     bool isValidPage(int const page) const;
     bool isValidPage(hdmarker::Corner const& c) const;
 
-    void setRecursionDepth(int _recursionDepth);
+    void setRecursionDepth(const int _recursionDepth);
 
     typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex3<cv::Point3i> > MarkerMap;
 
@@ -910,12 +918,13 @@ public:
 
     void normalize_raw_per_channel_inplace(cv::Mat & input);
 
-    cv::Mat read_raw(std::string const& filename);
+    static cv::Mat read_raw(std::string const& filename);
 
     CornerStore getUnion() const;
 
     /**
-   * @brief getCorners
+   * @brief getCorners Tries to read detected hdmarker corners from cache files and if that fails reads the image
+   * and runs marker detection.
    * @param input_file
    * @param effort
    * @param demosaic
@@ -927,6 +936,11 @@ public:
             const float effort,
             const bool demosaic,
             const bool raw);
+
+    static cv::Mat readImage(std::string const& input_file,
+                      bool const demosaic,
+                      bool const raw,
+                      bool const useOnlyGreen);
 
     cv::Size read_raw_imagesize(const string &filename);
 
@@ -1002,12 +1016,37 @@ public:
                 T * residuals) const;
     };
 
+    template<class T>
+    /**
+     * @brief lensfunDistortionModel
+     * @param a
+     * @param b
+     * @param c
+     * @param r
+     */
+    T lensfunDistortionModel(T const & a, T const& b, T const& c, T const& r);
+
     void rectificationResidualsPlotsAndStats(
             const char *log_name,
             const std::map<std::string, std::vector<RectifyCost *> > &cost_functions,
             double rot_vec[3],
             bool plot);
 
+    /**
+     * @brief readCorners reads hdmarker::Corner objects from a cache file.
+     * @param input_file
+     * @return
+     */
+    static std::vector<hdmarker::Corner> readCorners(const std::string &input_file,
+                                              int & width,
+                                              int & height);
+
+    /**
+     * @brief readCorners reads hdmarker::Corner objects from a cache file.
+     * @param input_file
+     * @return
+     */
+    static std::vector<hdmarker::Corner> readCorners(const std::string &input_file);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

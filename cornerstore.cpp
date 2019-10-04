@@ -340,6 +340,11 @@ bool CornerStore::purge32() {
 }
 
 bool CornerStore::hasID(const Corner &ref) const {
+    hdmarker::Corner c;
+    return hasID(ref, c);
+}
+
+bool CornerStore::hasID(const Corner &ref, Corner &result) const {
     double query_pt[3] = {
         static_cast<double>(ref.id.x),
         static_cast<double>(ref.id.y),
@@ -354,7 +359,7 @@ bool CornerStore::hasID(const Corner &ref) const {
     if (resultSet.size() < 1) {
         return false;
     }
-    hdmarker::Corner const& result = corners[res_index];
+    result = hdmarker::Corner(corners[res_index]);
     return result.id == ref.id && result.page == ref.page;
 }
 
