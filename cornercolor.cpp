@@ -64,11 +64,10 @@ void checker_recurse(cv::Mat &img, cv::Mat &checker)
   int h = img.size().height;
   int ws = subsampling+2*ss_border;
   int w_hr = w*ws;
-  uint8_t *ptr_hr, *ptr_img;
+  uint8_t *ptr_hr;
 
   resize(img, hr, cv::Point2i(img.size())*ws, 0, 0, cv::INTER_NEAREST);
 
-  ptr_img = img.ptr<uchar>(0);
   ptr_hr = hr.ptr<uchar>(0);
 
   for(int y=0;y<h;y++)
@@ -94,15 +93,15 @@ CornerColor::CornerColor() {
     subpatterns[1](2,2) = 255;
 }
 
-int CornerColor::getColor(const cv::Point2i id, const int page, const int recursion) {
+size_t CornerColor::getColor(const cv::Point2i id, const int page, const int recursion) {
     return getInstance()._getColor(id, page, recursion);
 }
 
-int CornerColor::getColor(hdmarker::Corner const& c, int const recursion) {
+size_t CornerColor::getColor(hdmarker::Corner const& c, int const recursion) {
     return getInstance()._getColor(c.id, c.page, recursion);
 }
 
-int CornerColor::_getColor(const cv::Point2i id, const int page, const int recursion) {
+size_t CornerColor::_getColor(const cv::Point2i id, const int page, const int recursion) {
     num_calls++;
     if (data.size() < size_t(page)+1) {
         data.resize(size_t(page)+1);

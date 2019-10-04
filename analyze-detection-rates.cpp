@@ -6,6 +6,7 @@
 #include <boost/filesystem.hpp>
 
 #include "hdcalib.h"
+#include "cornercolor.h"
 
 namespace fs = boost::filesystem;
 
@@ -41,6 +42,7 @@ std::pair<double, std::string> analyzeRates(fs::path const& file, int const recu
 
     runningstats::RunningStats distances;
     runningstats::BinaryStats rate;
+    runningstats::BinaryStats rates_by_color[2];
 
     for (auto const& c : corners) {
         if (c.id.x % factor == 0 && c.id.y % factor == 0) {
@@ -54,7 +56,7 @@ std::pair<double, std::string> analyzeRates(fs::path const& file, int const recu
                 search.id += id_offset;
                 if (store.hasID(search, neighbour)) {
                     cv::Point2f const residual = c.p - neighbour.p;
-                    double const dist = double(std::sqrt(residual.dot(residual)));
+                    double const dist = 2*double(std::sqrt(residual.dot(residual)));
                     distances.push_unsafe(dist/std::sqrt(id_offset.dot(id_offset)));
                 }
                 else {
@@ -66,11 +68,17 @@ std::pair<double, std::string> analyzeRates(fs::path const& file, int const recu
                     for (int yy = 1; yy < factor; yy += 2) {
                         hdmarker::Corner search = c;
                         search.id += cv::Point2i(xx, yy);
+                        size_t color = CornerColor::getColor(search, recursion);
+                        if (color > 1) {
+                            throw std::runtime_error("Color value unexpectedly high, something is wrong.");
+                        }
                         if (store.hasID(search)) {
                             rate.push(true);
+                            rates_by_color[color].push(true);
                         }
                         else {
                             rate.push(false);
+                            rates_by_color[color].push(false);
                         }
                     }
                 }
@@ -80,8 +88,16 @@ std::pair<double, std::string> analyzeRates(fs::path const& file, int const recu
 
     std::cout << "distances: " << distances.print() << std::endl;
     std::cout << "rate: " << rate.getPercent() << "%" << std::endl;
+    std::cout << "black rate: " << rates_by_color[0].getPercent() << "%" << std::endl;
+    std::cout << "white rate: " << rates_by_color[1].getPercent() << "%" << std::endl;
 
     std::cout << std::endl;
+
+    result.first = distances.getMean();
+    result.second = std::to_string(distances.getMean()) + "\t"
+            + std::to_string(rate.getPercent()) + "\t"
+            + std::to_string(rates_by_color[0].getPercent()) + "\t"
+            + std::to_string(rates_by_color[1].getPercent());
     return result;
 }
 
@@ -96,7 +112,12 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     }
     std::sort(files.begin(), files.end());
     for (auto const& p : files) {
-        analyzeRates(p, recursion);
+        auto const result = analyzeRates(p, recursion);
+        data[result.first] = result.second;
+    }
+    std::ofstream logfile(dir + "-log");
+    for (auto const& it : data) {
+        logfile << it.first << "\t" << it.second << std::endl;
     }
 }
 

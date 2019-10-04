@@ -40,11 +40,11 @@ public:
      * 2: main marker where the target is black at the top left and bottom right
      * 3: main marker where the target is white at the top right and bottom left
      */
-    static int getColor(hdmarker::Corner const& c, int const recursion);
+    static size_t getColor(hdmarker::Corner const& c, int const recursion);
 
-    static int getColor(cv::Point2i const id, int const page, int const recursion);
+    static size_t getColor(cv::Point2i const id, int const page, int const recursion);
 
-    int _getColor(const cv::Point2i id, const int page, int const recursion);
+    size_t _getColor(const cv::Point2i id, const int page, int const recursion);
 
     static size_t getNumCalls();
     size_t _getNumCalls() const;
