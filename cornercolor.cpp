@@ -81,14 +81,18 @@ void checker_recurse(cv::Mat &img, cv::Mat &checker)
   checker = hr;
 }
 
-CornerColor &CornerColor::getInstance()
-{
+CornerColor &CornerColor::getInstance() {
     static CornerColor    instance; // Guaranteed to be destroyed.
     // Instantiated on first use.
     return instance;
 }
 
-CornerColor::CornerColor() {}
+CornerColor::CornerColor() {
+    subpatterns.resize(2);
+    subpatterns[0] = cv::Mat_<uint8_t>::zeros(0,0);
+    subpatterns[1] = cv::Mat_<uint8_t>::zeros(5,5);
+    subpatterns[1](2,2) = 255;
+}
 
 int CornerColor::getColor(const cv::Point2i id, const int page, const int recursion) {
     return getInstance()._getColor(id, page, recursion);
@@ -99,24 +103,25 @@ int CornerColor::getColor(hdmarker::Corner const& c, int const recursion) {
 }
 
 int CornerColor::_getColor(const cv::Point2i id, const int page, const int recursion) {
+    num_calls++;
     if (data.size() < size_t(page)+1) {
         data.resize(size_t(page)+1);
     }
-    std::vector<cv::Mat_<uint8_t> > & local = data[size_t(page)];
-    if (local.size() < size_t(std::abs(recursion))+1) {
-        local.resize(size_t(std::abs(recursion))+1);
+    cv::Mat_<uint8_t> & root = data[size_t(page)];
+    if (subpatterns.size() < size_t(std::abs(recursion))+1) {
+        subpatterns.resize(size_t(std::abs(recursion))+1);
     }
-    if (local[0].empty()) {
-        local[0] = cv::Mat_<uint8_t>::zeros(16*10, 32*5);
-        local[0] += 255;
-        writemarker(local[0], page);
+    if (root.empty()) {
+        root = cv::Mat_<uint8_t>::zeros(16*10, 32*5);
+        root += 255;
+        writemarker(root, page);
     }
-    for (size_t ii = 0; ii+1 < size_t(recursion); ++ii) {
-        if (local[ii+1].empty()) {
-            checker_recurse(local[ii], local[ii+1]);
+    for (size_t ii = 0; ii+1 <= size_t(recursion); ++ii) {
+        if (subpatterns[ii+1].empty()) {
+            checker_recurse(subpatterns[ii], subpatterns[ii+1]);
+            cv::imwrite(std::to_string(ii+1) + ".png", subpatterns[ii+1]);
         }
     }
-    cv::Mat_<uint8_t> const & root = local[0];
 
     int const factor = hdcalib::Calib::computeCornerIdFactor(recursion);
 
@@ -137,32 +142,26 @@ int CornerColor::_getColor(const cv::Point2i id, const int page, const int recur
         }
         return root(p) > 125 ? 3:2;
     }
+    p = (id*5)/factor;
+    bool main_white = root(p) > 125;
 
-    // Mapping of the ID to the pixel location for recursion 1:
-    // 1 -> 0
-    // 3 -> 1
-    // 5 -> 2
-    // 7 -> 3
-    // 9 -> 4
-    // x -> (x-1)/2 (or just x/2)
+    // Mapping of the ID to the actual pixel location at the correct level:
+    // 1->2
+    // 3->7
+    // 5->12
+    // 7->17
+    // x->((x-1)/2)*5+2
 
-    // Mapping of the ID to the pixel location for recursion 2:
-    // 1-9 -> 0
-    // 11-19 -> 1
-    // 21-29 -> 2
-    // x -> x/10
+    cv::Point2i loc(((id.x-1)/2)*5 + 2, ((id.y-1)/2)*5 + 2);
 
-    // Note that for recursion 1 factor = 10, for recursion 2 factor = 50
-    // General computation: x/(factor/5)
+    loc = cv::Point2i{loc.x % (factor/2), loc.y % (factor/2)};
+    return main_white ^ (subpatterns[size_t(recursion)](loc) > 125);
+}
 
-    p = (id / (factor/5));
+size_t CornerColor::getNumCalls() {
+    return getInstance()._getNumCalls();
+}
 
-    bool white = root(p) > 125;
-
-    for (int ii = 0; ii < recursion; ++ii) {
-        white = !white;
-    }
-
-    return white ? 1:0;
-
+size_t CornerColor::_getNumCalls() const {
+    return num_calls;
 }

@@ -1417,11 +1417,21 @@ TEST(CornerColor, all) {
     }
 
     // Test the submarkers at the fringe at recursion levels 2-3.
-    for (int rec = 2; rec <= 3; ++rec) {
+    for (int rec = 1; rec <= 3; ++rec) {
         int const factor = Calib::computeCornerIdFactor(rec);
         for (int main = 0; main < 32; ++main) {
             for (int xx = 1; xx < factor; xx += 2) {
-                EXPECT_EQ((main+rec) % 2, CornerColor::getColor({factor*main + xx,1}, 0, rec));
+                for (int fringe = 1; fringe < 2*rec && fringe < 4; fringe += 2) {
+                    EXPECT_EQ((main+1) % 2, CornerColor::getColor({factor*main + xx,fringe}, 0, rec));
+                    if ((main+1) % 2 != CornerColor::getColor({factor*main + xx,fringe}, 0, rec)) {
+                        std::cout << "Failed rec: " << rec
+                                  << ", main: " << main
+                                  << ", x: " << xx
+                                  << ", id: " << cv::Point2i{factor*main + xx,fringe}
+                                  << ", got " << CornerColor::getColor({factor*main + xx,1}, 0, rec)
+                                  << ", expected " << (main+1) % 2 << std::endl;
+                    }
+                }
             }
         }
     }
@@ -1439,6 +1449,11 @@ TEST(CornerColor, all) {
          cv::Point2i{17,5},
 }) {
         EXPECT_EQ(0, CornerColor::getColor(id, 0, 1));
+        if (0 != CornerColor::getColor(id, 0, 1)) {
+            std::cout << "Failed " << id
+                      << ", got " << CornerColor::getColor(id, 0, 1)
+                      << ", expected 0" << std::endl;
+        }
     }
 
     // Test a couple of white submarkers at level 1 by hand.
@@ -1457,7 +1472,60 @@ TEST(CornerColor, all) {
          cv::Point2i{9,9},
 }) {
         EXPECT_EQ(1, CornerColor::getColor(id, 0, 1));
+        if (1 != CornerColor::getColor(id, 0, 1)) {
+            std::cout << "Failed " << id
+                      << ", got " << CornerColor::getColor(id, 0, 1)
+                      << ", expected 1" << std::endl;
+        }
     }
+
+
+    // Test a couple of black submarkers at level 2 by hand.
+    for (cv::Point2i const & id : {
+         cv::Point2i{5,5},
+         cv::Point2i{5,15},
+         cv::Point2i{15,5},
+         cv::Point2i{25,5},
+         cv::Point2i{5,25},
+         cv::Point2i{15,25},
+         cv::Point2i{25,15},
+         cv::Point2i{5,35},
+         cv::Point2i{35,5},
+         cv::Point2i{45,5},
+         cv::Point2i{5,45},
+
+         cv::Point2i{31,11},
+         cv::Point2i{31,13},
+         cv::Point2i{31,17},
+         cv::Point2i{31,19},
+
+         cv::Point2i{33,11},
+         cv::Point2i{33,13},
+         cv::Point2i{33,17},
+         cv::Point2i{33,19},
+
+         cv::Point2i{35,11},
+         cv::Point2i{35,13},
+         cv::Point2i{35,17},
+         cv::Point2i{35,19},
+
+         cv::Point2i{37,11},
+         cv::Point2i{37,13},
+         cv::Point2i{37,17},
+         cv::Point2i{37,19},
+
+         cv::Point2i{39,11},
+         cv::Point2i{39,13},
+         cv::Point2i{39,17},
+         cv::Point2i{39,19},
+
+}) {
+        EXPECT_EQ(0, CornerColor::getColor(id, 0, 2));
+        if (0 != CornerColor::getColor(id, 0, 2)) {
+            std::cout << "failed " << id << std::endl;
+        }
+    }
+    std::cout << "Num calls: " << CornerColor::getNumCalls() << std::endl;
 }
 
 

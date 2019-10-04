@@ -15,7 +15,11 @@ private:
     /**
      * @brief data The first (leftmost) index is the page number, the second the recursion depth
      */
-    std::vector<std::vector<cv::Mat_<uint8_t> > > data;
+    std::vector<cv::Mat_<uint8_t> > data;
+
+    std::vector<cv::Mat_<uint8_t> > subpatterns;
+
+    size_t num_calls = 0;
 
 public:
     // Compilers check accessibility before deleted status.
@@ -41,6 +45,9 @@ public:
     static int getColor(cv::Point2i const id, int const page, int const recursion);
 
     int _getColor(const cv::Point2i id, const int page, int const recursion);
+
+    static size_t getNumCalls();
+    size_t _getNumCalls() const;
 };
 
 #endif // CORNERCOLOR_H
