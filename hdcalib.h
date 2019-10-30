@@ -254,6 +254,22 @@ public:
     bool hasID(hdmarker::Corner const& ref, hdmarker::Corner & found) const;
 
     /**
+     * @brief hasIDLevel checks if a given hdmarker::Corner (identified by id, page and level of recursion at which it was detected) exists in the CornerStore.
+     * @param ref corner we search.
+     * @param level recursion level we require.
+     * @return true if the corner exists.
+     */
+    bool hasIDLevel(hdmarker::Corner const& ref, hdmarker::Corner & found, int8_t level) const;
+
+    /**
+     * @brief hasIDLevel checks if a given hdmarker::Corner (identified by id, page and level of recursion at which it was detected) exists in the CornerStore.
+     * @param ref corner we search.
+     * @param level recursion level we require.
+     * @return true if the corner exists.
+     */
+    bool hasIDLevel(hdmarker::Corner const& ref, int8_t level) const;
+
+    /**
      * @brief size returns the number of elements currently stored.
      * @return
      */
@@ -521,6 +537,8 @@ class Calib
     Store_T data;
 
     bool plotMarkers = false;
+
+    bool plotSubMarkers = false;
 
     /**
      * @brief size_known false if the resolution of the input images is not (yet) known.
@@ -873,6 +891,7 @@ public:
     double CeresCalibFlexibleTarget();
 
     void setPlotMarkers(bool plot = true);
+    void setPlotSubMarkers(bool plot = true);
 
     /**
      * @brief setImageSize set the size of the captured images.

@@ -8,6 +8,8 @@
 #include "hdcalib.h"
 #include "cornercolor.h"
 
+#include "gnuplot-iostream.h"
+
 namespace fs = boost::filesystem;
 
 void trim(std::string &s) {
@@ -32,7 +34,7 @@ bool stringEndsWith(std::string const& str, std::string const& search) {
     return str.substr(str.size() - search.size()) == search;
 }
 
-std::pair<double, std::string> analyzeRates(fs::path const& file, int const recursion) {
+std::pair<double, std::string> analyzeRates(fs::path const& file, int8_t const recursion) {
     std::pair<double, std::string> result;
     std::vector<hdmarker::Corner> corners = hdcalib::Calib::readCorners(file.string());
     std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
@@ -72,7 +74,7 @@ std::pair<double, std::string> analyzeRates(fs::path const& file, int const recu
                         if (color > 1) {
                             throw std::runtime_error("Color value unexpectedly high, something is wrong.");
                         }
-                        if (store.hasID(search)) {
+                        if (store.hasIDLevel(search, recursion)) {
                             rate.push(true);
                             rates_by_color[color].push(true);
                         }
@@ -97,7 +99,9 @@ std::pair<double, std::string> analyzeRates(fs::path const& file, int const recu
     result.second = std::to_string(distances.getMean()) + "\t"
             + std::to_string(rate.getPercent()) + "\t"
             + std::to_string(rates_by_color[0].getPercent()) + "\t"
-            + std::to_string(rates_by_color[1].getPercent());
+            + std::to_string(rates_by_color[1].getPercent()) + "\t"
+            + std::to_string(corners.size()) + "\t"
+            + file.string();
     return result;
 }
 
@@ -117,8 +121,26 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     }
     std::ofstream logfile(dir + "-log");
     for (auto const& it : data) {
-        logfile << it.first << "\t" << it.second << std::endl;
+        if (it.first > 0) {
+            logfile << it.second << std::endl;
+        }
     }
+    gnuplotio::Gnuplot plt;
+    std::stringstream cmd;
+
+    cmd << "set term svg enhanced background rgb \"white\";\n"
+        << "set output \"" << dir << "-log.svg\";\n"
+        << "set title 'Marker detection rates';\n"
+        << "set xrange [6:15];\n"
+        << "set yrange [0:100];\n"
+        << "set xlabel 'submarker distance [px]';\n"
+        << "set ylabel 'detection rate [%]';\n"
+        << "plot '" << dir << "-log' u 1:2 w lp title 'combined rate',"
+           << "'' u 1:3 w lp title 'black rate',"
+           << "'' u 1:4 w lp title 'white rate'\n";
+    plt << cmd.str();
+    std::ofstream gpl_file(dir + "-log.gpl");
+    gpl_file << cmd.str();
 }
 
 int main(int argc, char ** argv) {
@@ -164,7 +186,7 @@ int main(int argc, char ** argv) {
         }
 
         std::cout << "Parameters: " << std::endl
-                  << "Number of input files: " << input_dirs.size() << std::endl
+                  << "Number of input directories: " << input_dirs.size() << std::endl
                   << "recursion depth: " << recursion_depth << std::endl;
     }
     catch (TCLAP::ArgException const & e) {

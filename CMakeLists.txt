@@ -39,7 +39,10 @@ find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 
 target_link_libraries(cornerstore hdcalib)
-target_link_libraries(hdcalib-readwrite calib-stats)
+target_link_libraries(hdcalib-readwrite
+    calib-stats
+    hdmarker
+    )
 
 target_link_libraries(hdcalib-rectify
     hdcalib-ceres-calib
@@ -80,6 +83,8 @@ add_executable(hdcalib-localize-exception "localize-exception.cpp")
 
 add_executable(hdcalib-marker-detection "marker-detection.cpp")
 
+add_executable(hdcalib-offset-comparison hdcalib-offset-comparison.cpp)
+
 add_executable(hdcalib-test-submarker-detection "test-submarker-detection.cpp")
 
 add_executable(hdcalib-speedtest-prepare-calibration "speedtest-prepare-calibration.cpp")
@@ -97,6 +102,7 @@ foreach(program
         hdcalib-analyze-detection-rates
         hdcalib-analyze-lf
         hdcalib-marker-detection
+        hdcalib-offset-comparison
         hdcalib-speedtest-prepare-calibration
         hdcalib-simulate
         hdcalib-rectify-tool
@@ -106,6 +112,7 @@ endforeach()
 
 foreach(program
         hdcalib-analyze-detection-rates
+        hdcalib-offset-comparison
         hdcalib-tool
         hdcalib-speedtest-prepare-calibration
         hdcalib-simulate

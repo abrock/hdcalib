@@ -128,21 +128,10 @@ size_t CornerColor::_getColor(const cv::Point2i id, const int page, const int re
         throw std::runtime_error("ID invalid");
     }
 
-    cv::Point2i p = (id/factor)*5;
-    if (id.x % factor == 0) {
-        if (p.x >= root.cols && p.y >= root.cols) {
-            return root(p - cv::Point2i(1,1)) > 125 ? 3:2;
-        }
-        if (p.x >= root.cols && p.y <= 0) {
-            return root(p - cv::Point2i(1,0)) > 125 ? 2:3;
-        }
-        if (p.x <= 0 && p.y >= root.rows) {
-            return root(p - cv::Point2i(0,2)) > 125 ? 2:3;
-        }
-        return root(p) > 125 ? 3:2;
+    if (id.x % factor == 0) { // This is the case where the Corner is a main marker
+        return 2 + ((id.x/factor + id.y/factor) % 2);
     }
-    p = (id*5)/factor;
-    bool main_white = root(p) > 125;
+    bool main_white = root((id*5)/factor) > 125;
 
     // Mapping of the ID to the actual pixel location at the correct level:
     // 1->2

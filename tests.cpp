@@ -295,6 +295,64 @@ TEST(CornerStore, findByID) {
 
 }
 
+TEST(CornerStore, hasIDLevel) {
+    hdcalib::CornerStore store;
+    hdcalib::CornerIndexAdaptor idx_adapt(store);
+    hdcalib::CornerPositionAdaptor pos_adapt(store);
+
+
+    // We create a hdmarker::Corner with a different value for each property.
+    hdmarker::Corner a, b;
+    a.p = cv::Point2f(1,2);
+    a.id = cv::Point2i(3,4);
+    a.pc[0] = cv::Point2f(5,6);
+    a.pc[1] = cv::Point2f(7,8);
+    a.pc[2] = cv::Point2f(9,10);
+    a.page = 11;
+    a.size = 12;
+    a.level = 0;
+
+    EXPECT_FALSE(store.hasIDLevel(a, 0));
+    EXPECT_FALSE(store.hasIDLevel(b, 0));
+
+    store.push_back(a);
+    EXPECT_TRUE(store.hasIDLevel(a, 0));
+    EXPECT_FALSE(store.hasIDLevel(a, 1));
+    EXPECT_FALSE(store.hasIDLevel(a, 2));
+    EXPECT_FALSE(store.hasIDLevel(a, 3));
+    EXPECT_FALSE(store.hasIDLevel(b, 0));
+
+    b.p = cv::Point2f(13,14);
+    b.id = cv::Point2i(15,16);
+    b.pc[0] = cv::Point2f(17,18);
+    b.pc[1] = cv::Point2f(19,20);
+    b.pc[2] = cv::Point2f(21,22);
+    b.page = 23;
+    b.size = 24;
+    b.level = 1;
+
+    std::vector<hdmarker::Corner> search_res = store.findByID(a);
+    search_res = store.findByID(b);
+    ASSERT_GE(search_res.size(), 1);
+    EXPECT_TRUE(CornersEqual(a, search_res[0]));
+
+    store.push_back(b);
+    EXPECT_TRUE(store.hasIDLevel(a, 0));
+    EXPECT_FALSE(store.hasIDLevel(a, 1));
+    EXPECT_FALSE(store.hasIDLevel(a, 2));
+    EXPECT_FALSE(store.hasIDLevel(a, 3));
+    EXPECT_FALSE(store.hasIDLevel(a, 4));
+    EXPECT_FALSE(store.hasIDLevel(a, -1));
+
+    EXPECT_TRUE(store.hasIDLevel(b, 1));
+    EXPECT_FALSE(store.hasIDLevel(b, -1));
+    EXPECT_FALSE(store.hasIDLevel(b, 0));
+    EXPECT_FALSE(store.hasIDLevel(b, 2));
+    EXPECT_FALSE(store.hasIDLevel(b, 3));
+    EXPECT_FALSE(store.hasIDLevel(b, 4));
+
+}
+
 TEST(CornerStore, find) {
     hdcalib::CornerStore store;
     hdmarker::Corner a;
@@ -1389,6 +1447,61 @@ TEST(Calib, rot4_rot3_rot4_conversion) {
 }
 
 #include "cornercolor.h"
+
+size_t mainMarkerColor(cv::Point2i const& id) {
+    return 2 + ((id.x + id.y) % 2);
+}
+
+TEST(CornerColor, mainMarkers) {
+    for (int ii = 1; ii < 32; ii +=2) {
+        for (int jj = 1; jj < 32; jj += 2) {
+            EXPECT_EQ(2, CornerColor::getColor({ii,jj}, 0, 0));
+        }
+    }
+    for (int ii = 0; ii < 32; ii +=2) {
+        for (int jj = 0; jj < 32; jj += 2) {
+            EXPECT_EQ(2, CornerColor::getColor({ii,jj}, 0, 0));
+        }
+    }
+    for (int ii = 1; ii < 32; ii +=2) {
+        for (int jj = 0; jj < 32; jj += 2) {
+            EXPECT_EQ(3, CornerColor::getColor({ii,jj}, 0, 0));
+        }
+    }
+    for (int ii = 0; ii < 32; ii +=2) {
+        for (int jj = 1; jj < 32; jj += 2) {
+            EXPECT_EQ(3, CornerColor::getColor({ii,jj}, 0, 0));
+        }
+    }
+
+    for (int ii = 0; ii < 32; ++ii) {
+        for (int jj = 0; jj < 32; ++jj) {
+            for (int page = 0; page < 512; ++page) {
+                EXPECT_EQ(mainMarkerColor({ii, jj}), CornerColor::getColor({ii,jj}, page, 0));
+                if (mainMarkerColor({ii, jj}) != CornerColor::getColor({ii,jj}, page, 0)) {
+                    std::cout << "failed at " << ii << ", " << jj << ", " << page << std::endl;
+                }
+            }
+        }
+    }
+}
+
+TEST(CornerColor, cachedSubmarkers) {
+    std::vector<hdmarker::Corner> const corners = hdcalib::Calib::readCorners("submarkers.yaml.gz");
+    for (auto const& it : corners) {
+        if (0 == it.level || 2 == it.level) {
+            EXPECT_EQ(it.color, CornerColor::getColor(it, 2));
+        }
+        if (1 == it.level) {
+            EXPECT_EQ(it.color, CornerColor::getColor(it.id/5, it.page, 1));
+        }
+        EXPECT_TRUE(it.color >= 0);
+        EXPECT_TRUE(it.color <= 3);
+        EXPECT_TRUE(it.level >= 0);
+        EXPECT_TRUE(it.level <= 2);
+    }
+    std::cout << "Corner cache file has " << corners.size() << " corners." << std::endl;
+}
 
 TEST(CornerColor, all) {
     using namespace hdcalib;

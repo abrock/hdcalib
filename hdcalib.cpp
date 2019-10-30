@@ -448,6 +448,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 imageSize.height = height;
                 resolutionKnown = true;
             }
+            if (submarkers.size() > corners.size()) {
+                read_submarkers_success = true;
+            }
         }
     }
     catch (const Exception& e) {
@@ -545,9 +548,11 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             //hdmarker::refine_recursive(gray, corners, submarkers, recursionDepth, &msize);
             //piecewiseRefinement(gray, corners, submarkers, recursion_depth, msize);
             refineRecursiveByPage(gray, corners, submarkers, recursionDepth, msize);
+            clog::L(__func__, 1) << "Number of detected submarkers: " << submarkers.size() << std::endl;
             if (!validPages.empty()) {
                 submarkers = purgeInvalidPages(submarkers, validPages);
             }
+            clog::L(__func__, 1) << "Number of detected submarkers after purgeInvalidPages: " << submarkers.size() << std::endl;
             FileStorage submarker_cache(submarkers_file, FileStorage::WRITE);
             submarker_cache << "corners" << "[";
             for (hdmarker::Corner const& c : submarkers) {
@@ -581,16 +586,10 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
     }
 
-    clog::L(__func__, 1) << "Purging duplicate submarkers: " << submarkers.size() << " -> ";
-    CornerStore c(submarkers);
-    c.purgeDuplicates();
-    submarkers = c.getCorners();
-    clog::L(__func__, 1) << submarkers.size() << std::endl;
-
     if (plotMarkers) {
         //std::sort(submarkers.begin(), submarkers.end(), CornerIdSort());
         cv::Mat paint_submarkers = paint.clone();
-        if (recursionDepth > 0) {
+        if (recursionDepth > 0 && plotSubMarkers) {
             int paint_size_factor = 2;
             if (paint.cols < 3000 && paint.rows < 3000) {
                 paint_size_factor = 5;
@@ -764,6 +763,10 @@ double Calib::openCVCalib() {
 
 void Calib::setPlotMarkers(bool plot) {
     plotMarkers = plot;
+}
+
+void Calib::setPlotSubMarkers(bool plot) {
+    plotSubMarkers = plot;
 }
 
 void Calib::setImageSize(const Mat &img) {

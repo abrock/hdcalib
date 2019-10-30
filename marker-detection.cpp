@@ -34,6 +34,7 @@ int main(int argc, char* argv[]) {
     bool demosaic = false;
     bool libraw = false;
     bool plot_markers = false;
+    bool plot_submarkers = false;
     bool only_green = false;
     int num_threads = 4;
     std::string cache_file;
@@ -62,6 +63,9 @@ int main(int argc, char* argv[]) {
 
         TCLAP::SwitchArg plot_markers_arg("p", "plot", "Use this flag if the detected markers should be painted into the input images", false);
         cmd.add(plot_markers_arg);
+
+        TCLAP::SwitchArg plot_submarkers_arg("s", "submarker-plot", "Use this flag if the detected sub-markers should be painted into scaled versions of the input images", false);
+        cmd.add(plot_submarkers_arg);
 
         TCLAP::SwitchArg only_green_arg("g", "only-green", "Set this flag true if only the green channel of a bayer image should be used."
                                                            "In the case of demosaicing this means that the missing green pixels"
@@ -95,6 +99,7 @@ int main(int argc, char* argv[]) {
         only_green = only_green_arg.getValue();
         demosaic = demosaic_arg.getValue() || libraw;
         plot_markers = plot_markers_arg.getValue();
+        plot_submarkers = plot_submarkers_arg.getValue();
         std::vector<std::string> const textfiles = textfile_arg.getValue();
 
         for (std::string const& file : textfiles) {
@@ -137,6 +142,7 @@ int main(int argc, char* argv[]) {
                   << "only green channel: " << (only_green ? "true" : "false") << std::endl;
 
         calib.setPlotMarkers(plot_markers);
+        calib.setPlotSubMarkers(plot_submarkers);
         calib.only_green(only_green);
     }
     catch (TCLAP::ArgException const & e) {

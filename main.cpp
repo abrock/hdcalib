@@ -49,6 +49,7 @@ int main(int argc, char* argv[]) {
     bool only_green = false;
     bool verbose = true;
     bool gnuplot = false;
+    std::vector<int> valid_pages;
     std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
@@ -97,6 +98,13 @@ int main(int argc, char* argv[]) {
                                                   "Text file with a list of input images.");
         cmd.add(textfile_arg);
 
+        TCLAP::MultiArg<int> valid_pages_arg("",
+                                                  "valid",
+                                                  "Page number of a valid corner.",
+                                                  false,
+                                                  "Page number of a valid corner.");
+        cmd.add(valid_pages_arg);
+
         TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input_img", "Input images, should contain markers.", false, "Input images.");
         cmd.add(input_img_arg);
 
@@ -113,6 +121,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> const textfiles = textfile_arg.getValue();
         cache_file = cache_arg.getValue();
         gnuplot = gnuplot_arg.getValue();
+        valid_pages = valid_pages_arg.getValue();
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -143,7 +152,14 @@ int main(int argc, char* argv[]) {
                   << "use libraw: " << (libraw ? "true" : "false") << std::endl
                   << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
                   << "only green channel: " << (only_green ? "true" : "false") << std::endl
-                  << "Gnuplot: " << (gnuplot ? "true" : "false") << std::endl;
+                  << "Gnuplot: " << (gnuplot ? "true" : "false") << std::endl
+                  << "Valid pages: ";
+        for (const auto it : valid_pages) {
+            std::cout << it << "  ";
+        }
+        std::cout << std::endl;
+        calib.setValidPages(valid_pages);
+
 
         calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
@@ -264,87 +280,87 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    TIMELOG("Reading markers");
+    TIMELOG("Reading markers")
 
 
     for (auto const& it : detected_markers) {
         calib.addInputImage(it.first, it.second);
     }
 
-    TIMELOG("Adding input images");
+    TIMELOG("Adding input images")
 
     calib.purgeInvalidPages();
 
-    TIMELOG("Purging invalid pages");
+    TIMELOG("Purging invalid pages")
 
     calib.openCVCalib();
 
-    TIMELOG("openCVCalib");
+    TIMELOG("openCVCalib")
 
     if (gnuplot) {
         calib.plotReprojectionErrors("", "initial");
-        TIMELOG("plotReprojectionErrors initial");
+        TIMELOG("plotReprojectionErrors initial")
     }
 
     calib.prepareCalibration();
 
-    TIMELOG("prepareCalibration");
+    TIMELOG("prepareCalibration")
 
     if (gnuplot) {
         calib.plotReprojectionErrors("", "initial-all-markers");
-        TIMELOG("plotReprojectionErrors initial all markers");
+        TIMELOG("plotReprojectionErrors initial all markers")
     }
 
     calib.CeresCalib();
 
-    TIMELOG("CeresCalib");
+    TIMELOG("CeresCalib")
 
     if (gnuplot) {
         calib.plotReprojectionErrors("", "ceres");
-        TIMELOG("plotReprojectionErrors ceres");
+        TIMELOG("plotReprojectionErrors ceres")
     }
 
     calib.removeOutliers(150);
 
-    TIMELOG("removeOutliers(150)");
+    TIMELOG("removeOutliers(150)")
 
     calib.CeresCalib();
 
-    TIMELOG("CeresCalib");
+    TIMELOG("CeresCalib")
 
     if (gnuplot) {
         calib.plotReprojectionErrors("", "ceres2");
-        TIMELOG("plotReprojectionErrors ceres2");
+        TIMELOG("plotReprojectionErrors ceres2")
     }
 
     calib.CeresCalibFlexibleTarget();
 
-    TIMELOG("CeresCalibFlexibleTarget");
+    TIMELOG("CeresCalibFlexibleTarget")
 
     removed = calib.removeOutliers(2);
 
-    TIMELOG("removeOutliers(2)");
+    TIMELOG("removeOutliers(2)")
 
     if (removed) {
         calib.CeresCalibFlexibleTarget();
 
-        TIMELOG("CeresCalibFlexibleTarget");
+        TIMELOG("CeresCalibFlexibleTarget")
     }
 
     calib.printObjectPointCorrectionsStats();
 
-    TIMELOG("printObjectPointCorrectionsStats");
+    TIMELOG("printObjectPointCorrectionsStats")
 
     if (gnuplot) {
         calib.plotReprojectionErrors("", "ceres3");
-        TIMELOG("plotReprojectionErrors ceres3");
+        TIMELOG("plotReprojectionErrors ceres3")
     }
 
     if (!cache_file.empty()) {
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
         fs.release();
-        TIMELOG("Writing cache file");
+        TIMELOG("Writing cache file")
     }
 
     std::cout << "Level 1 log entries: " << std::endl;

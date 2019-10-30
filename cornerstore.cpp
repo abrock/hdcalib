@@ -112,7 +112,7 @@ CornerStore &CornerStore::operator=(const CornerStore &other) {
 
 void CornerStore::clean(int cornerIdFactor) {
     //purge32();
-    purgeDuplicates();
+    //purgeDuplicates();
     purgeUnlikely(cornerIdFactor);
 }
 
@@ -361,6 +361,36 @@ bool CornerStore::hasID(const Corner &ref, Corner &result) const {
     }
     result = hdmarker::Corner(corners[res_index]);
     return result.id == ref.id && result.page == ref.page;
+}
+
+bool CornerStore::hasIDLevel(const Corner &ref, Corner &found, int8_t level) const
+{
+    double query_pt[3] = {
+        static_cast<double>(ref.id.x),
+        static_cast<double>(ref.id.y),
+        static_cast<double>(ref.page)
+    };
+    size_t res_index[4] = {0,0,0,0};
+    double res_dist_sqr[4];
+    nanoflann::KNNResultSet<double> resultSet(4);
+    resultSet.init(res_index, res_dist_sqr);
+    idx_tree->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+
+    if (resultSet.size() < 1) {
+        return false;
+    }
+    for (size_t ii = 0; ii < resultSet.size(); ++ii) {
+        found = hdmarker::Corner(corners[res_index[ii]]);
+        if (found.id == ref.id && found.page == ref.page && found.level == level) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CornerStore::hasIDLevel(const Corner &ref, int8_t level) const {
+    hdmarker::Corner c;
+    return hasIDLevel(ref, c, level);
 }
 
 CornerIndexAdaptor::CornerIndexAdaptor(CornerStore &ref) : store(&ref){

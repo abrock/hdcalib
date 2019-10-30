@@ -431,6 +431,7 @@ void read(const FileNode &node, Calib &x, const Calib &default_value) {
         x.read(node);
 }
 
+#if 0 // This is disfunctional anyway
 void Calib::piecewiseRefinement(cv::Mat & img, const std::vector<Corner> &in, std::vector<Corner> &out, int recursion_depth, double &markerSize) {
     CornerStore store(in);
     for (hdmarker::Corner const& it : in) {
@@ -475,6 +476,7 @@ void Calib::piecewiseRefinement(cv::Mat & img, const std::vector<Corner> &in, st
         out = in;
     }
 }
+#endif
 
 void Calib::refineRecursiveByPage(Mat &img,
                                   const std::vector<Corner> &in,
@@ -490,9 +492,12 @@ void Calib::refineRecursiveByPage(Mat &img,
     for (const auto& it : pages) {
         _markerSize = markerSize;
         std::vector<hdmarker::Corner> _out;
-        clog::L(__func__, 2) << "Refining page " << it.first << ", recursion depth " << recursion_depth << std::endl;
         hdmarker::refine_recursive(img, it.second, _out, recursion_depth, &_markerSize);
         out.insert(out.end(), _out.begin(), _out.end());
+        clog::L(__func__, 2) << "Refining page " << it.first
+                             << ", recursion depth " << recursion_depth
+                             << " got " << _out.size() << " new submarkers, current total: "
+                             << out.size() << std::endl;
     }
     markerSize = _markerSize;
 }
