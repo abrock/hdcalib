@@ -291,87 +291,89 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    TIMELOG("Reading markers")
+    TIMELOG("Reading markers");
 
-
-            for (auto const& it : detected_markers) {
+    std::cout << std::string(detected_markers.size(), '-') << std::endl;
+    for (auto const& it : detected_markers) {
         calib.addInputImage(it.first, it.second);
+        std::cout << "." << std::flush;
     }
+    std::cout << std::endl;
 
-    TIMELOG("Adding input images")
+    TIMELOG("Adding input images");
 
-            calib.purgeInvalidPages();
+    calib.purgeInvalidPages();
 
-    TIMELOG("Purging invalid pages")
+    TIMELOG("Purging invalid pages");
 
-            calib.openCVCalib();
+    calib.openCVCalib();
 
-    TIMELOG("openCVCalib")
+    TIMELOG("openCVCalib");
 
-            if (gnuplot) {
+    if (gnuplot) {
         calib.plotReprojectionErrors("OpenCV", "OpenCV");
-        TIMELOG("plotReprojectionErrors initial")
+        TIMELOG("plotReprojectionErrors initial");
     }
 
     calib.prepareCalibration();
 
-    TIMELOG("prepareCalibration")
+    TIMELOG("prepareCalibration");
 
-            if (gnuplot) {
+    if (gnuplot) {
         calib.plotReprojectionErrors("OpenCV", "OpenCV-all-markers");
-        TIMELOG("plotReprojectionErrors initial all markers")
+        TIMELOG("plotReprojectionErrors initial all markers");
     }
 
     calib.CeresCalib();
 
-    TIMELOG("CeresCalib")
+    TIMELOG("CeresCalib");
 
-            if (gnuplot) {
+    if (gnuplot) {
         calib.plotReprojectionErrors("Ceres", "Ceres");
-        TIMELOG("plotReprojectionErrors ceres")
+        TIMELOG("plotReprojectionErrors ceres");
     }
 
     calib.removeOutliers("Ceres", 150);
 
-    TIMELOG("removeOutliers(150)")
+    TIMELOG("removeOutliers(150)");
 
-            calib.CeresCalib();
+    calib.CeresCalib();
 
-    TIMELOG("CeresCalib")
+    TIMELOG("CeresCalib");
 
-            if (gnuplot) {
+    if (gnuplot) {
         calib.plotReprojectionErrors("Ceres", "ceres2");
-        TIMELOG("plotReprojectionErrors ceres2")
+        TIMELOG("plotReprojectionErrors ceres2");
     }
 
     calib.CeresCalibFlexibleTarget();
 
-    TIMELOG("CeresCalibFlexibleTarget")
+    TIMELOG("CeresCalibFlexibleTarget");
 
-            removed = calib.removeOutliers("Flexible", 2);
+    removed = calib.removeOutliers("Flexible", 2);
 
-    TIMELOG("removeOutliers(2)")
+    TIMELOG("removeOutliers(2)");
 
-            if (removed) {
+    if (removed) {
         calib.CeresCalibFlexibleTarget();
 
-        TIMELOG("CeresCalibFlexibleTarget")
+        TIMELOG("CeresCalibFlexibleTarget");
     }
 
     calib.printObjectPointCorrectionsStats("Flexible");
 
-    TIMELOG("printObjectPointCorrectionsStats")
+    TIMELOG("printObjectPointCorrectionsStats");
 
-            if (gnuplot) {
+    if (gnuplot) {
         calib.plotReprojectionErrors("", "ceres3");
-        TIMELOG("plotReprojectionErrors ceres3")
+        TIMELOG("plotReprojectionErrors ceres3");
     }
 
     if (!cache_file.empty()) {
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
         fs.release();
-        TIMELOG("Writing cache file")
+        TIMELOG("Writing cache file");
     }
 
     std::cout << "Level 1 log entries: " << std::endl;
