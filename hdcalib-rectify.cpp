@@ -49,6 +49,7 @@ bool Calib::RectifyCost::operator () (
 
 template<class RCOST>
 void Calib::addImagePairToRectificationProblem(
+        CalibResult & calib,
         CornerStore const& current,
         size_t const current_id,
         CornerStore const& next,
@@ -87,9 +88,9 @@ void Calib::addImagePairToRectificationProblem(
         }
 
         cv::Vec3d src1, dst1;
-        src1 = get3DPoint(src, rvecs[current_id], tvecs[current_id]);
-        dst1 = get3DPoint(dst, rvecs[next_id], tvecs[next_id]);
-        RectifyCost * cost = new RectifyCost(axis, src1, dst1, cameraMatrix, weight);
+        src1 = get3DPoint(calib, src, calib.rvecs[current_id], calib.tvecs[current_id]);
+        dst1 = get3DPoint(calib, dst, calib.rvecs[next_id], calib.tvecs[next_id]);
+        RectifyCost * cost = new RectifyCost(axis, src1, dst1, calib.cameraMatrix, weight);
         ceres::CostFunction * cost_function = new ceres::AutoDiffCostFunction<RectifyCost, 1, 3>(
                     cost
                     );
@@ -159,7 +160,12 @@ bool plot
     clog::L(log_name, 1) << std::endl;
 }
 
-void Calib::getRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot) {
+void Calib::getRectificationRotation(
+        CalibResult & calib,
+        const size_t rows,
+        const size_t cols,
+        const std::vector<std::string> &images,
+        cv::Vec3d &rect_rot) {
     prepareCalibration();
     ceres::Problem problem;
 
@@ -181,6 +187,7 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
+                        calib,
                         current,
                         current_id,
                         next,
@@ -205,6 +212,7 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
+                        calib,
                         current,
                         current_id,
                         next,
@@ -256,7 +264,7 @@ void Calib::getRectificationRotation(const size_t rows, const size_t cols, const
     Calib::normalizeRotationVector(rot_vec);
 
     rect_rot = cv::Vec3d(rot_vec[0], rot_vec[1], rot_vec[2]);
-    rectification = cv::Mat_<double>{rot_vec[0], rot_vec[1], rot_vec[2]};
+    calib.rectification = cv::Mat_<double>{rot_vec[0], rot_vec[1], rot_vec[2]};
 
 double const degree = std::sqrt(rect_rot.dot(rect_rot)) / M_PI * 180;
 
@@ -265,7 +273,12 @@ clog::L(__func__, 1) << "Rotation vector: " << rot_vec[0] << ", " << rot_vec[1] 
 clog::L(__func__, 1) << "Rotation: " <<  degree << "°" << std::endl;
 }
 
-void Calib::getIndividualRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot) {
+void Calib::getIndividualRectificationRotation(
+        CalibResult & calib,
+        const size_t rows,
+        const size_t cols,
+        const std::vector<std::string> &images,
+        cv::Vec3d &rect_rot) {
     prepareCalibration();
     ceres::Problem problem;
 
@@ -290,6 +303,7 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
+                        calib,
                         current,
                         current_id,
                         next,
@@ -315,6 +329,7 @@ void Calib::getIndividualRectificationRotation(const size_t rows, const size_t c
             std::vector<RectifyCost* > & target_costs = cost_functions[images[counter]];
 
             addImagePairToRectificationProblem(
+                        calib,
                         current,
                         current_id,
                         next,

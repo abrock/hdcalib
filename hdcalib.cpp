@@ -41,11 +41,11 @@ struct CornerIdSort
     }
 };
 
-bool Calib::removeOutliers(const double threshold) {
+bool Calib::removeOutliers(std::string const& calibName, const double threshold) {
     prepareCalibration();
     std::vector<hdmarker::Corner> outliers;
     for (size_t ii = 0; ii < data.size(); ++ii) {
-        findOutliers(
+        findOutliers(calibName,
                     threshold,
                     ii,
                     outliers);
@@ -69,7 +69,16 @@ bool Calib::removeOutliers(const double threshold) {
     return true;
 }
 
+bool Calib::removeAllOutliers(const double threshold) {
+    bool result = false;
+    for (auto const& it : calibrations) {
+        result = removeOutliers(it.first, threshold) | result;
+    }
+    return result;
+}
+
 void Calib::getReprojections(
+        CalibResult & calib,
         const size_t ii,
         std::vector<Point2d> &markers,
         std::vector<Point2d> &reprojections) {
@@ -78,8 +87,8 @@ void Calib::getReprojections(
     auto const& objPoints = objectPoints[ii];
     std::string const& filename = imageFiles[ii];
     CornerStore const& store = data[filename];
-    cv::Mat const& rvec = rvecs[ii];
-    cv::Mat const& tvec = tvecs[ii];
+    cv::Mat const& rvec = calib.rvecs[ii];
+    cv::Mat const& tvec = calib.tvecs[ii];
 
     markers.clear();
     markers.reserve(imgPoints.size());
@@ -101,15 +110,15 @@ void Calib::getReprojections(
 
     double dist[14];
     for (int jj = 0; jj < 14; ++jj) {
-        dist[size_t(jj)] = distCoeffs.cols > jj ? distCoeffs(jj) : 0;
+        dist[size_t(jj)] = calib.distCoeffs.cols > jj ? calib.distCoeffs(jj) : 0;
     }
 
-    double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
-    double principal[2] = {cameraMatrix(0,2), cameraMatrix(1,2)};
+    double focal[2] = {calib.cameraMatrix(0,0), calib.cameraMatrix(1,1)};
+    double principal[2] = {calib.cameraMatrix(0,2), calib.cameraMatrix(1,2)};
 
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
-        cv::Point3f current_objPoint = objPoints[jj] + objectPointCorrections[getSimpleId(store.get(jj))];
+        cv::Point3f current_objPoint = objPoints[jj] + calib.objectPointCorrections[getSimpleId(store.get(jj))];
 
         vec2arr(p, current_objPoint);
         cv::Point2d marker_pos(imgPoints[jj]);
@@ -137,33 +146,39 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
-Mat Calib::calculateUndistortRectifyMap() {
-    cv::Mat_<double> newCameraMatrix = cameraMatrix.clone();
+Mat Calib::calculateUndistortRectifyMap(CalibResult const& calib) {
+    cv::Mat_<double> newCameraMatrix = calib.cameraMatrix.clone();
     // We want the principal point at the image center in the resulting images.
     newCameraMatrix(0,2) = imageSize.width/2;
     newCameraMatrix(1,2) = imageSize.height/2;
     cv::Mat tmp_dummy;
     cv::Mat rectification_3x3;
-    if (rectification.size() != Size(3,3)) {
-        cv::Rodrigues(rectification, rectification_3x3);
+    if (calib.rectification.size() != Size(3,3)) {
+        cv::Rodrigues(calib.rectification, rectification_3x3);
     }
-    cv::initUndistortRectifyMap(cameraMatrix,
-                                distCoeffs,
+    cv::initUndistortRectifyMap(calib.cameraMatrix,
+                                calib.distCoeffs,
                                 rectification_3x3,
                                 newCameraMatrix,
                                 imageSize,
                                 CV_32FC2,
-                                undistortRectifyMap,
+                                calib.undistortRectifyMap,
                                 tmp_dummy);
 
-    return undistortRectifyMap;
+    return calib.undistortRectifyMap;
 }
 
-Mat Calib::getCachedUndistortRectifyMap() {
-    if (undistortRectifyMap.size() != imageSize) {
-        calculateUndistortRectifyMap();
+Mat Calib::getCachedUndistortRectifyMap(std::string const& calibName) {
+    CalibResult & calib = calibrations[calibName];
+    if (calib.undistortRectifyMap.size() != imageSize) {
+        calculateUndistortRectifyMap(calib);
     }
-    return undistortRectifyMap;
+    return calib.undistortRectifyMap;
+}
+
+
+bool Calib::hasCalibName(const string &name) const {
+    return calibrations.find(name) != calibrations.end();
 }
 
 void Calib::normalizeRotationVector(Mat &vector) {
@@ -685,6 +700,8 @@ std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {
 double Calib::openCVCalib() {
     prepareOpenCVCalibration();
 
+    CalibResult & res = calibrations["OpenCV"];
+
     int flags = 0;
     //flags |= CALIB_FIX_PRINCIPAL_POINT;
     //flags |= CALIB_FIX_ASPECT_RATIO;
@@ -693,44 +710,44 @@ double Calib::openCVCalib() {
     flags |= CALIB_TILTED_MODEL;
 
     if (imageSize.height == 5320 && imageSize.width == 7968) { // Hacky detection of my Sony setup.
-        cameraMatrix = (Mat_<double>(3,3) << 12937, 0, 4083, 0, 12978, 2636, 0, 0, 1);
+        res.cameraMatrix = (Mat_<double>(3,3) << 12937, 0, 4083, 0, 12978, 2636, 0, 0, 1);
         flags |= CALIB_USE_INTRINSIC_GUESS;
     }
-    clog::L(__func__, 1) << "Initial camera matrix: " << std::endl << cameraMatrix << std::endl;
+    clog::L(__func__, 1) << "Initial camera matrix: " << std::endl << res.cameraMatrix << std::endl;
 
     double result_err = cv::calibrateCamera (
                 objectPoints,
                 imagePoints,
                 imageSize,
-                cameraMatrix,
-                distCoeffs,
-                rvecs,
-                tvecs,
-                stdDevIntrinsics,
-                stdDevExtrinsics,
-                perViewErrors,
+                res.cameraMatrix,
+                res.distCoeffs,
+                res.rvecs,
+                res.tvecs,
+                res.stdDevIntrinsics,
+                res.stdDevExtrinsics,
+                res.perViewErrors,
                 flags
                 );
 
     clog::L(__func__, 1) << "RMSE: " << result_err << std::endl
-                              << "Camera Matrix: " << std::endl << cameraMatrix << std::endl
-                              << "distCoeffs: " << std::endl << distCoeffs << std::endl;
-    clog::L(__func__, 2) << "stdDevIntrinsics: " << std::endl << stdDevIntrinsics << std::endl
-                              << "stdDevExtrinsics: " << std::endl << stdDevExtrinsics << std::endl
-                              << "perViewErrors: " << std::endl << perViewErrors << std::endl;
+                              << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl
+                              << "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
+    clog::L(__func__, 2) << "stdDevIntrinsics: " << std::endl << res.stdDevIntrinsics << std::endl
+                              << "stdDevExtrinsics: " << std::endl << res.stdDevExtrinsics << std::endl
+                              << "perViewErrors: " << std::endl << res.perViewErrors << std::endl;
 
     clog::L(__func__, 2) << "rvecs: " << std::endl;
-    for (auto const& rvec: rvecs) {
+    for (auto const& rvec: res.rvecs) {
         clog::L(__func__, 2) << rvec << std::endl;
     }
 
     clog::L(__func__, 2) << "tvecs: " << std::endl;
-    for (auto const& tvec: tvecs) {
+    for (auto const& tvec: res.tvecs) {
         clog::L(__func__, 2) << tvec << std::endl;
     }
 
     cv::calibrationMatrixValues (
-                cameraMatrix,
+                res.cameraMatrix,
                 imageSize,
                 apertureWidth,
                 apertureHeight,
@@ -754,7 +771,7 @@ double Calib::openCVCalib() {
     cv::Point2d principal_point_offset = principalPoint - cv::Point2d(apertureWidth/2, apertureHeight/2);
     clog::L(__func__, 1) << "principal point offset: " << principal_point_offset << "mm; ~" << principal_point_offset/pixel_size << "px" << std::endl;
 
-    clog::L(__func__, 1) << "focal length factor: " << cameraMatrix(0,0) / focalLength << std::endl;
+    clog::L(__func__, 1) << "focal length factor: " << res.cameraMatrix(0,0) / focalLength << std::endl;
 
     hasCalibration = true;
 
@@ -787,11 +804,12 @@ Point3i Calib::getSimpleId(const Corner &marker) {
 }
 
 void Calib::findOutliers(
+        std::string const& calib_name,
         const double threshold,
         const size_t image_index,
         std::vector<hdmarker::Corner> & outliers) {
     std::vector<cv::Point2d> markers, projections;
-    getReprojections(image_index, markers, projections);
+    getReprojections(calibrations[calib_name], image_index, markers, projections);
 
     runningstats::RunningStats inlier_stats, outlier_stats;
     for (size_t ii = 0; ii < markers.size(); ++ii) {
@@ -811,7 +829,7 @@ void Calib::findOutliers(
     clog::L(__func__, 2) << "Stats for " << imageFiles[image_index] << ": inliers: " << inlier_stats.print() << ", outliers: " << outlier_stats.print() << std::endl;
 }
 
-Point2f Calib::project(const Vec3d &point) const {
+Point2f Calib::project(cv::Mat_<double> const& cameraMatrix, const Vec3d &point) const {
     double const p[3] = {point[0], point[1], point[2]};
     double result[2] = {0,0};
     double focal[2] = {cameraMatrix(0,0), cameraMatrix(1,1)};
@@ -822,11 +840,26 @@ Point2f Calib::project(const Vec3d &point) const {
     return cv::Point2f(float(result[0]), float(result[1]));
 }
 
-Vec3d Calib::get3DPoint(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
+Vec3d Calib::get3DPoint(CalibResult& calib, const Corner &c, const Mat &_rvec, const Mat &_tvec) {
     cv::Mat_<double> rvec(_rvec);
     cv::Mat_<double> tvec(_tvec);
     cv::Point3f _src = getInitial3DCoord(c);
-    _src += objectPointCorrections[getSimpleId(c)];
+    _src += calib.objectPointCorrections[getSimpleId(c)];
+    double src[3] = {double(_src.x), double(_src.y), double(_src.z)};
+    double rot[9];
+    double rvec_data[3] = {rvec(0), rvec(1), rvec(2)};
+    double tvec_data[3] = {tvec(0), tvec(1), tvec(2)};
+    rot_vec2mat(rvec_data, rot);
+    double _result[3] = {0,0,0};
+    get3DPoint(src, _result, rot, tvec_data);
+
+    return cv::Vec3d(_result[0], _result[1], _result[2]);
+}
+
+Vec3d Calib::get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
+    cv::Mat_<double> rvec(_rvec);
+    cv::Mat_<double> tvec(_tvec);
+    cv::Point3f _src = getInitial3DCoord(c);
     double src[3] = {double(_src.x), double(_src.y), double(_src.z)};
     double rot[9];
     double rvec_data[3] = {rvec(0), rvec(1), rvec(2)};
@@ -884,6 +917,7 @@ bool Calib::validPixel(const Point &p, const Size &image_size) {
 }
 
 template bool Calib::validPixel(const cv::Point2f&, const cv::Size&);
+
 
 
 } // namespace hdcalib

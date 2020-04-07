@@ -31,6 +31,7 @@ int main(int argc, char ** argv) {
     fs::path output_dir;
     std::string cache_file;
     size_t num_files = 0;
+    std::string calibName = "Flexible";
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -43,6 +44,11 @@ int main(int argc, char ** argv) {
                                                "Output directory for rectified images. Subdirectories will be created automatically as needed.",
                                                true, "", "Output directorys.");
         cmd.add(output_arg);
+
+        TCLAP::ValueArg<std::string> calibNameArg("n", "name",
+                                               "Name of the calibration result to use. Options include OpenCV, Ceres, Flexible and SemiFlexible",
+                                               false, "Flexible", "");
+        cmd.add(calibNameArg);
 
         TCLAP::SwitchArg demosaic_arg("d", "demosaic",
                                       "Use this flag if the input images are raw images and demosaicing should be used.",
@@ -157,7 +163,7 @@ int main(int argc, char ** argv) {
         return EXIT_FAILURE;
     }
 
-    const cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap();
+    const cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap("Flexible");
 
     size_t ii = 0;
     for (const auto& it : input_files) {

@@ -55,7 +55,8 @@ int main(int argc, char* argv[]) {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
         TCLAP::ValueArg<int> recursive_depth_arg("r", "recursion",
-                                                 "Recursion depth of the sub-marker detection. Set this to the actual recursion depth of the used target.",
+                                                 "Recursion depth of the sub-marker detection. "
+                                                 "Set this to the actual recursion depth of the used target.",
                                                  false, -1, "int");
         cmd.add(recursive_depth_arg);
 
@@ -65,7 +66,9 @@ int main(int argc, char* argv[]) {
         cmd.add(effort_arg);
 
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
-                                               "Cache file for the calibration results. This makes use of the opencv filestorage capabilities so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
+                                               "Cache file for the calibration results. "
+                                               "This makes use of the opencv filestorage capabilities "
+                                               "so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
                                                false, "", "Calibration cache.");
         cmd.add(cache_arg);
 
@@ -75,37 +78,45 @@ int main(int argc, char* argv[]) {
         cmd.add(demosaic_arg);
 
         TCLAP::SwitchArg read_raw_arg("", "raw",
-                                      "Use this flag if the input images are raw images which must be read using LibRaw since OpenCV cannot read them. This implies -d.",
+                                      "Use this flag if the input images are raw images "
+                                      "which must be read using LibRaw since OpenCV cannot read them. "
+                                      "This implies -d.",
                                       false);
         cmd.add(read_raw_arg);
 
-        TCLAP::SwitchArg plot_markers_arg("p", "plot", "Use this flag if the detected markers should be painted into the input images", false);
+        TCLAP::SwitchArg plot_markers_arg("p", "plot",
+                                          "Use this flag if the detected markers "
+                                          "should be painted into the input images", false);
         cmd.add(plot_markers_arg);
 
-        TCLAP::SwitchArg only_green_arg("g", "only-green", "Set this flag true if only the green channel of a bayer image should be used."
-                                                           "In the case of demosaicing this means that the missing green pixels"
-                                                           "are interpolated bilinear.", false);
+        TCLAP::SwitchArg only_green_arg("g", "only-green",
+                                        "Set this flag true if only the green channel of a bayer image should be used."
+                                        "In the case of demosaicing this means that the missing green pixels"
+                                        "are interpolated bilinear.", false);
         cmd.add(only_green_arg);
 
         TCLAP::SwitchArg gnuplot_arg("", "gnuplot", "Use gnuplot for plotting residuals etc."
                                      , false);
         cmd.add(gnuplot_arg);
 
-        TCLAP::MultiArg<std::string> textfile_arg("i",
-                                                  "input",
-                                                  "Text file containing a list of image paths relative to the working directory.",
+        TCLAP::MultiArg<std::string> textfile_arg("i", "input",
+                                                  "Text file containing a list of image paths "
+                                                  "relative to the working directory.",
                                                   false,
                                                   "Text file with a list of input images.");
         cmd.add(textfile_arg);
 
         TCLAP::MultiArg<int> valid_pages_arg("",
-                                                  "valid",
-                                                  "Page number of a valid corner.",
-                                                  false,
-                                                  "Page number of a valid corner.");
+                                             "valid",
+                                             "Page number of a valid corner.",
+                                             false,
+                                             "Page number of a valid corner.");
         cmd.add(valid_pages_arg);
 
-        TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input_img", "Input images, should contain markers.", false, "Input images.");
+        TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input_img",
+                                                            "Input images, should contain markers.",
+                                                            false,
+                                                            "Input images.");
         cmd.add(input_img_arg);
 
         cmd.parse(argc, argv);
@@ -201,7 +212,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (has_cached_calib) {
-        removed = calib.removeOutliers(2);
+        removed = calib.removeAllOutliers(2);
 
         TIMELOG("removeOutliers() #1");
 
@@ -241,7 +252,7 @@ int main(int argc, char* argv[]) {
 
             TIMELOG("CeresCalibFlexibleTarget()");
 
-            removed = calib.removeOutliers(2);
+            removed = calib.removeOutliers("Flexible", 2);
 
             TIMELOG("removeOutliers");
 
@@ -252,12 +263,12 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        calib.printObjectPointCorrectionsStats();
+        calib.printObjectPointCorrectionsStats("Flexible");
 
         TIMELOG("printObjectPointCorrectionsStats");
 
         if (gnuplot) {
-            calib.plotReprojectionErrors("", "ceres3");
+            calib.plotReprojectionErrors("Flexible", "Flexible");
             TIMELOG("plotReprojectionErrors ceres3");
         }
 
@@ -283,22 +294,22 @@ int main(int argc, char* argv[]) {
     TIMELOG("Reading markers")
 
 
-    for (auto const& it : detected_markers) {
+            for (auto const& it : detected_markers) {
         calib.addInputImage(it.first, it.second);
     }
 
     TIMELOG("Adding input images")
 
-    calib.purgeInvalidPages();
+            calib.purgeInvalidPages();
 
     TIMELOG("Purging invalid pages")
 
-    calib.openCVCalib();
+            calib.openCVCalib();
 
     TIMELOG("openCVCalib")
 
-    if (gnuplot) {
-        calib.plotReprojectionErrors("", "initial");
+            if (gnuplot) {
+        calib.plotReprojectionErrors("OpenCV", "OpenCV");
         TIMELOG("plotReprojectionErrors initial")
     }
 
@@ -306,8 +317,8 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("prepareCalibration")
 
-    if (gnuplot) {
-        calib.plotReprojectionErrors("", "initial-all-markers");
+            if (gnuplot) {
+        calib.plotReprojectionErrors("OpenCV", "OpenCV-all-markers");
         TIMELOG("plotReprojectionErrors initial all markers")
     }
 
@@ -315,21 +326,21 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("CeresCalib")
 
-    if (gnuplot) {
-        calib.plotReprojectionErrors("", "ceres");
+            if (gnuplot) {
+        calib.plotReprojectionErrors("Ceres", "Ceres");
         TIMELOG("plotReprojectionErrors ceres")
     }
 
-    calib.removeOutliers(150);
+    calib.removeOutliers("Ceres", 150);
 
     TIMELOG("removeOutliers(150)")
 
-    calib.CeresCalib();
+            calib.CeresCalib();
 
     TIMELOG("CeresCalib")
 
-    if (gnuplot) {
-        calib.plotReprojectionErrors("", "ceres2");
+            if (gnuplot) {
+        calib.plotReprojectionErrors("Ceres", "ceres2");
         TIMELOG("plotReprojectionErrors ceres2")
     }
 
@@ -337,21 +348,21 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("CeresCalibFlexibleTarget")
 
-    removed = calib.removeOutliers(2);
+            removed = calib.removeOutliers("Flexible", 2);
 
     TIMELOG("removeOutliers(2)")
 
-    if (removed) {
+            if (removed) {
         calib.CeresCalibFlexibleTarget();
 
         TIMELOG("CeresCalibFlexibleTarget")
     }
 
-    calib.printObjectPointCorrectionsStats();
+    calib.printObjectPointCorrectionsStats("Flexible");
 
     TIMELOG("printObjectPointCorrectionsStats")
 
-    if (gnuplot) {
+            if (gnuplot) {
         calib.plotReprojectionErrors("", "ceres3");
         TIMELOG("plotReprojectionErrors ceres3")
     }

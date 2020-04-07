@@ -113,7 +113,7 @@ int main(int argc, char* argv[]) {
             std::cout << "Reading cache file failed with exception:" << std::endl
                       << e.what() << std::endl;
         }
-        TIMELOG("Reading cached result");
+        TIMELOG("Reading cached result")
     }
 
     cv::Mat_<double> const tvec_offset =
@@ -125,6 +125,7 @@ int main(int argc, char* argv[]) {
     std::default_random_engine engine(rd());
     std::normal_distribution<double> gauss;
 
+    cv::Mat_<double> cameraMatrix = cv::Mat_<double>::eye(3,3);
 
     if (!has_cached_calib) {
 
@@ -151,9 +152,9 @@ int main(int argc, char* argv[]) {
                     int const page = 0;
                     Corner current(cv::Point2f(), cv::Point2i(xx,yy), page);
                     current.size = marker_size;
-                    cv::Vec3d loc3d = calib.get3DPoint(current, rot_vec, t_vec);
+                    cv::Vec3d loc3d = calib.get3DPointWithoutCorrection(current, rot_vec, t_vec);
 
-                    current.p = calib.project(loc3d);
+                    current.p = calib.project(cameraMatrix, loc3d);
                     current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
                     if (Calib::validPixel(current.p, image_size)) {
                         markers.push_back(current);
@@ -183,16 +184,16 @@ int main(int argc, char* argv[]) {
                   << "x: " << global_stat_x.print() << std::endl
                   << " y: " << global_stat_y.print() << std::endl;
 
-        TIMELOG("Setting up calibration images");
+        TIMELOG("Setting up calibration images")
 
         //*
         calib.openCVCalib();
 
-        TIMELOG("openCVCalib");
+        TIMELOG("openCVCalib")
 
         calib.CeresCalib();
 
-        TIMELOG("CeresCalib");
+        TIMELOG("CeresCalib")
         // */
 
     }
@@ -224,9 +225,9 @@ int main(int argc, char* argv[]) {
                     int const page = 0;
                     Corner current(cv::Point2f(), cv::Point2i(xx,yy), page);
                     current.size = marker_size;
-                    cv::Vec3d loc3d = calib.get3DPoint(current, gt_rot_vec, t_vec);
+                    cv::Vec3d loc3d = calib.get3DPoint(calib.getCalib("Ceres"), current, gt_rot_vec, t_vec);
 
-                    current.p = calib.project(loc3d);
+                    current.p = calib.project(calib.getCalib("Ceres").cameraMatrix, loc3d);
                     current.p += noise * cv::Point2f(gauss(engine), gauss(engine));
 
                     if (Calib::validPixel(current.p, image_size)) {
@@ -260,32 +261,34 @@ int main(int argc, char* argv[]) {
               << "x: " << global_stat_x.print() << std::endl
               << " y: " << global_stat_y.print() << std::endl;
 
-    TIMELOG("Setting up lightfield");
+    TIMELOG("Setting up lightfield")
 
     //*
     if (!has_cached_calib) {
         calib.CeresCalib();
-        TIMELOG("Second CeresCalib");
+        TIMELOG("Second CeresCalib")
     }
     // */
 
+    CalibResult & ceresCalib = calib.getCalib("Ceres");
+
     cv::Vec3d col_vec(4,-6,9), row_vec(2,9,-5), rot_vec;
-    calib.getGridVectors(2*grid+1, 2*grid+1, lightfield, row_vec, col_vec);
+    calib.getGridVectors(ceresCalib, 2*grid+1, 2*grid+1, lightfield, row_vec, col_vec);
 
     clog::L("row-vector difference", 0) << row_vec + gt_col_vec << std::endl;
     clog::L("column-vector difference", 0) << col_vec + gt_row_vec << std::endl;
 
-    TIMELOG("getGridVectors");
+    TIMELOG("getGridVectors")
 
-    calib.getRectificationRotation(2*grid+1, 2*grid+1, lightfield, rot_vec);
+    calib.getRectificationRotation(ceresCalib, 2*grid+1, 2*grid+1, lightfield, rot_vec);
 
-    TIMELOG("getRectificationRotation");
+    TIMELOG("getRectificationRotation")
 
     if (!cache_file.empty()) {
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
         fs.release();
-        TIMELOG("Writing cache file");
+        TIMELOG("Writing cache file")
     }
 
     clog::L("result", 0) << "Ground truth rectification: " << gt_rot_vec << std::endl
@@ -293,9 +296,9 @@ int main(int argc, char* argv[]) {
                          << "difference: " << (gt_rot_vec - rot_vec) << std::endl
                          << "normalized difference: " << 2*(gt_rot_vec - rot_vec)/(cv::norm(gt_rot_vec) + cv::norm(rot_vec)) << std::endl;
 
-    cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap();
+    cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap("Ceres");
 
-    TIMELOG("getCachedUndistortRectifyMap");
+    TIMELOG("getCachedUndistortRectifyMap")
 
     for (auto const& it : plots) {
         cv::Mat remapped;
@@ -305,7 +308,7 @@ int main(int argc, char* argv[]) {
         clog::L("remapping", 3) << "Saved remapped image";
     }
 
-    TIMELOG("Remapping all synthetic images");
+    TIMELOG("Remapping all synthetic images")
 
     std::cout << "Level 1 log entries: " << std::endl;
     clog::Logger::getInstance().printAll(std::cout, 1);

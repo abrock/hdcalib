@@ -63,18 +63,23 @@ struct GridCostFreeCenter {
     }
 };
 
-void Calib::analyzeGridLF(const size_t rows, const size_t cols, const std::vector<string> &images) {
+void Calib::analyzeGridLF(
+        std::string const calibName,
+        const size_t rows,
+        const size_t cols,
+        const std::vector<string> &images) {
     cv::Vec3d row_vec, col_vec;
-    getGridVectors(rows, cols, images, row_vec, col_vec);
+    auto & calib = getCalib(calibName);
+    getGridVectors(calib, rows, cols, images, row_vec, col_vec);
 
     cv::Vec3d row_vec2, col_vec2;
-    getGridVectors2(rows, cols, images, row_vec2, col_vec2);
+    getGridVectors2(calib, rows, cols, images, row_vec2, col_vec2);
 
     cv::Vec3d rect_rot;
-    getRectificationRotation(rows, cols, images, rect_rot);
+    getRectificationRotation(calib, rows, cols, images, rect_rot);
 
 
-    getIndividualRectificationRotation(rows, cols, images, rect_rot);
+    getIndividualRectificationRotation(calib, rows, cols, images, rect_rot);
 
     { // getGridVectors()
         double const row_vec_length = std::sqrt(row_vec.dot(row_vec));
@@ -100,8 +105,15 @@ void Calib::analyzeGridLF(const size_t rows, const size_t cols, const std::vecto
     }
 }
 
-void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec) {
+void Calib::getGridVectors(
+        CalibResult & calib,
+        const size_t rows,
+        const size_t cols,
+        const std::vector<string> &images,
+        Vec3d &row_vec,
+        Vec3d &col_vec) {
     prepareCalibration();
+
     ceres::Problem problem;
 
     std::string const& middle_name = images[images.size()/2];
@@ -132,8 +144,8 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
                 if (src.page != dst.page || src.id.x != dst.id.x || src.id.y != dst.id.y) {
                     continue;
                 }
-                src_vec.push_back(get3DPoint(src, rvecs[middle_id], tvecs[middle_id]));
-                dst_vec.push_back(get3DPoint(dst, rvecs[id], tvecs[id]));
+                src_vec.push_back(get3DPoint(calib, src, calib.rvecs[middle_id], calib.tvecs[middle_id]));
+                dst_vec.push_back(get3DPoint(calib, dst, calib.rvecs[id], calib.tvecs[id]));
             }
             for (size_t ii = 0; ii < src_vec.size(); ++ii) {
                 GridCost * cost = new GridCost(row, col, src_vec[ii], dst_vec[ii], 1.0/src_vec.size());
@@ -207,7 +219,13 @@ void Calib::getGridVectors(const size_t rows, const size_t cols, const std::vect
                                  << "angle: " << std::acos(cos_alpha)/M_PI*180. << std::endl;
 }
 
-void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec) {
+void Calib::getGridVectors2(
+        CalibResult & calib,
+        const size_t rows,
+        const size_t cols,
+        const std::vector<string> &images,
+        Vec3d &row_vec,
+        Vec3d &col_vec) {
     prepareCalibration();
     ceres::Problem problem;
 
@@ -257,8 +275,8 @@ void Calib::getGridVectors2(const size_t rows, const size_t cols, const std::vec
                 if (src.page != dst.page || src.id.x != dst.id.x || src.id.y != dst.id.y) {
                     continue;
                 }
-                src_vec.push_back(get3DPoint(src, rvecs[middle_id], tvecs[middle_id]));
-                dst_vec.push_back(get3DPoint(dst, rvecs[id], tvecs[id]));
+                src_vec.push_back(get3DPoint(calib, src, calib.rvecs[middle_id], calib.tvecs[middle_id]));
+                dst_vec.push_back(get3DPoint(calib, dst, calib.rvecs[id], calib.tvecs[id]));
             }
             for (size_t ii = 0; ii < src_vec.size(); ++ii) {
                 GridCost * cost = new GridCost(row, col, src_vec[ii], dst_vec[ii], 1.0/src_vec.size());

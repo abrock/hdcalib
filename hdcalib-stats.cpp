@@ -32,11 +32,15 @@ void Calib::printObjectPointCorrectionsStats(
               << std::endl;
 }
 
-void Calib::plotReprojectionErrors(const size_t image_index,
+void Calib::plotReprojectionErrors(
+        const std::string & calibName,
+        const size_t image_index,
                                    MarkerMap &residuals_by_marker,
                                    const std::string prefix,
                                    const std::string suffix) {
+    auto & calib = getCalib(calibName);
     std::string const& filename = imageFiles[image_index];
+
 
     std::stringstream plot_command;
     gnuplotio::Gnuplot plot;
@@ -60,7 +64,7 @@ void Calib::plotReprojectionErrors(const size_t image_index,
 #pragma omp critical (plotReprojectionErrors)
     {
         prepareCalibration();
-        getReprojections(image_index, markers, reprojections);
+        getReprojections(calib, image_index, markers, reprojections);
 
         for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
             cv::Point2d const& marker = markers[ii];
@@ -232,11 +236,11 @@ void Calib::plotResidualsByMarkerStats(
     out << plot_command.str();
 }
 
-void Calib::plotReprojectionErrors(const string prefix, const string suffix) {
+void Calib::plotReprojectionErrors(std::string const& calibName, const string prefix, const string suffix) {
     MarkerMap residuals_by_marker;
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
-        plotReprojectionErrors(ii, residuals_by_marker, prefix, suffix);
+        plotReprojectionErrors(calibName, ii, residuals_by_marker, prefix, suffix);
     }
     //plotErrorsByMarker(residuals_by_marker);
     plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
@@ -273,8 +277,8 @@ void Calib::printHist(std::ostream& out, runningstats::Histogram const& h, doubl
     }
 }
 
-void Calib::printObjectPointCorrectionsStats() {
-    printObjectPointCorrectionsStats(objectPointCorrections);
+void Calib::printObjectPointCorrectionsStats(std::string const& calibName) {
+    printObjectPointCorrectionsStats(calibrations[calibName].objectPointCorrections);
 }
 
 

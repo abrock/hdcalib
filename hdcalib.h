@@ -412,37 +412,14 @@ struct cmpSimpleIndex3 {
     bool operator()(const C& a, const C& b) const;
 };
 
-class Calib
-{
-    /**
-     * @brief imageFiles vector of image filenames.
-     */
-    std::vector<std::string> imageFiles;
-
-    /**
-     * @brief imagePoints storage for image points. The outer vector contains one inner vector per image file.
-     * The inner vectors contain one cv::Point2f for each detected hdmarker::Corner.
-     */
-    std::vector<std::vector<cv::Point2f> > imagePoints;
-
-    /**
-     * @brief objectPoints storage for 3D points of Corners on the target.
-     */
-    std::vector<std::vector<cv::Point3f> > objectPoints;
-
-    /**
-     * @brief openCVMaxPoints Maximum number of 2D markers per image in the OpenCV calibration.
-     */
-    size_t openCVMaxPoints = 1000;
-
+class CalibResult {
+public:
     /**
      * @brief objectPointCorrections Corrections to the objectPoints
      * which allow the optimization to account for systematic misplacements
      * by the marker detection algorithm
      */
     std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > objectPointCorrections;
-
-    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > const& corrections) const;
 
     /**
      * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
@@ -477,6 +454,47 @@ class Calib
     std::vector<cv::Mat> rvecs;
     std::vector<cv::Mat> tvecs;
 
+    std::vector<std::string> imageFiles;
+
+    /**
+     * @brief undistortion Map for undistortion and rectification at the same time.
+     */
+    cv::Mat_<cv::Vec2f> undistortRectifyMap;
+
+    /**
+     * @brief rectification Rotation vector needed for rectifying light field images.
+     */
+    cv::Mat_<double> rectification;
+
+    void write(cv::FileStorage & fs) const;
+    void read(const FileNode &node);
+};
+
+class Calib
+{
+    /**
+     * @brief imageFiles vector of image filenames.
+     */
+    std::vector<std::string> imageFiles;
+
+    /**
+     * @brief imagePoints storage for image points. The outer vector contains one inner vector per image file.
+     * The inner vectors contain one cv::Point2f for each detected hdmarker::Corner.
+     */
+    std::vector<std::vector<cv::Point2f> > imagePoints;
+
+    /**
+     * @brief objectPoints storage for 3D points of Corners on the target.
+     */
+    std::vector<std::vector<cv::Point3f> > objectPoints;
+
+    /**
+     * @brief openCVMaxPoints Maximum number of 2D markers per image in the OpenCV calibration.
+     */
+    size_t openCVMaxPoints = 1000;
+
+    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > const& corrections) const;
+
     /**
      * @brief imageSize Resolution of the input images.
      */
@@ -491,7 +509,6 @@ class Calib
      * @brief apertureHeight height of the image sensor in mm
      */
     double apertureHeight = 24;
-
 
     /**
      * @brief fovx horizontal field of view in degrees.
@@ -518,9 +535,7 @@ class Calib
      */
     double aspectRatio;
 
-
-
-    void getReprojections(
+    void getReprojections(CalibResult &calib,
             const size_t ii,
             std::vector<cv::Point2d> & markers,
             std::vector<cv::Point2d> & reprojections);
@@ -573,7 +588,6 @@ class Calib
      */
     double markerSize = 6.35;
 
-
     /**
      * @brief validPages page numbers used in the calibration target, corners with different page numbers will be considered false detections.
      */
@@ -596,12 +610,16 @@ class Calib
 
     bool hasCalibration = false;
 
-    cv::Mat_<double> rectification;
-
     /**
-     * @brief undistortion Map for undistortion and rectification at the same time.
+     * @brief calibrations Map of calibrations calculated. Those keys are used:
+     * "OpenCV" -> Initial calibration using the OpenCV calibration method ("calibrateCamera").
+     * "Ceres" -> Refinement using Ceres.
+     * "Flexible" -> Refinement using Ceres and the flexible target model
+     * "SemiFlexible" -> Using a semi-flexible model where not each individual marker
+     * may have an offset but instead each type (two corner types and black/white markers
+     * depending on recursion level)
      */
-    cv::Mat_<cv::Vec2f> undistortRectifyMap;
+    std::map<std::string, CalibResult> calibrations;
 
 public:
     Calib();
@@ -610,13 +628,13 @@ public:
      * @brief calculateUndistortion calculates the undistortion map using cv::initUndistortRectifyMap from OpenCV.
      * @return
      */
-    cv::Mat calculateUndistortRectifyMap();
+    cv::Mat calculateUndistortRectifyMap(const CalibResult &calib);
 
     /**
      * @brief getCachedUndistortRectifyMap returns the cached undistortRectifyMap and creates it if neccessary.
      * @return
      */
-    cv::Mat getCachedUndistortRectifyMap();
+    cv::Mat getCachedUndistortRectifyMap(const string &calibName);
 
     template<class T, class U>
     static void normalize_rot4(T const in[4], U out[4]);
@@ -685,7 +703,13 @@ public:
      * @brief removeOutliers Removes outliers from the detected markers identified by having a reprojection error larger than some threshold.
      * @param threshold error threshold in px.
      */
-    bool removeOutliers(double const threshold = 2);
+    bool removeOutliers(const string &calibName, double const threshold = 2);
+
+    /**
+     * @brief removeOutliers calls removeOutliers for each stored calibration result.
+     * @param threshold error threshold in px.
+     */
+    bool removeAllOutliers(double const threshold = 2);
 
     void only_green(bool only_green = true);
 
@@ -707,7 +731,7 @@ public:
      * @param prefix prefix for all files
      * @param suffix suffix for all files (before filename extension)
      */
-    void plotReprojectionErrors(const std::string prefix = "",
+    void plotReprojectionErrors(const string &calibName, const std::string prefix = "",
                                 const std::string suffix ="");
 
     /**
@@ -716,7 +740,7 @@ public:
      * @param prefix prefix for all files.
      * @param suffix suffix for all files (before filename extension)
      */
-    void plotReprojectionErrors(size_t const image_index,
+    void plotReprojectionErrors(const string &calibName, size_t const image_index,
                                 MarkerMap & residuals_by_marker,
                                 const std::string prefix = "",
                                 const std::string suffix = ""
@@ -751,7 +775,7 @@ public:
      * @param ii index of the image to search for outliers in.
      * @param outliers vector of detected outliers
      */
-    void findOutliers(
+    void findOutliers(const string &calib_name,
             double const threshold,
             size_t const ii,
             std::vector<Corner> &outliers);
@@ -766,7 +790,7 @@ public:
     const T t[3]
     );
 
-    cv::Point2f project(cv::Vec3d const& point) const;
+    cv::Point2f project(const cv::Mat_<double> &cameraMatrix, cv::Vec3d const& point) const;
 
     template<class F, class T>
     static void project(
@@ -795,7 +819,7 @@ public:
      * @param _tvec
      * @return
      */
-    cv::Vec3d get3DPoint(hdmarker::Corner const& c, cv::Mat const& _rvec, cv::Mat const& _tvec);
+    cv::Vec3d get3DPoint(CalibResult & calib, hdmarker::Corner const& c, cv::Mat const& _rvec, cv::Mat const& _tvec);
 
     template<class T>
     /**
@@ -871,7 +895,9 @@ public:
      * @param images
      * @param rect_rot
      */
-    void getRectificationRotation(size_t const rows, size_t const cols, std::vector<std::string> const& images, cv::Vec3d & rect_rot);
+    void getRectificationRotation(CalibResult &calib, size_t const rows, size_t const cols, std::vector<std::string> const& images, cv::Vec3d & rect_rot);
+
+    bool hasCalibName(std::string const& name) const;
 
     cv::Point3f getInitial3DCoord(hdmarker::Corner const& c, double const z = 0) const;
 
@@ -963,7 +989,7 @@ public:
 
     cv::Size read_raw_imagesize(const string &filename);
 
-    void printObjectPointCorrectionsStats();
+    void printObjectPointCorrectionsStats(const string &calibName);
 
     /**
      * @brief write Function needed for serializating a Corner using the OpenCV FileStorage system.
@@ -987,9 +1013,12 @@ public:
      */
     static void insertSorted(std::vector<T> &a, std::vector<T1> &b, std::vector<T2> &c);
 
-    void analyzeGridLF(size_t const rows, size_t const cols, std::vector<std::string> const& images);
+    void analyzeGridLF(std::string const calibName,
+                       size_t const rows,
+                       size_t const cols,
+                       std::vector<std::string> const& images);
 
-    void getGridVectors(
+    void getGridVectors(CalibResult &calib,
             size_t const rows,
             size_t const cols,
             std::vector<std::string> const& images,
@@ -997,12 +1026,14 @@ public:
             cv::Vec3d & col_vec);
 
     void printHist(std::ostream &out, const runningstats::Histogram &h, const double threshold = 0);
-    void getGridVectors2(const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec);
-    void getIndividualRectificationRotation(const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot);
+    void getGridVectors2(CalibResult &calib, const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec);
+    void getIndividualRectificationRotation(CalibResult &calib, const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot);
     void paintSubmarkers(const std::vector<Corner> &submarkers, cv::Mat &image, int const paint_size_factor) const;
 
     void initializeCameraMatrix(double const focal_length, double const cx, double const cy);
     void initialzeDistortionCoefficients();
+
+    CalibResult & getCalib(const std::string& name);
 
     template<class Point>
     static bool validPixel(Point const& p, cv::Size const& image_size);
@@ -1066,9 +1097,11 @@ public:
      * @return
      */
     static std::vector<hdmarker::Corner> readCorners(const std::string &input_file);
+    Vec3d get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
+            CalibResult & calib,
             const CornerStore &current,
             const size_t current_id,
             const CornerStore &next,

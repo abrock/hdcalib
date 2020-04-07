@@ -225,7 +225,7 @@ int main(int argc, char* argv[]) {
     time_log << "openCVCalib: " << t.print() << std::endl;
     t.start();
 
-    calib.plotReprojectionErrors();
+    calib.plotReprojectionErrors("OpenCV", "OpenCV");
 
     time_log << "plotReprojectionErrors: " << t.print() << std::endl;
     t.start();

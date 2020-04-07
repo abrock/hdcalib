@@ -48,36 +48,38 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
     clog::L(__func__, 2) << "Adding image " << filename << "..." << std::flush;
     invalidateCache();
 
-    rvecs.push_back(cv::Mat());
-    tvecs.push_back(cv::Mat());
-    imageFiles.push_back(filename);
+    for (auto& it : calibrations) {
+        it.second.rvecs.push_back(cv::Mat());
+        it.second.tvecs.push_back(cv::Mat());
+        imageFiles.push_back(filename);
 
-    insertSorted(imageFiles, rvecs, tvecs);
+        insertSorted(imageFiles, it.second.rvecs, it.second.tvecs);
 
-    clog::L(__func__, 2) << "replacing corners..." << std::flush;
-    CornerStore & ref = data[filename];
-    ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
-    ref.clean(cornerIdFactor);
+        clog::L(__func__, 2) << "replacing corners..." << std::flush;
+        CornerStore & ref = data[filename];
+        ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
+        ref.clean(cornerIdFactor);
 
-    size_t index = 0;
-    for (; index < imageFiles.size(); ++index) {
-        if (filename == imageFiles[index]) {
-            break;
+        size_t index = 0;
+        for (; index < imageFiles.size(); ++index) {
+            if (filename == imageFiles[index]) {
+                break;
+            }
         }
-    }
 
-    clog::L(__func__, 2) << "preparing calibration..." << std::flush;
-    prepareCalibration();
-    clog::L(__func__, 2) << "solvePnP..." << std::flush;
-    bool const success = cv::solvePnP (
-                objectPoints[index],
-                imagePoints[index],
-                cameraMatrix,
-                distCoeffs,
-                rvecs[index],
-                tvecs[index]);
-    ignore_unused(success);
-    clog::L(__func__, 2) << "done." << std::endl;
+        clog::L(__func__, 2) << "preparing calibration..." << std::flush;
+        prepareCalibration();
+        clog::L(__func__, 2) << "solvePnP..." << std::flush;
+        bool const success = cv::solvePnP (
+                    objectPoints[index],
+                    imagePoints[index],
+                    it.second.cameraMatrix,
+                    it.second.distCoeffs,
+                    it.second.rvecs[index],
+                    it.second.tvecs[index]);
+        ignore_unused(success);
+        clog::L(__func__, 2) << "done." << std::endl;
+    }
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
@@ -89,8 +91,10 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
     CornerStore & ref = data[filename];
     ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
     ref.clean(cornerIdFactor);
-    rvecs.push_back(rvec);
-    tvecs.push_back(tvec);
+    for (auto& it : calibrations) {
+        it.second.rvecs.push_back(rvec);
+        it.second.tvecs.push_back(tvec);
+    }
 }
 
 void Calib::addInputImage(const string filename, const CornerStore &corners) {
@@ -280,29 +284,42 @@ void Calib::paintSubmarkers(std::vector<Corner> const& submarkers, cv::Mat& imag
     }
 }
 
-void Calib::initializeCameraMatrix(const double focal_length, const double cx, const double cy) {
-    cameraMatrix = cv::Mat_<double>::eye(3,3);
-    cameraMatrix(0,0) = cameraMatrix(1,1) = focal_length;
-    cameraMatrix(0,2) = cx;
-    cameraMatrix(1,2) = cy;
+void Calib::initializeCameraMatrix(const double focal_length,
+                                   const double cx,
+                                   const double cy) {
+    calibrations["OpenCV"];
+    for (auto & it : calibrations) {
+        it.second.cameraMatrix = cv::Mat_<double>::eye(3,3);
+        it.second.cameraMatrix(0,0) = it.second.cameraMatrix(1,1) = focal_length;
+        it.second.cameraMatrix(0,2) = cx;
+        it.second.cameraMatrix(1,2) = cy;
+    }
 }
 
 void Calib::initialzeDistortionCoefficients() {
-    distCoeffs *= 0;
+    calibrations["OpenCV"];
+    for (auto& it : calibrations) {
+        it.second.distCoeffs *= 0;
+    }
+}
+
+CalibResult &Calib::getCalib(const string &name) {
+    auto it = calibrations.find(name);
+    if (it != calibrations.end()) {
+        return it->second;
+    }
+    throw std::runtime_error(std::string("Could not find calibration named ") + name);
 }
 
 void Calib::write(FileStorage &fs) const {
 
     fs << "{"
-       << "cameraMatrix" << cameraMatrix;
-    fs << "distCoeffs" << distCoeffs
        << "imageSize" << imageSize
        << "resolutionKnown" << resolutionKnown
        << "apertureWidth" << apertureWidth
        << "apertureHeight" << apertureHeight
        << "useOnlyGreen" << useOnlyGreen
-       << "recursionDepth" << recursionDepth
-       << "rectification" << rectification;
+       << "recursionDepth" << recursionDepth;
 
     if (!validPages.empty()) {
         fs << "validPages" << "[";
@@ -312,44 +329,18 @@ void Calib::write(FileStorage &fs) const {
         fs << "]";
     }
 
-    fs << "images" << "[";
-    for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
-        fs << "{";
-        fs << "name" << imageFiles[ii]
-              << "rvec" << rvecs[ii]
-                 << "tvec" << tvecs[ii]
-                    << "corners" << "[";
-        CornerStore const & store = data.find(imageFiles[ii])->second;
-        for (size_t jj = 0; jj < store.size(); ++jj) {
-            fs << store.get(jj);
-        }
-        fs << "]";
-        fs << "}";
-    }
-    fs << "]";
 
-    fs << "objectPointCorrections" << "[";
-    for (const auto& it : objectPointCorrections) {
-        fs << "{"
-           << "id" << it.first
-           << "val" << it.second
-           << "}";
-    }
-    fs << "]";
 
     fs << "}";
 }
 
 void Calib::read(const FileNode &node) {
-    node["cameraMatrix"] >> cameraMatrix;
-    node["distCoeffs"] >> distCoeffs;
     node["imageSize"] >> imageSize;
     node["resolutionKnown"] >> resolutionKnown;
     node["apertureWidth"] >> apertureWidth;
     node["apertureHeight"] >> apertureHeight;
     node["useOnlyGreen"] >> useOnlyGreen;
     node["recursionDepth"] >> recursionDepth;
-    node["rectification"] >> rectification;
     setRecursionDepth(recursionDepth);
 
     FileNode n = node["validPages"]; // Read string sequence - Get node
@@ -369,11 +360,8 @@ void Calib::read(const FileNode &node) {
 
     for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
         std::vector<hdmarker::Corner> corners;
-        cv::Mat rvec, tvec;
         std::string name;
         (*it)["name"] >> name;
-        (*it)["rvec"] >> rvec;
-        (*it)["tvec"] >> tvec;
         cv::FileNode corners_node = (*it)["corners"];
         if (corners_node.type() != FileNode::SEQ) {
             throw std::runtime_error(std::string("Error while reading cached calibration result for image ") + name + ": Corners is not a sequence. Aborting.");
@@ -384,10 +372,43 @@ void Calib::read(const FileNode &node) {
             *corner_it >> c;
             corners.push_back(c);
         }
-        addInputImage(name, corners, rvec, tvec);
+        addInputImage(name, corners);
     }
 
-    n = node["objectPointCorrections"]; // Read string sequence - Get node
+
+}
+
+void CalibResult::write(FileStorage &fs) const {
+    fs << "{"
+       << "cameraMatrix" << cameraMatrix
+       << "distCoeffs" << distCoeffs;
+
+    fs << "images" << "[";
+    for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
+        fs << "{"
+           << "name" << imageFiles[ii]
+              << "rvec" << rvecs[ii]
+                 << "tvec" << tvecs[ii]
+                    << "}";
+    }
+    fs << "]"
+       << "objectPointCorrections" << "[";
+    for (const auto& it : objectPointCorrections) {
+        fs << "{"
+           << "id" << it.first
+           << "val" << it.second
+           << "}";
+    }
+    fs << "]"
+       << "rectification" << rectification;
+
+    fs << "}";
+}
+
+void CalibResult::read(const FileNode &node) {
+    node["cameraMatrix"] >> cameraMatrix;
+    node["distCoeffs"] >> distCoeffs;
+    FileNode n = node["objectPointCorrections"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
         throw std::runtime_error("Error while reading cached calibration result: objectPointCorrections is not a sequence. Aborting.");
     }
@@ -398,7 +419,23 @@ void Calib::read(const FileNode &node) {
         (*it)["val"] >> val;
         objectPointCorrections[id] = val;
     }
+    n = node["images"]; // Read string sequence - Get node
+    if (n.type() != FileNode::SEQ) {
+        throw std::runtime_error("Error while reading cached calibration result: Images is not a sequence. Aborting.");
+    }
+
+    for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
+        cv::Mat rvec, tvec;
+        std::string name;
+        (*it)["name"] >> name;
+        (*it)["rvec"] >> rvec;
+        (*it)["tvec"] >> tvec;
+        cv::FileNode corners_node = (*it)["corners"];
+    }
+
+    node["rectification"] >> rectification;
 }
+
 
 void Calib::white_balance_inplace(Mat &mat, const Point3f white) {
     float const min_val = std::min(white.x, std::min(white.y, white.z));

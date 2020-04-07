@@ -1263,7 +1263,7 @@ TEST(Calib, get3DPoint) {
     std::vector<hdcalib::Corner> corners = store.getCorners();
 
     for (hdmarker::Corner const& corner : corners) {
-        cv::Vec3d point = c.get3DPoint(corner, rvec, tvec);
+        cv::Vec3d point = c.get3DPointWithoutCorrection(corner, rvec, tvec);
         std::cout << "Corner: " << corner.id << ", " << corner.page << std::endl
                   << "Position: " << point << std::endl << std::endl;
     }

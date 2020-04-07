@@ -57,15 +57,24 @@ double Calib::CeresCalib() {
 
     std::vector<std::vector<double> > local_rvecs(data.size()), local_tvecs(data.size());
 
-    std::vector<double> local_dist = mat2vec(distCoeffs);
+    if (!hasCalibName("Ceres")) {
+        if (hasCalibName("OpenCV")) {
+            calibrations["Ceres"] = calibrations["OpenCV"];
+        }
+    }
 
-    cv::Mat_<double> old_cam = cameraMatrix.clone(), old_dist = distCoeffs.clone();
+    CalibResult & calib = calibrations["Ceres"];
+
+    std::vector<double> local_dist = mat2vec(calib.distCoeffs);
+
+    cv::Mat_<double> old_cam = calib.cameraMatrix.clone();
+    cv::Mat_<double> old_dist = calib.distCoeffs.clone();
 
 
 
     for (size_t ii = 0; ii < data.size(); ++ii) {
-        local_rvecs[ii] = mat2vec(rvecs[ii]);
-        local_tvecs[ii] = mat2vec(tvecs[ii]);
+        local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
+        local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
 
         ceres::CostFunction * cost_function =
                 new ceres::AutoDiffCostFunction<
@@ -84,10 +93,10 @@ double Calib::CeresCalib() {
                   );
         problem.AddResidualBlock(cost_function,
                                  nullptr, // Loss function (nullptr = L2)
-                                 &cameraMatrix(0,0), // focal length x
-                                 &cameraMatrix(1,1), // focal length y
-                                 &cameraMatrix(0,2), // principal point x
-                                 &cameraMatrix(1,2), // principal point y
+                                 &calib.cameraMatrix(0,0), // focal length x
+                                 &calib.cameraMatrix(1,1), // focal length y
+                                 &calib.cameraMatrix(0,2), // principal point x
+                                 &calib.cameraMatrix(1,2), // principal point y
                                  local_rvecs[ii].data(), // rotation vector for the target
                                  local_tvecs[ii].data(), // translation vector for the target
                                  local_dist.data() // distortion coefficients
@@ -112,113 +121,25 @@ double Calib::CeresCalib() {
     clog::L(__func__, 1) << summary.FullReport() << "\n";
 
     size_t counter = 0;
-    for (auto & it : distCoeffs) {
+    for (auto & it : calib.distCoeffs) {
         it = local_dist[counter];
         counter++;
     }
 
     for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
-        rvecs[ii] = vec2mat(local_rvecs[ii]);
-        tvecs[ii] = vec2mat(local_tvecs[ii]);
+        calib.rvecs[ii] = vec2mat(local_rvecs[ii]);
+        calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
     }
 
     clog::L(__func__, 1) << "Parameters before: " << std::endl
             << "Camera matrix: " << old_cam << std::endl
             << "Distortion: " << old_dist << std::endl;
     clog::L(__func__, 1) << "Parameters after: " << std::endl
-            << "Camera matrix: " << cameraMatrix << std::endl
-            << "Distortion: " << distCoeffs << std::endl;
+            << "Camera matrix: " << calib.cameraMatrix << std::endl
+            << "Distortion: " << calib.distCoeffs << std::endl;
     clog::L(__func__, 1) << "Difference: old - new" << std::endl
-            << "Camera matrix: " << (old_cam - cameraMatrix) << std::endl
-            << "Distortion: " << (old_dist - distCoeffs) << std::endl;
-
-    hasCalibration = true;
-
-    return 0;
-}
-
-double Calib::CeresCalibRot4() {
-    // Build the problem.
-    ceres::Problem problem;
-
-    prepareCalibration();
-
-    std::vector<std::vector<double> > local_rvecs(data.size()), local_tvecs(data.size());
-
-    std::vector<double> local_dist = mat2vec(distCoeffs);
-
-    cv::Mat_<double> old_cam = cameraMatrix.clone(), old_dist = distCoeffs.clone();
-
-
-
-    for (size_t ii = 0; ii < data.size(); ++ii) {
-        local_rvecs[ii] = rot3_rot4<double>(rvecs[ii]);
-        local_tvecs[ii] = mat2vec(tvecs[ii]);
-
-        ceres::CostFunction * cost_function =
-                new ceres::AutoDiffCostFunction<
-                ProjectionFunctor,
-                ceres::DYNAMIC,
-                1, // focal length x
-                1, // focal length y
-                1, // principal point x
-                1, // principal point y
-                3, // rotation vector for the target
-                3, // translation vector for the target
-                14 // distortion coefficients
-
-                >(new ProjectionFunctor(imagePoints[ii], objectPoints[ii]),
-                  int(2*imagePoints[ii].size()) // Number of residuals
-                  );
-        problem.AddResidualBlock(cost_function,
-                                 nullptr, // Loss function (nullptr = L2)
-                                 &cameraMatrix(0,0), // focal length x
-                                 &cameraMatrix(1,1), // focal length y
-                                 &cameraMatrix(0,2), // principal point x
-                                 &cameraMatrix(1,2), // principal point y
-                                 local_rvecs[ii].data(), // rotation vector for the target
-                                 local_tvecs[ii].data(), // translation vector for the target
-                                 local_dist.data() // distortion coefficients
-                                 );
-
-    }
-
-
-    // Run the solver!
-    ceres::Solver::Options options;
-    options.num_threads = int(threads);
-    options.max_num_iterations = 150;
-    options.function_tolerance = ceres_tolerance;
-    options.gradient_tolerance = ceres_tolerance;
-    options.parameter_tolerance = ceres_tolerance;
-    options.linear_solver_type = ceres::SPARSE_SCHUR;
-    options.minimizer_progress_to_stdout = true;
-    ceres::Solver::Summary summary;
-    Solve(options, &problem, &summary);
-
-    clog::L(__func__, 1) << summary.BriefReport() << "\n";
-    clog::L(__func__, 1) << summary.FullReport() << "\n";
-
-    size_t counter = 0;
-    for (auto & it : distCoeffs) {
-        it = local_dist[counter];
-        counter++;
-    }
-
-    for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
-        rot4_rot3<double>(local_rvecs[ii].data(), rvecs[ii]);
-        tvecs[ii] = vec2mat(local_tvecs[ii]);
-    }
-
-    clog::L(__func__, 1) << "Parameters before: " << std::endl
-            << "Camera matrix: " << old_cam << std::endl
-            << "Distortion: " << old_dist << std::endl;
-    clog::L(__func__, 1) << "Parameters after: " << std::endl
-            << "Camera matrix: " << cameraMatrix << std::endl
-            << "Distortion: " << distCoeffs << std::endl;
-    clog::L(__func__, 1) << "Difference: old - new" << std::endl
-            << "Camera matrix: " << (old_cam - cameraMatrix) << std::endl
-            << "Distortion: " << (old_dist - distCoeffs) << std::endl;
+            << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl
+            << "Distortion: " << (old_dist - calib.distCoeffs) << std::endl;
 
     hasCalibration = true;
 
@@ -250,11 +171,21 @@ double Calib::CeresCalibFlexibleTarget() {
 
     prepareCalibration();
 
+    if (hasCalibName("Ceres")) {
+        calibrations["Flexible"] = calibrations["Ceres"];
+    }
+    else if (hasCalibName("OpenCV")) {
+        calibrations["Flexible"] = calibrations["OpenCV"];
+    }
+
+    CalibResult & calib = calibrations["Flexible"];
+
     std::vector<std::vector<double> > local_rvecs(data.size()), local_tvecs(data.size());
 
-    std::vector<double> local_dist = mat2vec(distCoeffs);
+    std::vector<double> local_dist = mat2vec(calib.distCoeffs);
 
-    cv::Mat_<double> old_cam = cameraMatrix.clone(), old_dist = distCoeffs.clone();
+    cv::Mat_<double> old_cam = calib.cameraMatrix.clone();
+    cv::Mat_<double> old_dist = calib.distCoeffs.clone();
 
 
     std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > local_corrections;
@@ -262,15 +193,15 @@ double Calib::CeresCalibFlexibleTarget() {
     for (const auto& it: data) {
         for (size_t ii = 0; ii < it.second.size(); ++ii) {
             cv::Point3i const c = getSimpleId(it.second.get(ii));
-            local_corrections[c] = point2vec3f(objectPointCorrections[c]);
+            local_corrections[c] = point2vec3f(calib.objectPointCorrections[c]);
         }
     }
 
     std::set<cv::Point3i, cmpSimpleIndex3<cv::Point3i> > ids;
 
     for (size_t ii = 0; ii < data.size(); ++ii) {
-        local_rvecs[ii] = mat2vec(rvecs[ii]);
-        local_tvecs[ii] = mat2vec(tvecs[ii]);
+        local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
+        local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
 
         auto const & sub_data = data[imageFiles[ii]];
         for (size_t jj = 0; jj < sub_data.size(); ++jj) {
@@ -297,10 +228,10 @@ double Calib::CeresCalibFlexibleTarget() {
                           );
                 problem.AddResidualBlock(cost_function,
                                          new ceres::CauchyLoss(0.5), // Loss function (nullptr = L2)
-                                         &cameraMatrix(0,0), // focal length x
-                                         &cameraMatrix(1,1), // focal length y
-                                         &cameraMatrix(0,2), // principal point x
-                                         &cameraMatrix(1,2), // principal point y
+                                         &calib.cameraMatrix(0,0), // focal length x
+                                         &calib.cameraMatrix(1,1), // focal length y
+                                         &calib.cameraMatrix(0,2), // principal point x
+                                         &calib.cameraMatrix(1,2), // principal point y
                                          local_rvecs[ii].data(), // rotation vector for the target
                                          local_tvecs[ii].data(), // translation vector for the target
                                          local_corrections[c].data(),
@@ -336,29 +267,29 @@ double Calib::CeresCalibFlexibleTarget() {
     clog::L(__func__, 1) << summary.FullReport() << "\n";
 
     size_t counter = 0;
-    for (auto & it : distCoeffs) {
+    for (auto & it : calib.distCoeffs) {
         it = local_dist[counter];
         counter++;
     }
 
     for (auto const& it : local_corrections) {
-        objectPointCorrections[it.first] = vec2point3f(it.second);
+        calib.objectPointCorrections[it.first] = vec2point3f(it.second);
     }
 
     for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
-        rvecs[ii] = vec2mat(local_rvecs[ii]);
-        tvecs[ii] = vec2mat(local_tvecs[ii]);
+        calib.rvecs[ii] = vec2mat(local_rvecs[ii]);
+        calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
     }
 
     clog::L(__func__, 1) << "Parameters before: " << std::endl
             << "Camera matrix: " << old_cam << std::endl
             << "Distortion: " << old_dist << std::endl;
     clog::L(__func__, 1) << "Parameters after: " << std::endl
-            << "Camera matrix: " << cameraMatrix << std::endl
-            << "Distortion: " << distCoeffs << std::endl;
+            << "Camera matrix: " << calib.cameraMatrix << std::endl
+            << "Distortion: " << calib.distCoeffs << std::endl;
     clog::L(__func__, 1) << "Difference: old - new" << std::endl
-            << "Camera matrix: " << (old_cam - cameraMatrix) << std::endl
-            << "Distortion: " << (old_dist - distCoeffs) << std::endl;
+            << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl
+            << "Distortion: " << (old_dist - calib.distCoeffs) << std::endl;
 
     return 0;
 }

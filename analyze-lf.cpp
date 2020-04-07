@@ -152,9 +152,9 @@ int main(int argc, char* argv[]) {
     n >> calib;
     fs.release();
 
-    calib.printObjectPointCorrectionsStats();
+    calib.printObjectPointCorrectionsStats("Flexible");
 
-    calib.analyzeGridLF(rows, cols, input_files);
+    calib.analyzeGridLF("Flexible", rows, cols, input_files);
 
     std::cout << "Level 1 log entries: " << std::endl;
     clog::Logger::getInstance().printAll(std::cout, 1);
