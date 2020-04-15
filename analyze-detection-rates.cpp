@@ -34,8 +34,72 @@ bool stringEndsWith(std::string const& str, std::string const& search) {
     return str.substr(str.size() - search.size()) == search;
 }
 
-std::pair<double, std::string> analyzeRates(fs::path const& file, int8_t const recursion) {
-    std::pair<double, std::string> result;
+struct Rates {
+    size_t num_corners;
+    std::vector<double> rates_by_color;
+    double rate;
+    std::string filename;
+    double mean_dist;
+
+    /**
+     * @brief write Function needed for serializating a Corner using the OpenCV FileStorage system.
+     * @param fs
+     */
+    void write(cv::FileStorage& fs) const {
+        fs << "{"
+           << "num_corners" << int(num_corners)
+           << "rates_by_color" << rates_by_color
+           << "rate" << rate
+           << "filename" << filename
+           << "mean_dist" << mean_dist
+           << "}";
+    }
+
+    /**
+     * @brief read Method needed for reading a serialized Corner using the OpenCV FileStorage system.
+     * @param node
+     */
+    void read(const cv::FileNode& node) {
+        int _num_corners = -1;
+        node["num_corners"] >> _num_corners;
+        if (_num_corners < 0) {
+            throw std::runtime_error("Reading num_corners failed");
+        }
+        num_corners = _num_corners;
+        node["rates_by_color"] >> rates_by_color;
+        node["rate"] >> rate;
+        node["filename"] >> filename;
+        node["mean_dist"] >> mean_dist;
+        if (rates_by_color.size() != 2) {
+            throw std::runtime_error(std::string("rates_by_color has unexpected size ") + std::to_string(rates_by_color.size()) + ", expected 2.");
+        }
+    }
+};
+
+void write(cv::FileStorage& fs, const std::string&, const Rates& x){
+    x.write(fs);
+}
+void read(const cv::FileNode& node, Rates& x, const Rates& default_value = Rates()){
+    if(node.empty()) {
+        throw std::runtime_error("Could not recover rates cache, file storage is empty.");
+    }
+    else
+        x.read(node);
+}
+
+Rates analyzeRates(fs::path const& file, int8_t const recursion) {
+    Rates result;
+    fs::path const rates_cache_file = file.string() + "-rates-r" + std::to_string(recursion) + ".yaml";
+    if (fs::is_regular_file(rates_cache_file)) {
+        try {
+            cv::FileStorage cache(rates_cache_file.string(), cv::FileStorage::READ);
+            cache["cache"] >> result;
+            return result;
+        } catch (std::exception const& e) {
+            std::cout << "Reading file " << rates_cache_file .string() << " failed with exception:" << std::endl
+                      << e.what() << std::endl;
+        }
+    }
     std::vector<hdmarker::Corner> corners = hdcalib::Calib::readCorners(file.string());
     std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
     int const factor = hdcalib::Calib::computeCornerIdFactor(recursion);
@@ -95,13 +159,16 @@ std::pair<double, std::string> analyzeRates(fs::path const& file, int8_t const r
 
     std::cout << std::endl;
 
-    result.first = distances.getMean();
-    result.second = std::to_string(distances.getMean()) + "\t"
-            + std::to_string(rate.getPercent()) + "\t"
-            + std::to_string(rates_by_color[0].getPercent()) + "\t"
-            + std::to_string(rates_by_color[1].getPercent()) + "\t"
-            + std::to_string(corners.size()) + "\t"
-            + file.string();
+    result.rate = rate.getPercent();
+    result.filename = file.string();
+    result.mean_dist = distances.getMean();
+    result.num_corners = corners.size();
+    result.rates_by_color.resize(2);
+    result.rates_by_color[0] = rates_by_color[0].getPercent();
+    result.rates_by_color[1] = rates_by_color[1].getPercent();
+
+    cv::FileStorage cache(rates_cache_file.string(), cv::FileStorage::WRITE);
+    cache << "cache" << result;
     return result;
 }
 
@@ -115,9 +182,20 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
         }
     }
     std::sort(files.begin(), files.end());
-    for (auto const& p : files) {
+
+#pragma omp parallel for schedule(dynamic)
+    for (size_t ii = 0; ii < files.size(); ++ii) {
+        auto const& p = files[ii];
         auto const result = analyzeRates(p, recursion);
-        data[result.first] = result.second;
+#pragma omp critical
+        {
+            data[result.mean_dist] = std::to_string(result.mean_dist) + "\t"
+                    + std::to_string(result.rate) + "\t"
+                    + std::to_string(result.rates_by_color[0]) + "\t"
+                    + std::to_string(result.rates_by_color[1]) + "\t"
+                    + std::to_string(result.num_corners) + "\t"
+                    + result.filename;
+        }
     }
     std::ofstream logfile(dir + "-log");
     for (auto const& it : data) {
@@ -136,8 +214,8 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
         << "set xlabel 'submarker distance [px]';\n"
         << "set ylabel 'detection rate [%]';\n"
         << "plot '" << dir << "-log' u 1:2 w lp title 'combined rate',"
-           << "'' u 1:3 w lp title 'black rate',"
-           << "'' u 1:4 w lp title 'white rate'\n";
+        << "'' u 1:3 w lp title 'black rate',"
+        << "'' u 1:4 w lp title 'white rate'\n";
     plt << cmd.str();
     std::ofstream gpl_file(dir + "-log.gpl");
     gpl_file << cmd.str();
@@ -202,6 +280,7 @@ int main(int argc, char ** argv) {
         analyzeDirectory(dir, recursion_depth);
     }
 
+    std::cout << "Total time: " << total_time.print() << std::endl;
 
     return EXIT_SUCCESS;
 }
