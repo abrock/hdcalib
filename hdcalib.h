@@ -470,6 +470,10 @@ public:
     void read(const FileNode &node);
 };
 
+void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);
+void read(const cv::FileNode& node, CalibResult& x, const CalibResult& default_value = CalibResult());
+
+
 class Calib
 {
     /**
@@ -1118,7 +1122,6 @@ private:
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);
-
 void read(const cv::FileNode& node, Calib& x, const Calib& default_value = Calib());
 
 }

@@ -52,8 +52,8 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         it.second.rvecs.push_back(cv::Mat());
         it.second.tvecs.push_back(cv::Mat());
         imageFiles.push_back(filename);
-
         insertSorted(imageFiles, it.second.rvecs, it.second.tvecs);
+        it.second.imageFiles = imageFiles;
 
         clog::L(__func__, 2) << "replacing corners..." << std::flush;
         CornerStore & ref = data[filename];
@@ -244,8 +244,8 @@ cv::Size Calib::read_raw_imagesize(const string &filename) {
                                  + libraw_strerror(ret) + "\r\n");
     }
     clog::L(__func__, 2) << "Image size: " << S.width << "x" << S.height << std::endl
-            << "Raw size: " << S.raw_width << "x" << S.raw_height << std::endl
-            << "Margins: top=" << S.top_margin << ", left=" << S.left_margin << std::endl;
+                         << "Raw size: " << S.raw_width << "x" << S.raw_height << std::endl
+                         << "Margins: top=" << S.top_margin << ", left=" << S.left_margin << std::endl;
 
     return cv::Size(S.width, S.height);
 }
@@ -321,15 +321,24 @@ void Calib::write(FileStorage &fs) const {
        << "useOnlyGreen" << useOnlyGreen
        << "recursionDepth" << recursionDepth;
 
+    fs << "calibrations" << "{";
+    for (auto const& it : calibrations) {
+        fs << it.first << it.second;
+    }
+    fs << "}";
+
     if (!validPages.empty()) {
-        fs << "validPages" << "[";
-        for (auto const val : validPages) {
-            fs << val;
-        }
-        fs << "]";
+        fs << "validPages" << validPages;
     }
 
-
+    fs << "images" << "[";
+    for (const auto& it : data) {
+        fs << "{"
+           << "name" << it.first
+           << "corners" << it.second.getCorners()
+           << "}";
+    }
+    fs << "]";
 
     fs << "}";
 }
@@ -394,13 +403,16 @@ void CalibResult::write(FileStorage &fs) const {
     fs << "]"
        << "objectPointCorrections" << "[";
     for (const auto& it : objectPointCorrections) {
-        fs << "{"
-           << "id" << it.first
-           << "val" << it.second
-           << "}";
+        double const sq_norm = it.second.dot(it.second);
+        if (sq_norm > 1e-100) {
+            fs << "{"
+               << "id" << it.first
+               << "val" << it.second
+               << "}";
+        }
     }
-    fs << "]"
-       << "rectification" << rectification;
+    fs << "]";
+    fs << "rectification" << rectification;
 
     fs << "}";
 }
@@ -421,7 +433,7 @@ void CalibResult::read(const FileNode &node) {
     }
     n = node["images"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
-        throw std::runtime_error("Error while reading cached calibration result: Images is not a sequence. Aborting.");
+        // throw std::runtime_error("Error while reading cached calibration result: Images is not a sequence. Aborting.");
     }
 
     for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
@@ -430,7 +442,10 @@ void CalibResult::read(const FileNode &node) {
         (*it)["name"] >> name;
         (*it)["rvec"] >> rvec;
         (*it)["tvec"] >> tvec;
-        cv::FileNode corners_node = (*it)["corners"];
+        imageFiles.push_back(name);
+        rvecs.push_back(rvec);
+        tvecs.push_back(tvec);
+        //cv::FileNode corners_node = (*it)["corners"];
     }
 
     node["rectification"] >> rectification;
@@ -461,6 +476,18 @@ void write(FileStorage &fs, const string &, const Calib &x) {
 }
 
 void read(const FileNode &node, Calib &x, const Calib &default_value) {
+    if(node.empty()) {
+        throw std::runtime_error("Could not recover calibration, file storage is empty.");
+    }
+    else
+        x.read(node);
+}
+
+void write(FileStorage &fs, const string &, const CalibResult &x) {
+    x.write(fs);
+}
+
+void read(const FileNode &node, CalibResult &x, const CalibResult &default_value) {
     if(node.empty()) {
         throw std::runtime_error("Could not recover calibration, file storage is empty.");
     }

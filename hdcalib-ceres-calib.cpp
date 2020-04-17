@@ -126,10 +126,13 @@ double Calib::CeresCalib() {
         counter++;
     }
 
+    calib.rvecs.resize(local_rvecs.size());
+    calib.tvecs.resize(local_rvecs.size());
     for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
         calib.rvecs[ii] = vec2mat(local_rvecs[ii]);
         calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
     }
+    calib.imageFiles = imageFiles;
 
     clog::L(__func__, 1) << "Parameters before: " << std::endl
             << "Camera matrix: " << old_cam << std::endl
@@ -171,11 +174,13 @@ double Calib::CeresCalibFlexibleTarget() {
 
     prepareCalibration();
 
-    if (hasCalibName("Ceres")) {
-        calibrations["Flexible"] = calibrations["Ceres"];
-    }
-    else if (hasCalibName("OpenCV")) {
-        calibrations["Flexible"] = calibrations["OpenCV"];
+    if (!hasCalibName("Flexible")) {
+        if (hasCalibName("Ceres")) {
+            calibrations["Flexible"] = calibrations["Ceres"];
+        }
+        else if (hasCalibName("OpenCV")) {
+            calibrations["Flexible"] = calibrations["OpenCV"];
+        }
     }
 
     CalibResult & calib = calibrations["Flexible"];

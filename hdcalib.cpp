@@ -178,7 +178,21 @@ Mat Calib::getCachedUndistortRectifyMap(std::string const& calibName) {
 
 
 bool Calib::hasCalibName(const string &name) const {
-    return calibrations.find(name) != calibrations.end();
+    auto it = calibrations.find(name);
+    if (it == calibrations.end()) {
+        return false;
+    }
+    CalibResult const& c = it->second;
+    if (c.imageFiles != imageFiles) {
+        return false;
+    }
+    if (c.rvecs.size() != imageFiles.size()) {
+        return false;
+    }
+    if (c.tvecs.size() != imageFiles.size()) {
+        return false;
+    }
+    return true;
 }
 
 void Calib::normalizeRotationVector(Mat &vector) {
@@ -774,6 +788,8 @@ double Calib::openCVCalib() {
     clog::L(__func__, 1) << "focal length factor: " << res.cameraMatrix(0,0) / focalLength << std::endl;
 
     hasCalibration = true;
+
+    res.imageFiles = imageFiles;
 
     return result_err;
 }

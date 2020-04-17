@@ -32,7 +32,10 @@ void trim(std::string &s) {
     }
 
 int main(int argc, char* argv[]) {
+    std::ofstream logfile("hdcalib.log", std::ofstream::out);
+
     clog::Logger::getInstance().addListener(std::cout);
+    clog::Logger::getInstance().addListener(logfile);
 
     ParallelTime t, total_time;
     std::stringstream time_log;
@@ -155,20 +158,20 @@ int main(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
 
-        std::cout << "Parameters: " << std::endl
-                  << "Number of input files: " << input_files.size() << std::endl
-                  << "recursion depth: " << recursion_depth << std::endl
-                  << "effort: " << effort << std::endl
-                  << "demosaic: " << (demosaic ? "true" : "false") << std::endl
-                  << "use libraw: " << (libraw ? "true" : "false") << std::endl
-                  << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
-                  << "only green channel: " << (only_green ? "true" : "false") << std::endl
-                  << "Gnuplot: " << (gnuplot ? "true" : "false") << std::endl
-                  << "Valid pages: ";
+        std::stringstream str_pages;
         for (const auto it : valid_pages) {
-            std::cout << it << "  ";
+            str_pages << it << "  ";
         }
-        std::cout << std::endl;
+        clog::L("tclap", 2) << "Parameters: " << std::endl
+                            << "Number of input files: " << input_files.size() << std::endl
+                            << "recursion depth: " << recursion_depth << std::endl
+                            << "effort: " << effort << std::endl
+                            << "demosaic: " << (demosaic ? "true" : "false") << std::endl
+                            << "use libraw: " << (libraw ? "true" : "false") << std::endl
+                            << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
+                            << "only green channel: " << (only_green ? "true" : "false") << std::endl
+                            << "Gnuplot: " << (gnuplot ? "true" : "false") << std::endl
+                            << "Valid pages: " << str_pages.str() << std::endl;
         calib.setValidPages(valid_pages);
 
 
@@ -191,23 +194,24 @@ int main(int argc, char* argv[]) {
     TIMELOG("Argument parsing");
 
     bool has_cached_calib = false;
-    if (fs::is_regular_file(cache_file)) {
+    if (!cache_file.empty() && fs::is_regular_file(cache_file)) {
+#if CATCH_STORAGE
         try {
-            if (verbose) {
-                std::cout << "Reading cached calibration results..." << std::flush;
-            }
+#endif
+            clog::L("main", 2) << "Reading cached calibration results from file " << cache_file << std::endl;
             cv::FileStorage fs(cache_file, cv::FileStorage::READ);
             cv::FileNode n = fs["calibration"];
             n >> calib;
             has_cached_calib = true;
             fs.release();
-            std::cout << " done." << std::endl;
             calib.purgeInvalidPages();
+#if CATCH_STORAGE
         }
         catch (std::exception const& e) {
-            std::cout << "Reading cache file failed with exception:" << std::endl
-                      << e.what() << std::endl;
+            clog::L("main", 1) << "Reading cache file failed with exception:" << std::endl
+                               << e.what() << std::endl;
         }
+#endif
         TIMELOG("Reading cached result");
     }
 
@@ -230,8 +234,8 @@ int main(int argc, char* argv[]) {
                     detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, libraw);
                 }
                 catch (const std::exception &e) {
-                    std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
-                              << e.what() << std::endl;
+                    clog::L("main", 1) << "Reading file " << input_file << " failed with an exception: " << std::endl
+                                       << e.what() << std::endl;
                 }
             }
         }
@@ -286,8 +290,8 @@ int main(int argc, char* argv[]) {
             detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, libraw);
         }
         catch (const std::exception &e) {
-            std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
-                      << e.what() << std::endl;
+            clog::L("main", 1) << "Reading file " << input_file << " failed with an exception: " << std::endl
+                               << e.what() << std::endl;
         }
     }
 
@@ -306,7 +310,11 @@ int main(int argc, char* argv[]) {
 
     TIMELOG("Purging invalid pages");
 
+    clog::L("main", 2) << "checking for OpenCV calib: " << calib.hasCalibName("OpenCV") << std::endl;
+
     calib.openCVCalib();
+
+    clog::L("main", 2) << "checking for OpenCV calib: " << calib.hasCalibName("OpenCV") << std::endl;
 
     TIMELOG("openCVCalib");
 
@@ -365,7 +373,7 @@ int main(int argc, char* argv[]) {
     TIMELOG("printObjectPointCorrectionsStats");
 
     if (gnuplot) {
-        calib.plotReprojectionErrors("", "ceres3");
+        calib.plotReprojectionErrors("Ceres", "ceres3");
         TIMELOG("plotReprojectionErrors ceres3");
     }
 
@@ -378,6 +386,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Level 1 log entries: " << std::endl;
     clog::Logger::getInstance().printAll(std::cout, 1);
+    TIMELOG("print all log entries");
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

@@ -5,6 +5,10 @@
 #include <runningstats/runningstats.h>
 #include "gnuplot-iostream.h"
 
+namespace {
+boost::system::error_code ignore_error_code;
+}
+
 namespace hdcalib {
 
 void Calib::printObjectPointCorrectionsStats(
@@ -48,6 +52,8 @@ void Calib::plotReprojectionErrors(
     CornerStore const& store = data[filename];
 
     std::string plot_name = prefix + filename + ".marker-residuals";
+
+    fs::create_directories(fs::path(plot_name).parent_path(), ignore_error_code);
 
     std::vector<double> errors;
 
@@ -198,6 +204,11 @@ void Calib::plotResidualsByMarkerStats(
         const Calib::MarkerMap &map,
         const string prefix,
         const string suffix) {
+
+    if (map.empty()) {
+        clog::L("plotResidualsByMarkerStats", 1) << "Marker map is empty." << std::endl;
+        return;
+    }
 
     std::vector<std::pair<double, double> > mean_residuals_by_marker;
     int max_x = 0, max_y = 0;
