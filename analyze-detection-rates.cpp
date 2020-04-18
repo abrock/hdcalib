@@ -183,10 +183,12 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     }
     std::sort(files.begin(), files.end());
 
+    std::map<std::string, std::string> overview;
+
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < files.size(); ++ii) {
-        auto const& p = files[ii];
-        auto const result = analyzeRates(p, recursion);
+        fs::path const& p = files[ii];
+        Rates const result = analyzeRates(p, recursion);
 #pragma omp critical
         {
             data[result.mean_dist] = std::to_string(result.mean_dist) + "\t"
@@ -195,6 +197,11 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
                     + std::to_string(result.rates_by_color[1]) + "\t"
                     + std::to_string(result.num_corners) + "\t"
                     + result.filename;
+            overview[p.string()] = std::to_string(result.mean_dist) + "\t"
+                    + std::to_string(result.rate) + "\t"
+                    + std::to_string(result.rates_by_color[0]) + "\t"
+                    + std::to_string(result.rates_by_color[1]) + "\t"
+                    + std::to_string(result.num_corners);
         }
     }
     std::ofstream logfile(dir + "-log");
@@ -206,10 +213,15 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     gnuplotio::Gnuplot plt;
     std::stringstream cmd;
 
+    std::cout << "Overview for directory " << dir << ":" << std::endl;
+    for (auto const& it : overview) {
+        std::cout << it.first << "\t" << it.second << std::endl;
+    }
+
     cmd << "set term svg enhanced background rgb \"white\";\n"
         << "set output \"" << dir << "-log.svg\";\n"
         << "set title 'Marker detection rates';\n"
-        << "set xrange [6:15];\n"
+        << "set xrange [3:15];\n"
         << "set yrange [0:100];\n"
         << "set xlabel 'submarker distance [px]';\n"
         << "set ylabel 'detection rate [%]';\n"
@@ -267,7 +279,7 @@ int main(int argc, char ** argv) {
                   << "Number of input directories: " << input_dirs.size() << std::endl
                   << "recursion depth: " << recursion_depth << std::endl;
     }
-    catch (TCLAP::ArgException const & e) {
+    catch (std::exception const & e) {
         std::cerr << e.what() << std::endl;
         return 0;
     }

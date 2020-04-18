@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
     bool plot_markers = false;
     bool plot_submarkers = false;
     bool only_green = false;
-    int num_threads = 4;
+    int num_threads = 1;
     std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
