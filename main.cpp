@@ -377,7 +377,7 @@ int main(int argc, char* argv[]) {
     TIMELOG("printObjectPointCorrectionsStats");
 
     if (gnuplot) {
-        calib.plotReprojectionErrors("Ceres", "ceres3");
+        calib.plotReprojectionErrors("Flexible", "ceres3flexible");
         TIMELOG("plotReprojectionErrors ceres3");
     }
 
