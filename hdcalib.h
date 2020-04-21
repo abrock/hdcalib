@@ -152,6 +152,11 @@ private:
 public:
     CornerStore();
 
+
+    std::vector<hdmarker::Corner> getSquaresTopLeft(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
+
+    std::vector<std::vector<hdmarker::Corner> > getSquares(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
+
     /**
      * @brief CornerStore explicit copy constructor
      * @param c

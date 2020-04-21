@@ -122,43 +122,22 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion) {
     runningstats::BinaryStats rate;
     runningstats::BinaryStats rates_by_color[2];
 
-    for (auto const& c : corners) {
-        if (c.id.x % factor == 0 && c.id.y % factor == 0) {
-            bool has_square = true;
-            hdmarker::Corner neighbour;
-            for (cv::Point2i const & id_offset : {
-                 cv::Point2i(0, factor),
-                 cv::Point2i(factor, 0),
-                 cv::Point2i(factor, factor)}) {
+    for (auto const& c : store.getSquaresTopLeft(factor)) {
+        for (int xx = 1; xx < factor; xx += 2) {
+            for (int yy = 1; yy < factor; yy += 2) {
                 hdmarker::Corner search = c;
-                search.id += id_offset;
-                if (store.hasID(search, neighbour)) {
-                    cv::Point2f const residual = c.p - neighbour.p;
-                    double const dist = 2*double(std::sqrt(residual.dot(residual)));
-                    distances.push_unsafe(dist/std::sqrt(id_offset.dot(id_offset)));
+                search.id += cv::Point2i(xx, yy);
+                size_t color = CornerColor::getColor(search, recursion);
+                if (color > 1) {
+                    throw std::runtime_error("Color value unexpectedly high, something is wrong.");
+                }
+                if (store.hasIDLevel(search, recursion)) {
+                    rate.push(true);
+                    rates_by_color[color].push(true);
                 }
                 else {
-                    has_square = false;
-                }
-            }
-            if (has_square) {
-                for (int xx = 1; xx < factor; xx += 2) {
-                    for (int yy = 1; yy < factor; yy += 2) {
-                        hdmarker::Corner search = c;
-                        search.id += cv::Point2i(xx, yy);
-                        size_t color = CornerColor::getColor(search, recursion);
-                        if (color > 1) {
-                            throw std::runtime_error("Color value unexpectedly high, something is wrong.");
-                        }
-                        if (store.hasIDLevel(search, recursion)) {
-                            rate.push(true);
-                            rates_by_color[color].push(true);
-                        }
-                        else {
-                            rate.push(false);
-                            rates_by_color[color].push(false);
-                        }
-                    }
+                    rate.push(false);
+                    rates_by_color[color].push(false);
                 }
             }
         }
@@ -197,29 +176,26 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
 
     std::map<std::string, std::string> overview;
 
+    std::map<double, Rates> rates;
+
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < files.size(); ++ii) {
         fs::path const& p = files[ii];
         Rates const result = analyzeRates(p, recursion);
 #pragma omp critical
         {
-            data[result.mean_dist] = std::to_string(result.mean_dist) + "\t"
-                    + std::to_string(result.rate) + "\t"
-                    + std::to_string(result.rates_by_color[0]) + "\t"
-                    + std::to_string(result.rates_by_color[1]) + "\t"
-                    + std::to_string(result.num_corners) + "\t"
-                    + result.filename;
-            overview[p.string()] = std::to_string(result.mean_dist) + "\t"
-                    + std::to_string(result.rate) + "\t"
-                    + std::to_string(result.rates_by_color[0]) + "\t"
-                    + std::to_string(result.rates_by_color[1]) + "\t"
-                    + std::to_string(result.num_corners);
+            rates[result.mean_dist] = result;
         }
     }
+    if (rates.empty()) {
+        return;
+    }
     std::ofstream logfile(dir + "-log");
-    for (auto const& it : data) {
-        if (it.first > 0) {
-            logfile << it.second << std::endl;
+    Rates previous = rates.begin()->second;
+    for (auto const& it : rates) {
+        if (it.first > 0 && it.second.rate >= previous.rate) {
+            logfile << it.second.getString() << "\t" << it.second.filename << std::endl;
+            previous = it.second;
         }
     }
     gnuplotio::Gnuplot plt;

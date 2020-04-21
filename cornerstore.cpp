@@ -70,6 +70,51 @@ CornerStore::CornerStore() :
 
 }
 
+std::vector<std::vector<Corner> > CornerStore::getSquares(const int cornerIdFactor, runningstats::QuantileStats<float> *distances) const
+{
+    std::vector<std::vector<Corner> > result;
+
+    for (auto const& c : corners) {
+        if (c.id.x % cornerIdFactor == 0 && c.id.y % cornerIdFactor == 0) {
+            bool has_square = true;
+            hdmarker::Corner neighbour;
+            std::vector<hdmarker::Corner> square;
+            square.push_back(c);
+            for (cv::Point2i const & id_offset : {
+                 cv::Point2i(0, cornerIdFactor),
+                 cv::Point2i(cornerIdFactor, cornerIdFactor),
+                 cv::Point2i(cornerIdFactor, 0)}) {
+                hdmarker::Corner search = c;
+                search.id += id_offset;
+                if (hasID(search, neighbour)) {
+                    square.push_back(neighbour);
+                    if (distances) {
+                        cv::Point2f const residual = c.p - neighbour.p;
+                        double const dist = 2*double(std::sqrt(residual.dot(residual)));
+                        distances->push_unsafe(dist/std::sqrt(id_offset.dot(id_offset)));
+                    }
+                }
+                else {
+                    has_square = false;
+                }
+            }
+            if (has_square) {
+                result.push_back(square);
+            }
+        }
+    }
+
+    return result;
+}
+
+std::vector<Corner> CornerStore::getSquaresTopLeft(int const cornerIdFactor, runningstats::QuantileStats<float> * distances) const {
+    std::vector<hdmarker::Corner> result;
+    for (auto const& it : getSquares(cornerIdFactor, distances)) {
+        result.push_back(it[0]);
+    }
+    return result;
+}
+
 CornerStore::CornerStore(const CornerStore &c) :
     idx_adapt(*this),
     pos_adapt(*this),
