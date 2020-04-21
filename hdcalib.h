@@ -632,6 +632,9 @@ class Calib {
 public:
     Calib();
 
+
+    cv::Mat_<uint8_t> getMainMarkersArea(std::vector<hdmarker::Corner> const& submarkers, const Scalar color = cv::Scalar::all(255), const int line = cv::LINE_AA);
+
     /**
      * @brief calculateUndistortion calculates the undistortion map using cv::initUndistortRectifyMap from OpenCV.
      * @return
@@ -1106,6 +1109,7 @@ public:
      */
     static std::vector<hdmarker::Corner> readCorners(const std::string &input_file);
     Vec3d get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec);
+    void plotPoly(cv::Mat &img, const std::vector<cv::Point> &poly, const cv::Scalar &color, const int line);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

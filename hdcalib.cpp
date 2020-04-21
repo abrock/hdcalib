@@ -146,6 +146,50 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
+void Calib::plotPoly(cv::Mat & img, std::vector<cv::Point> const& poly, cv::Scalar const& color, int const line) {
+    int num_points = poly.size();
+    cv::Point const * points = poly.data();
+    cv::fillPoly(img, &points, &num_points, 1, color, line);
+}
+
+cv::Mat_<uint8_t> Calib::getMainMarkersArea(const std::vector<Corner> &submarkers, cv::Scalar const color, int const line) {
+    cv::Mat_<uint8_t> result(imageSize, uint8_t(0));
+
+    CornerStore store(submarkers);
+    int const factor = getCornerIdFactor();
+
+    std::vector<std::vector<hdmarker::Corner> > const squares = store.getSquares(factor);
+
+    for (auto const& c : squares) {
+        std::vector<cv::Point> poly;
+        for (auto const& marker: c) {
+            poly.push_back(marker.p);
+        }
+        plotPoly(result, poly, color, line);
+    }
+    for (auto const& c : squares) {
+        std::vector<cv::Point> poly;
+        if (c[0].id.y == factor) {
+            poly.push_back(c[0].p);
+            poly.push_back(2*c[0].p -c[1].p);
+            poly.push_back(2*c[3].p -c[2].p);
+            poly.push_back(c[3].p);
+            plotPoly(result, poly, cv::Scalar(127), line);
+        }
+    }
+    for (auto const& c : squares) {
+        std::vector<cv::Point> poly;
+        if (c[0].id.x == factor) {
+            poly.push_back(c[0].p);
+            poly.push_back(2*c[0].p -c[3].p);
+            poly.push_back(2*c[1].p -c[2].p);
+            poly.push_back(c[1].p);
+            plotPoly(result, poly, cv::Scalar(127), line);
+        }
+    }
+    return result;
+}
+
 Mat Calib::calculateUndistortRectifyMap(CalibResult const& calib) {
     cv::Mat_<double> newCameraMatrix = calib.cameraMatrix.clone();
     // We want the principal point at the image center in the resulting images.
@@ -505,11 +549,30 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
         resolutionKnown = true;
     }
+    cv::Mat img_scaled;
 
     if (plotMarkers || !read_cache_success || (recursionDepth > 0 && !read_submarkers_success)) {
         img = readImage(input_file, demosaic, raw, useOnlyGreen);
+        if (img.empty()) {
+            clog::L("getCorners", 1) << "Input file empty, aborting." << std::endl;
+            return {};
+        }
+        if (demosaic) {
+            cv::imwrite(input_file + "-demosaiced.png", img);
+        }
+        img_scaled = img.clone();
         setImageSize(img);
 
+        double min = 0;
+        double max = 0;
+        cv::minMaxIdx(img, &min, &max);
+        if (img.depth() == CV_16U) {
+            img_scaled *= std::floor(65535.0 / max);
+            img_scaled.convertTo(img_scaled, CV_8UC1, 1.0 / 256.0);
+        }
+        else if (img.depth() == CV_8U) {
+            img_scaled *= std::floor(255.0 / max);
+        }
         if (img.channels() == 1 && (img.depth() == CV_16U || img.depth() == CV_16S)) {
             clog::L(__func__, 0) << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
             img.convertTo(img, CV_8UC1, 1.0 / 256.0);
@@ -535,7 +598,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         paint.convertTo(paint, CV_8UC1, 1.0 / 256.0);
     }
     if (!read_cache_success) {
-        detect(img, corners, use_rgb, 0, 10, effort);
+        detect(img_scaled, corners, use_rgb, 0, 10, effort);
         std::map<int, int> counter;
         for (auto const& it : corners) {
             counter[it.page]++;
@@ -563,11 +626,11 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     printf("final score %zu corners\n", corners.size());
 
     Mat gray;
-    if (img.channels() != 1) {
-        cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+    if (img_scaled.channels() != 1) {
+        cvtColor(img_scaled, gray, cv::COLOR_BGR2GRAY);
     }
     else {
-        gray = img;
+        gray = img_scaled;
     }
 
     if (recursionDepth > 0) {
@@ -590,6 +653,14 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             submarker_cache << "]";
             submarker_cache.release();
         }
+        cv::Mat_<uint8_t> main_markers_area = getMainMarkersArea(submarkers);
+        std::vector<hdmarker::Corner> keep_submarkers;
+        for (auto const& s : submarkers) {
+            if (main_markers_area(s.p) > 0) {
+                keep_submarkers.push_back(s);
+            }
+        }
+        submarkers = keep_submarkers;
 
 
         if (plotMarkers) {
