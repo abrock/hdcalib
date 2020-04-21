@@ -161,13 +161,17 @@ int main(int argc, char* argv[]) {
 
     for (size_t ii = 0; ii < input_files.size(); ++ii) {
         std::string const& input_file = input_files[ii];
+#if CATCH_EXCEPTIONS
         try {
+#endif
             calib.getCorners(input_file, effort, demosaic, libraw);
+#if CATCH_EXCEPTIONS
         }
         catch (const std::exception &e) {
             std::cout << "Reading file " << input_file << " failed with an exception: " << std::endl
                       << e.what() << std::endl;
         }
+#endif
     }
 
     return EXIT_SUCCESS;
