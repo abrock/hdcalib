@@ -74,6 +74,18 @@ struct Rates {
             throw std::runtime_error(std::string("rates_by_color has unexpected size ") + std::to_string(rates_by_color.size()) + ", expected 2.");
         }
     }
+
+    std::string getString() const {
+        return std::to_string(mean_dist) + "\t"
+                + std::to_string(rate) + "\t"
+                + std::to_string(rates_by_color[0]) + "\t"
+                + std::to_string(rates_by_color[1]) + "\t"
+                + std::to_string(num_corners);
+    }
+
+    Rates() {
+        rates_by_color.resize(2);
+    }
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Rates& x){
