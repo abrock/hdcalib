@@ -46,9 +46,9 @@ bool Calib::removeOutliers(std::string const& calibName, const double threshold)
     std::vector<hdmarker::Corner> outliers;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         findOutliers(calibName,
-                    threshold,
-                    ii,
-                    outliers);
+                     threshold,
+                     ii,
+                     outliers);
     }
     if (outliers.empty()) {
         return false;
@@ -456,7 +456,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     catch (const Exception& e) {
         clog::L(__func__, 0) << "Reading pointcache file failed with exception: " << std::endl
-                  << e.what() << std::endl;
+                             << e.what() << std::endl;
         read_cache_success = false;
     }
     if (read_cache_success) {
@@ -484,7 +484,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     catch (const Exception& e) {
         clog::L(__func__, 0) << "Reading pointcache file failed with exception: " << std::endl
-                     << e.what() << std::endl;
+                             << e.what() << std::endl;
         read_submarkers_success = false;
     }
     if (read_submarkers_success) {
@@ -598,12 +598,13 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
             }
             imwrite(input_file + "-2.png", paint2);
+            cv::imwrite(input_file + "-main-area.png", main_markers_area);
         }
 
         if (submarkers.size() <= corners.size()) {
             clog::L(__func__, 0) << "Warning: Number of submarkers (" << std::to_string(submarkers.size())
-                                     << ") smaller than or equal to the number of corners (" << std::to_string(corners.size()) << "), in input file"
-                                     << input_file << ", scaling ids." << std::endl;
+                                 << ") smaller than or equal to the number of corners (" << std::to_string(corners.size()) << "), in input file"
+                                 << input_file << ", scaling ids." << std::endl;
             int factor = 10;
             for (int ii = 1; ii < recursionDepth; ++ii) {
                 factor *=5;
@@ -744,11 +745,11 @@ double Calib::openCVCalib() {
                 );
 
     clog::L(__func__, 1) << "RMSE: " << result_err << std::endl
-                              << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl
-                              << "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
+                         << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl
+                         << "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
     clog::L(__func__, 2) << "stdDevIntrinsics: " << std::endl << res.stdDevIntrinsics << std::endl
-                              << "stdDevExtrinsics: " << std::endl << res.stdDevExtrinsics << std::endl
-                              << "perViewErrors: " << std::endl << res.perViewErrors << std::endl;
+                         << "stdDevExtrinsics: " << std::endl << res.stdDevExtrinsics << std::endl
+                         << "perViewErrors: " << std::endl << res.perViewErrors << std::endl;
 
     clog::L(__func__, 2) << "rvecs: " << std::endl;
     for (auto const& rvec: res.rvecs) {
@@ -774,13 +775,13 @@ double Calib::openCVCalib() {
 
     double const pixel_size = apertureWidth / imageSize.width;
     clog::L(__func__, 1) << "calibrationMatrixValues: " << std::endl
-                              << "fovx: " << fovx << std::endl
-                              << "fovy: " << fovy << std::endl
-                              << "focalLength: " << focalLength << std::endl
-                              << "principalPoint: " << principalPoint << std::endl
-                              << "aspectRatio: " << aspectRatio << std::endl
-                              << "input image size: " << imageSize << std::endl
-                              << "pixel size (um): " << pixel_size * 1000 << std::endl << std::endl;
+                         << "fovx: " << fovx << std::endl
+                         << "fovy: " << fovy << std::endl
+                         << "focalLength: " << focalLength << std::endl
+                         << "principalPoint: " << principalPoint << std::endl
+                         << "aspectRatio: " << aspectRatio << std::endl
+                         << "input image size: " << imageSize << std::endl
+                         << "pixel size (um): " << pixel_size * 1000 << std::endl << std::endl;
 
     cv::Point2d principal_point_offset = principalPoint - cv::Point2d(apertureWidth/2, apertureHeight/2);
     clog::L(__func__, 1) << "principal point offset: " << principal_point_offset << "mm; ~" << principal_point_offset/pixel_size << "px" << std::endl;
@@ -838,9 +839,9 @@ void Calib::findOutliers(
         hdmarker::Corner c = data[imageFiles[image_index]].get(ii);
         outliers.push_back(c);
         clog::L(__func__, 3) << "found outlier in image " << imageFiles[image_index]
-                   << ": id " << c.id << ", " << c.page << ", marker: "
-                   << markers[ii] << ", proj: " << projections[ii]
-                      << ", dist: " << error << std::endl;
+                                << ": id " << c.id << ", " << c.page << ", marker: "
+                                << markers[ii] << ", proj: " << projections[ii]
+                                   << ", dist: " << error << std::endl;
     }
     clog::L(__func__, 2) << "Stats for " << imageFiles[image_index] << ": inliers: " << inlier_stats.print() << ", outliers: " << outlier_stats.print() << std::endl;
 }

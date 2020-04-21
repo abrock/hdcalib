@@ -479,8 +479,7 @@ void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);
 void read(const cv::FileNode& node, CalibResult& x, const CalibResult& default_value = CalibResult());
 
 
-class Calib
-{
+class Calib {
     /**
      * @brief imageFiles vector of image filenames.
      */
