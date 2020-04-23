@@ -677,8 +677,10 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         cv::Mat_<uint8_t> main_markers_area = getMainMarkersArea(submarkers);
         std::vector<hdmarker::Corner> keep_submarkers;
         for (auto const& s : submarkers) {
-            if (main_markers_area(s.p) > 0) {
-                keep_submarkers.push_back(s);
+            if (s.p.x >= 0 && s.p.y >= 0 && s.p.x < main_markers_area.cols && s.p.y < main_markers_area.rows) {
+                if (main_markers_area(s.p) > 0) {
+                    keep_submarkers.push_back(s);
+                }
             }
         }
         submarkers = keep_submarkers;
