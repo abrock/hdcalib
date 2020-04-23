@@ -916,6 +916,8 @@ public:
 
     cv::Point3f getInitial3DCoord(cv::Point3i const& c, double const z = 0) const;
 
+    void setMarkerSize(const double size);
+
     double openCVCalib();
 
     double CeresCalib();

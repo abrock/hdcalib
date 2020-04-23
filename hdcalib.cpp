@@ -445,6 +445,10 @@ Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
     return res;
 }
 
+void Calib::setMarkerSize(double const size) {
+    markerSize = size;
+}
+
 CornerStore Calib::get(const string filename) const {
     auto const it = data.find(filename);
     if (it != data.end()) {

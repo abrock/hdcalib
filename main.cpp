@@ -68,6 +68,11 @@ int main(int argc, char* argv[]) {
                                           false, .5, "float");
         cmd.add(effort_arg);
 
+        TCLAP::ValueArg<float> marker_size_arg("m", "marker-size",
+                                          "Physical size (width/height) of the main markers.",
+                                          false, 1, "physical marker size");
+        cmd.add(marker_size_arg);
+
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
                                                "Cache file for the calibration results. "
                                                "This makes use of the opencv filestorage capabilities "
@@ -177,6 +182,7 @@ int main(int argc, char* argv[]) {
 
         calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
+        calib.setMarkerSize(marker_size_arg.getValue());
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
