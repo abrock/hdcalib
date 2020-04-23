@@ -190,6 +190,23 @@ cv::Mat_<uint8_t> Calib::getMainMarkersArea(const std::vector<Corner> &submarker
     return result;
 }
 
+void Calib::exportPointClouds(const string &calib_name) {
+    if (!hasCalibName(calib_name)) {
+        throw std::runtime_error(std::string("Calib name ") + calib_name + " not available in exportPointClouds.");
+    }
+    CalibResult & calib = calibrations[calib_name];
+
+    for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
+        std::string const& filename = imageFiles[ii];
+        std::ofstream out(filename + "-target-points.txt", std::ofstream::out);
+        CornerStore const& store = data[filename];
+        for (size_t jj = 0; jj < store.size(); ++jj) {
+            cv::Vec3d p = get3DPoint(calib, store.get(jj), calib.rvecs[ii], calib.tvecs[ii]);
+            out << p[0] << "\t" << p[1] << "\t" << p[2] << std::endl;
+        }
+    }
+}
+
 Mat Calib::calculateUndistortRectifyMap(CalibResult const& calib) {
     cv::Mat_<double> newCameraMatrix = calib.cameraMatrix.clone();
     // We want the principal point at the image center in the resulting images.

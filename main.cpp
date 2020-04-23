@@ -392,6 +392,8 @@ int main(int argc, char* argv[]) {
     clog::Logger::getInstance().printAll(std::cout, 1);
     TIMELOG("print all log entries");
 
+    calib.exportPointClouds("Flexible");
+
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;
 }
