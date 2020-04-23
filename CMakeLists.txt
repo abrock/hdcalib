@@ -35,9 +35,6 @@ include_directories(${RUNNINGSTATS_INCLUDE_DIRS})
 find_package(catlogger REQUIRED)
 include_directories(${CATLOGGER_INCLUDE_DIRS})
 
-find_package(Ceres REQUIRED)
-include_directories(${CERES_INCLUDE_DIRS})
-
 target_link_libraries(cornerstore hdcalib)
 target_link_libraries(hdcalib-readwrite
     calib-stats
