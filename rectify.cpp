@@ -181,13 +181,9 @@ int main(int argc, char ** argv) {
             const cv::Mat img = hdcalib::Calib::readImage(file, demosaic, libraw, only_green);
             cv::Mat remapped;
             cv::remap(img, remapped, remap, cv::Mat(), cv::INTER_LINEAR);
-            std::string added_extension = "";
-            if (fs::extension(file) != ".png") {
-                added_extension = ".png";
-            }
-            fs::path output_path = output_dir / (file + added_extension);
+            fs::path output_path = output_dir / (file + "-rect.png");
             cv::imwrite(output_path.string(), remapped);
-            cache << (file + added_extension) << std::endl;
+            cache << (file + "-rect.png") << std::endl;
         }
         if (!it.first.empty()) {
             std::ofstream out((output_dir/it.first).string());
