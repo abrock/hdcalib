@@ -19,6 +19,8 @@ void trim(std::string &s) {
     }).base(), s.end());
 }
 
+boost::system::error_code error_code;
+
 int main(int argc, char ** argv) {
 
     clog::Logger::getInstance().addListener(std::cout);
@@ -89,7 +91,7 @@ int main(int argc, char ** argv) {
 
 
         output_dir = output_arg.getValue();
-        fs::create_directories(output_dir);
+        fs::create_directories(output_dir, error_code);
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
