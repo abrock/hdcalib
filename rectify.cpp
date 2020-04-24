@@ -127,7 +127,8 @@ int main(int argc, char ** argv) {
                   << "demosaic: " << (demosaic ? "true" : "false") << std::endl
                   << "use libraw: " << (libraw ? "true" : "false") << std::endl
                   << "only green channel: " << (only_green ? "true" : "false") << std::endl
-                  << "output directory: " << output_dir << std::endl;
+                  << "output directory: " << output_dir << std::endl
+                  << "cache file: " << cache_file << std::endl;
 
         calib.only_green(only_green);
 #if CATCH_EXCEPTIONS
