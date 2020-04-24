@@ -34,7 +34,10 @@ int main(int argc, char ** argv) {
     std::string cache_file;
     size_t num_files = 0;
     std::string calibName = "Flexible";
+
+#if CATCH_EXCEPTIONS
     try {
+#endif
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
@@ -128,6 +131,7 @@ int main(int argc, char ** argv) {
                   << "output directory: " << output_dir << std::endl;
 
         calib.only_green(only_green);
+#if CATCH_EXCEPTIONS
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
@@ -137,6 +141,7 @@ int main(int argc, char ** argv) {
         std::cerr << "Unknown exception" << std::endl;
         return 0;
     }
+#endif
 
     bool has_cached_calib = false;
     if (fs::is_regular_file(cache_file)) {
