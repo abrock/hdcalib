@@ -384,7 +384,14 @@ void Calib::read(const FileNode &node) {
         addInputImage(name, corners);
     }
 
-
+    n = node["calibrations"];
+    if (n.isMap()) {
+        for(cv::FileNodeIterator it = n.begin(); it != n.end(); ++it) {
+            cv::FileNode node = *it;
+            std::string const key = node.name();
+            node >> calibrations[key];
+        }
+    }
 }
 
 void CalibResult::write(FileStorage &fs) const {
