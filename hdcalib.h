@@ -471,6 +471,28 @@ public:
      */
     cv::Mat_<double> rectification;
 
+    CalibResult() {}
+
+    CalibResult(const CalibResult &t) {
+        *this = t;
+    }
+
+    CalibResult& operator = (const CalibResult &t)
+    {
+        objectPointCorrections = t.objectPointCorrections;
+        cameraMatrix = t.cameraMatrix.clone();
+        distCoeffs = t.distCoeffs.clone();
+        stdDevIntrinsics = t.stdDevIntrinsics.clone();
+        stdDevExtrinsics = t.stdDevExtrinsics.clone();
+        perViewErrors = t.perViewErrors.clone();
+        rvecs = t.rvecs;
+        tvecs = t.tvecs;
+        imageFiles = t.imageFiles;
+        undistortRectifyMap = t.undistortRectifyMap.clone();
+        rectification = t.rectification.clone();
+        return *this;
+    }
+
     void write(cv::FileStorage & fs) const;
     void read(const FileNode &node);
 };
