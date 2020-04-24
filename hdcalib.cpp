@@ -207,13 +207,16 @@ void Calib::exportPointClouds(const string &calib_name) {
     }
 }
 
-Mat Calib::calculateUndistortRectifyMap(CalibResult const& calib) {
+Mat Calib::calculateUndistortRectifyMap(CalibResult & calib) {
     cv::Mat_<double> newCameraMatrix = calib.cameraMatrix.clone();
     // We want the principal point at the image center in the resulting images.
     newCameraMatrix(0,2) = imageSize.width/2;
     newCameraMatrix(1,2) = imageSize.height/2;
     cv::Mat tmp_dummy;
     cv::Mat rectification_3x3;
+    if (calib.rectification.empty()) {
+        calib.rectification = cv::Mat_<double>(3, 1, 0.0);
+    }
     if (calib.rectification.size() != Size(3,3)) {
         cv::Rodrigues(calib.rectification, rectification_3x3);
     }

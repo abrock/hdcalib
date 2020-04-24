@@ -641,7 +641,7 @@ public:
      * @brief calculateUndistortion calculates the undistortion map using cv::initUndistortRectifyMap from OpenCV.
      * @return
      */
-    cv::Mat calculateUndistortRectifyMap(const CalibResult &calib);
+    cv::Mat calculateUndistortRectifyMap(CalibResult &calib);
 
     /**
      * @brief getCachedUndistortRectifyMap returns the cached undistortRectifyMap and creates it if neccessary.
