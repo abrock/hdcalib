@@ -113,7 +113,6 @@ int main(int argc, char ** argv) {
                     }
                 }
             }
-            fs::copy_file(file, output_dir / fs::path(file), fs::copy_option::overwrite_if_exists);
         }
 
         if (input_files.empty()) {
