@@ -427,7 +427,7 @@ void Calib::rot_vec2mat(const T vec[], T mat[]) {
     T const theta = ceres::sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
     T const c = ceres::cos(theta);
     T const s = ceres::sin(theta);
-    T c1 = T(1) - c;
+    T const c1 = T(1) - c;
 
     // Calculate normalized vector.
     T const factor = (ceres::abs(theta) < std::numeric_limits<double>::epsilon() ? T(1) : T(1)/theta);
