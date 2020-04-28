@@ -122,7 +122,14 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion) {
     runningstats::BinaryStats rate;
     runningstats::BinaryStats rates_by_color[2];
 
-    for (auto const& c : store.getSquaresTopLeft(factor)) {
+    for (auto const& squares : store.getSquares(factor)) {
+        if (squares.size() != 4) {
+            continue;
+        }
+        hdmarker::Corner const& c = squares[0];
+        for (size_t ii = 0; ii < 4; ++ii) {
+            distances.push_unsafe(hdcalib::Calib::distance(squares[ii], squares[(ii + 1) % 4]) / (factor/2));
+        }
         for (int xx = 1; xx < factor; xx += 2) {
             for (int yy = 1; yy < factor; yy += 2) {
                 hdmarker::Corner search = c;
@@ -166,7 +173,7 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion) {
 void analyzeDirectory(std::string const& dir, int const recursion) {
     std::map<double, std::string> data;
     std::vector<fs::path> files;
-    for (fs::directory_iterator itr(dir); itr!=fs::directory_iterator(); ++itr) {
+    for (fs::recursive_directory_iterator itr(dir); itr!=fs::recursive_directory_iterator(); ++itr) {
         if (fs::is_regular_file(itr->status())
                 && stringEndsWith(itr->path().filename().string(), "-submarkers.yaml.gz")) {
             files.push_back(itr->path());

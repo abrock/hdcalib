@@ -655,6 +655,8 @@ public:
     Calib();
 
 
+    static double distance(hdmarker::Corner const& a, hdmarker::Corner const& b);
+
     cv::Mat_<uint8_t> getMainMarkersArea(std::vector<hdmarker::Corner> const& submarkers, const Scalar color = cv::Scalar::all(255), const int line = cv::LINE_AA);
 
     void exportPointClouds(std::string const& calib_name);

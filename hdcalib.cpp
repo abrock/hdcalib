@@ -146,6 +146,11 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
+double Calib::distance(const Corner &a, const Corner &b) {
+    cv::Point2f res = a.p - b.p;
+    return std::sqrt(res.dot(res));
+}
+
 void Calib::plotPoly(cv::Mat & img, std::vector<cv::Point> const& poly, cv::Scalar const& color, int const line) {
     int num_points = poly.size();
     cv::Point const * points = poly.data();
