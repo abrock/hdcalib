@@ -181,7 +181,7 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     }
     std::sort(files.begin(), files.end());
 
-    std::map<std::string, std::string> overview;
+    std::map<double, std::string> overview;
 
     std::map<double, Rates> rates;
 
@@ -200,9 +200,10 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     std::ofstream logfile(dir + "-log");
     Rates previous = rates.begin()->second;
     for (auto const& it : rates) {
-        if (it.first > 0 && it.second.rate >= previous.rate) {
+        if (it.first > 0) {
             logfile << it.second.getString() << "\t" << it.second.filename << std::endl;
             previous = it.second;
+            overview[it.first] = it.second.getString() + "\t" + it.second.filename;
         }
     }
     gnuplotio::Gnuplot plt;
