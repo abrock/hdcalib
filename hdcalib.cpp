@@ -814,18 +814,25 @@ std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {
     return result;
 }
 
-double Calib::openCVCalib() {
+double Calib::openCVCalib(bool const simple) {
     prepareOpenCVCalibration();
 
-    CalibResult & res = calibrations["OpenCV"];
+    CalibResult & res = calibrations[simple ? "SimpleOpenCV" : "OpenCV"];
 
     int flags = 0;
-    //flags |= CALIB_FIX_PRINCIPAL_POINT;
-    //flags |= CALIB_FIX_ASPECT_RATIO;
-    flags |= CALIB_RATIONAL_MODEL;
-    flags |= CALIB_THIN_PRISM_MODEL;
-    flags |= CALIB_TILTED_MODEL;
-
+    if (simple) {
+        flags |= CALIB_FIX_PRINCIPAL_POINT;
+        flags |= CALIB_FIX_ASPECT_RATIO;
+        flags |= CALIB_ZERO_TANGENT_DIST;
+        flags |= CALIB_FIX_K1 | CALIB_FIX_K2 | CALIB_FIX_K3 | CALIB_FIX_K4 | CALIB_FIX_K5 | CALIB_FIX_K6;
+        flags |= CALIB_FIX_S1_S2_S3_S4;
+        flags |= CALIB_FIX_TAUX_TAUY;
+    }
+    if (!simple) {
+        flags |= CALIB_RATIONAL_MODEL;
+        flags |= CALIB_THIN_PRISM_MODEL;
+        flags |= CALIB_TILTED_MODEL;
+    }
     if (imageSize.height == 5320 && imageSize.width == 7968) { // Hacky detection of my Sony setup.
         res.cameraMatrix = (Mat_<double>(3,3) << 12937, 0, 4083, 0, 12978, 2636, 0, 0, 1);
         flags |= CALIB_USE_INTRINSIC_GUESS;
@@ -847,8 +854,10 @@ double Calib::openCVCalib() {
                 );
 
     clog::L(__func__, 1) << "RMSE: " << result_err << std::endl
-                         << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl
-                         << "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
+                         << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl;
+                         //<< "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
+
+    /*
     clog::L(__func__, 2) << "stdDevIntrinsics: " << std::endl << res.stdDevIntrinsics << std::endl
                          << "stdDevExtrinsics: " << std::endl << res.stdDevExtrinsics << std::endl
                          << "perViewErrors: " << std::endl << res.perViewErrors << std::endl;
@@ -862,6 +871,7 @@ double Calib::openCVCalib() {
     for (auto const& tvec: res.tvecs) {
         clog::L(__func__, 2) << tvec << std::endl;
     }
+    */
 
     cv::calibrationMatrixValues (
                 res.cameraMatrix,

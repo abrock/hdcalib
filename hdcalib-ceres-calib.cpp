@@ -149,6 +149,87 @@ double Calib::CeresCalib() {
     return 0;
 }
 
+double Calib::SimpleCeresCalib() {
+    // Build the problem.
+    ceres::Problem problem;
+
+    prepareCalibration();
+
+    std::vector<std::vector<double> > local_rvecs(data.size()), local_tvecs(data.size());
+
+    if (!hasCalibName("SimpleCeres")) {
+        if (hasCalibName("SimpleOpenCV")) {
+            calibrations["SimpleCeres"] = calibrations["SimpleOpenCV"];
+        }
+    }
+
+    CalibResult & calib = calibrations["SimpleCeres"];
+
+    cv::Mat_<double> old_cam = calib.cameraMatrix.clone();
+
+    cv::Point2f const principal(double(imageSize.width-1)/2, double(imageSize.height-1)/2);
+
+    for (size_t ii = 0; ii < data.size(); ++ii) {
+        local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
+        local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
+
+        ceres::CostFunction * cost_function =
+                new ceres::AutoDiffCostFunction<
+                SimpleProjectionFunctor,
+                ceres::DYNAMIC,
+                1, // focal length f
+                3, // rotation vector for the target
+                3 // translation vector for the target
+                >(new SimpleProjectionFunctor(imagePoints[ii], objectPoints[ii], principal),
+                  int(2*imagePoints[ii].size()) // Number of residuals
+                  );
+        problem.AddResidualBlock(cost_function,
+                                 nullptr, // Loss function (nullptr = L2)
+                                 &calib.cameraMatrix(0,0), // focal length x
+                                 local_rvecs[ii].data(), // rotation vector for the target
+                                 local_tvecs[ii].data() // translation vector for the target
+                                 );
+
+    }
+
+
+    // Run the solver!
+    ceres::Solver::Options options;
+    options.num_threads = int(threads);
+    options.max_num_iterations = 150;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.minimizer_progress_to_stdout = true;
+    ceres::Solver::Summary summary;
+    Solve(options, &problem, &summary);
+
+    clog::L(__func__, 1) << summary.BriefReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
+
+    calib.rvecs.resize(local_rvecs.size());
+    calib.tvecs.resize(local_rvecs.size());
+    for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
+        calib.rvecs[ii] = vec2mat(local_rvecs[ii]);
+        calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
+    }
+    calib.cameraMatrix(1,1) = calib.cameraMatrix(0,0);
+    calib.imageFiles = imageFiles;
+
+    clog::L(__func__, 1) << "Parameters before: " << std::endl
+            << "Camera matrix: " << old_cam << std::endl;
+    clog::L(__func__, 1) << "Parameters after: " << std::endl
+            << "Camera matrix: " << calib.cameraMatrix << std::endl
+            << "Distortion: " << calib.distCoeffs << std::endl;
+    clog::L(__func__, 1) << "Difference: old - new" << std::endl
+            << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl;
+
+    hasCalibration = true;
+
+    return 0;
+}
+
 struct LocalCorrectionsSum {
     /**
     std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& local_corrections;
@@ -614,6 +695,36 @@ bool ProjectionFunctor::operator()(
     T const f[2] = {f_x[0], f_y[0]};
     T const c[2] = {c_x[0], c_y[0]};
     T result[2] = {T(0), T(0)};
+    for (size_t ii = 0; ii < markers.size(); ++ii) {
+        T point[3] = {T(points[ii].x), T(points[ii].y), T(points[ii].z)};
+        Calib::project(point, result, f, c, rot_mat, tvec, dist);
+        residuals[2*ii] = result[0] - T(markers[ii].x);
+        residuals[2*ii+1] = result[1] - T(markers[ii].y);
+    }
+    return true;
+}
+
+SimpleProjectionFunctor::SimpleProjectionFunctor(
+        const std::vector<Point2f> &_markers,
+        const std::vector<Point3f> &_points,
+        const cv::Point2f & _principal) :
+    markers(_markers),
+    points(_points),
+    principal(_principal) {
+}
+
+template<class T>
+bool SimpleProjectionFunctor::operator()(
+        const T * const focal,
+        const T * const rvec,
+        const T * const tvec,
+        T *residuals) const {
+    T rot_mat[9];
+    Calib::rot_vec2mat(rvec, rot_mat);
+    T const f[2] = {focal[0], focal[0]};
+    T const c[2] = {T(principal.x), T(principal.y)};
+    T result[2] = {T(0), T(0)};
+    T dist[14] = {T(0),T(0),T(0),T(0),T(0),T(0),T(0),T(0),T(0),T(0),T(0),T(0),T(0),T(0)};
     for (size_t ii = 0; ii < markers.size(); ++ii) {
         T point[3] = {T(points[ii].x), T(points[ii].y), T(points[ii].z)};
         Calib::project(point, result, f, c, rot_mat, tvec, dist);

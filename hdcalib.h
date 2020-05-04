@@ -326,6 +326,29 @@ struct VecLengthFunctor {
     bool operator() (T const * const vec, T * residual) const;
 };
 
+class SimpleProjectionFunctor {
+    std::vector<cv::Point2f> const& markers;
+    std::vector<cv::Point3f> const& points;
+
+    cv::Point2f const principal;
+
+public:
+    SimpleProjectionFunctor(std::vector<cv::Point2f> const& _markers,
+                            std::vector<cv::Point3f> const& _points,
+                            cv::Point2f const& _principal);
+    /*
+    1, // focal length f
+    3, // rotation vector for the target
+    3, // translation vector for the target
+    */
+    template<class T>
+    bool operator()(
+            T const* const focal,
+            T const* const rvec,
+            T const* const tvec,
+            T* residuals) const;
+};
+
 class ProjectionFunctor {
     std::vector<cv::Point2f> const& markers;
     std::vector<cv::Point3f> const& points;
@@ -642,6 +665,8 @@ class Calib {
 
     /**
      * @brief calibrations Map of calibrations calculated. Those keys are used:
+     * "SimpleOpenCV" -> simple calibration using the OpenCV calibration method ("calibrateCamer") but using only target positions and focal length as free parameters,
+     * no distortion and no central pixel estimation.
      * "OpenCV" -> Initial calibration using the OpenCV calibration method ("calibrateCamera").
      * "Ceres" -> Refinement using Ceres.
      * "Flexible" -> Refinement using Ceres and the flexible target model
@@ -777,11 +802,14 @@ public:
      * @param prefix prefix for all files.
      * @param suffix suffix for all files (before filename extension)
      */
-    void plotReprojectionErrors(const string &calibName, size_t const image_index,
-                                MarkerMap & residuals_by_marker,
-                                const std::string prefix = "",
-                                const std::string suffix = ""
-            );
+    void plotReprojectionErrors(const std::string &calibName,
+                                const size_t image_index,
+                                MarkerMap &residuals_by_marker,
+                                const std::string prefix,
+                                const std::string suffix,
+                                std::vector<float> &res_x,
+                                std::vector<float> &res_y);
+
 
     void plotErrorsByMarker(MarkerMap const& map,
                             const std::string prefix="",
@@ -942,7 +970,12 @@ public:
 
     void setMarkerSize(const double size);
 
-    double openCVCalib();
+    /**
+     * @brief openCVCalib Use OpenCV Calibration to get initial guess.
+     * @param simple Set this to true if no distortion or central pixel should be estimated, just target positions and focal length.
+     * @return
+     */
+    double openCVCalib(const bool simple = false);
 
     double CeresCalib();
 
@@ -1138,6 +1171,7 @@ public:
     static std::vector<hdmarker::Corner> readCorners(const std::string &input_file);
     Vec3d get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec);
     void plotPoly(cv::Mat &img, const std::vector<cv::Point> &poly, const cv::Scalar &color, const int line);
+    double SimpleCeresCalib();
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

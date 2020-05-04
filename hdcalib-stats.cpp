@@ -39,9 +39,11 @@ void Calib::printObjectPointCorrectionsStats(
 void Calib::plotReprojectionErrors(
         const std::string & calibName,
         const size_t image_index,
-                                   MarkerMap &residuals_by_marker,
-                                   const std::string prefix,
-                                   const std::string suffix) {
+        MarkerMap &residuals_by_marker,
+        const std::string prefix,
+        const std::string suffix,
+        std::vector<float>& res_x,
+        std::vector<float>& res_y) {
     auto & calib = getCalib(calibName);
     std::string const& filename = imageFiles[image_index];
 
@@ -81,6 +83,8 @@ void Calib::plotReprojectionErrors(
                             error});
             proj_x.push(marker.x, reprojection.x);
             proj_y.push(marker.y, reprojection.y);
+            res_x.push_back(marker.x - reprojection.x);
+            res_y.push_back(marker.y - reprojection.y);
             auto const id = getSimpleId(store.get(ii));
             residuals_by_marker[id].push_back(std::make_pair(marker, reprojection));
             errors.push_back(error);
@@ -249,10 +253,27 @@ void Calib::plotResidualsByMarkerStats(
 
 void Calib::plotReprojectionErrors(std::string const& calibName, const string prefix, const string suffix) {
     MarkerMap residuals_by_marker;
+    getCalib(calibName);
+    runningstats::QuantileStats<float> res_x, res_y, res_all;
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
-        plotReprojectionErrors(calibName, ii, residuals_by_marker, prefix, suffix);
+        std::vector<float> local_res_x, local_res_y;
+        plotReprojectionErrors(calibName, ii, residuals_by_marker, prefix, suffix, local_res_x, local_res_y);
+#pragma omp critical
+        {
+            for (auto const it : local_res_x) {
+                res_x.push_unsafe(it);
+                res_all.push_unsafe(it);
+            }
+            for (auto const it : local_res_y) {
+                res_y.push_unsafe(it);
+                res_all.push_unsafe(it);
+            }
+        }
     }
+    res_x.plotHist(prefix + "all-x" + suffix, res_x.FriedmanDiaconisBinSize(), false);
+    res_y.plotHist(prefix + "all-y" + suffix, res_y.FriedmanDiaconisBinSize(), false);
+    res_all.plotHist(prefix + "all-xy" + suffix, res_all.FriedmanDiaconisBinSize(), false);
     //plotErrorsByMarker(residuals_by_marker);
     plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
 }

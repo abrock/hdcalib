@@ -53,6 +53,7 @@ int main(int argc, char* argv[]) {
     bool verbose = true;
     bool gnuplot = false;
     std::vector<int> valid_pages;
+    std::string calibration_type;
     std::string cache_file;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
@@ -79,6 +80,13 @@ int main(int argc, char* argv[]) {
                                                "so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
                                                false, "", "Calibration cache.");
         cmd.add(cache_arg);
+
+        TCLAP::ValueArg<std::string> type_arg("t", "type",
+                                               "Type of the calibration to run. "
+                                               "Possibilities in increasing order of computational complexity:"
+                                               "SimpleOpenCV, OpenCV, Ceres, Flexible, SemiFlexible ",
+                                               true, "", "Calibration type.");
+        cmd.add(type_arg);
 
         TCLAP::SwitchArg demosaic_arg("d", "demosaic",
                                       "Use this flag if the input images are raw images and demosaicing should be used.",
@@ -114,6 +122,7 @@ int main(int argc, char* argv[]) {
                                                   "Text file with a list of input images.");
         cmd.add(textfile_arg);
 
+
         TCLAP::MultiArg<int> valid_pages_arg("",
                                              "valid",
                                              "Page number of a valid corner.",
@@ -141,6 +150,7 @@ int main(int argc, char* argv[]) {
         cache_file = cache_arg.getValue();
         gnuplot = gnuplot_arg.getValue();
         valid_pages = valid_pages_arg.getValue();
+        calibration_type = type_arg.getValue();
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -323,6 +333,43 @@ int main(int argc, char* argv[]) {
     calib.purgeInvalidPages();
 
     TIMELOG("Purging invalid pages");
+
+    if ("SimpleOpenCV" == calibration_type) {
+        calib.openCVCalib(true);
+        TIMELOG("Calib SimpleOpenCV");
+
+        calib.removeOutliers("SimpleOpenCV", 5);
+
+        if (gnuplot) {
+            calib.plotReprojectionErrors("SimpleOpenCV", "SimpleOpenCV/");
+            TIMELOG("plotReprojectionErrors SimpleOpenCV");
+        }
+
+        calib.SimpleCeresCalib();
+        TIMELOG("Calib SimpleCeres");
+
+        calib.removeOutliers("SimpleCeres", 5);
+
+        calib.SimpleCeresCalib();
+        TIMELOG("Calib SimpleCeres");
+
+        calib.removeOutliers("SimpleCeres", 2);
+        TIMELOG("Calib SimpleCeres");
+
+        calib.SimpleCeresCalib();
+        TIMELOG("Calib SimpleCeres");
+
+        if (gnuplot) {
+            calib.plotReprojectionErrors("SimpleCeres", "SimpleCeresCalib/");
+            TIMELOG("plotReprojectionErrors SimpleCeresCalib");
+        }
+
+        calib.exportPointClouds("SimpleCeres");
+        TIMELOG("exportPointClouds");
+
+
+        return EXIT_SUCCESS;
+    }
 
     clog::L("main", 2) << "checking for OpenCV calib: " << calib.hasCalibName("OpenCV") << std::endl;
 
