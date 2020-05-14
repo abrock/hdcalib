@@ -9,7 +9,7 @@ void Calib::insertSorted(std::vector<T>& a, std::vector<T1>& b, std::vector<T2>&
     if (a.size() != b.size() || a.size() != c.size()) {
         throw std::runtime_error(std::string("Sizes of arrays do not match: ")
                                  + std::to_string(a.size()) + ", "
-                                 + std::to_string(b.size())
+                                 + std::to_string(b.size()) + ", "
                                  + std::to_string(c.size()));
     }
     if (a.size() < 2) {
@@ -48,12 +48,16 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
     clog::L(__func__, 2) << "Adding image " << filename << "..." << std::flush;
     invalidateCache();
 
+    std::vector<std::string> const old_imageFiles = imageFiles;
+
     for (auto& it : calibrations) {
         it.second.rvecs.push_back(cv::Mat());
         it.second.tvecs.push_back(cv::Mat());
-        imageFiles.push_back(filename);
-        insertSorted(imageFiles, it.second.rvecs, it.second.tvecs);
-        it.second.imageFiles = imageFiles;
+
+        it.second.imageFiles = old_imageFiles;
+        it.second.imageFiles.push_back(filename);
+        insertSorted(it.second.imageFiles, it.second.rvecs, it.second.tvecs);
+        imageFiles = it.second.imageFiles;
 
         clog::L(__func__, 2) << "replacing corners..." << std::flush;
         CornerStore & ref = data[filename];
@@ -61,8 +65,8 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         ref.clean(cornerIdFactor);
 
         size_t index = 0;
-        for (; index < imageFiles.size(); ++index) {
-            if (filename == imageFiles[index]) {
+        for (; index < it.second.imageFiles.size(); ++index) {
+            if (filename == it.second.imageFiles[index]) {
                 break;
             }
         }
