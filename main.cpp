@@ -287,6 +287,8 @@ int main(int argc, char* argv[]) {
             TIMELOG("plotReprojectionErrors ceres3");
         }
 
+        calib.exportPointClouds("Flexible");
+
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
         fs.release();
