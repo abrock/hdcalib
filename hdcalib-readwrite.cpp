@@ -51,13 +51,14 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
     std::vector<std::string> const old_imageFiles = imageFiles;
 
     for (auto& it : calibrations) {
-        it.second.rvecs.push_back(cv::Mat());
-        it.second.tvecs.push_back(cv::Mat());
+        CalibResult & current_res = it.second;
+        current_res.rvecs.push_back(cv::Mat());
+        current_res.tvecs.push_back(cv::Mat());
 
-        it.second.imageFiles = old_imageFiles;
-        it.second.imageFiles.push_back(filename);
-        insertSorted(it.second.imageFiles, it.second.rvecs, it.second.tvecs);
-        imageFiles = it.second.imageFiles;
+        current_res.imageFiles = old_imageFiles;
+        current_res.imageFiles.push_back(filename);
+        insertSorted(current_res.imageFiles, current_res.rvecs, current_res.tvecs);
+        imageFiles = current_res.imageFiles;
 
         clog::L(__func__, 2) << "replacing corners..." << std::flush;
         CornerStore & ref = data[filename];
@@ -65,8 +66,8 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         ref.clean(cornerIdFactor);
 
         size_t index = 0;
-        for (; index < it.second.imageFiles.size(); ++index) {
-            if (filename == it.second.imageFiles[index]) {
+        for (; index < current_res.imageFiles.size(); ++index) {
+            if (filename == current_res.imageFiles[index]) {
                 break;
             }
         }
@@ -77,10 +78,10 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         bool const success = cv::solvePnP (
                     objectPoints[index],
                     imagePoints[index],
-                    it.second.cameraMatrix,
-                    it.second.distCoeffs,
-                    it.second.rvecs[index],
-                    it.second.tvecs[index]);
+                    current_res.cameraMatrix,
+                    current_res.distCoeffs,
+                    current_res.rvecs[index],
+                    current_res.tvecs[index]);
         ignore_unused(success);
         clog::L(__func__, 2) << "done." << std::endl;
     }
