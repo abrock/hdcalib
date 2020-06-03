@@ -397,6 +397,9 @@ void Calib::read(const FileNode &node) {
             node >> calibrations[key];
         }
     }
+    if (!calibrations.empty()) {
+        imageFiles = calibrations.begin()->second.imageFiles;
+    }
 }
 
 void CalibResult::write(FileStorage &fs) const {
