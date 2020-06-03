@@ -49,7 +49,6 @@ void Calib::plotReprojectionErrors(
 
 
     std::stringstream plot_command;
-    gnuplotio::Gnuplot plot;
 
     CornerStore const& store = data[filename];
 
@@ -111,6 +110,7 @@ void Calib::plotReprojectionErrors(
 
     } // #pragma omp critical (plotReprojectionErrors)
 
+    gnuplotio::Gnuplot plot;
     std::string const residuals_name = plot_name + ".residuals." + suffix;
     std::string const residuals_data = residuals_name + ".data";
     std::string const error_hist_data = plot_name + ".errors-hist." + suffix + ".data";
@@ -215,28 +215,43 @@ void Calib::plotResidualsByMarkerStats(
     }
 
     std::vector<std::pair<double, double> > mean_residuals_by_marker;
-    int max_x = 0, max_y = 0;
+    int max_x = 1, max_y = 1;
+    int min_x = 0, min_y = 0;
     for (auto const& it : map) {
-        cv::Point3f const f_coord = getInitial3DCoord(it.first);
+        cv::Point3f const f_coord = getInitial3DCoord(it.first) / markerSize;
         max_x = std::max(max_x, 1+int(std::ceil(f_coord.x)));
         max_y = std::max(max_y, 1+int(std::ceil(f_coord.y)));
+        min_x = std::min(min_x, int(std::floor(f_coord.x)));
+        min_y = std::min(min_y, int(std::floor(f_coord.y)));
     }
-    cv::Mat_<cv::Vec2f> residuals(max_y, max_x, cv::Vec2f(0,0));
-    cv::Mat_<uint8_t> errors(max_y, max_x, uint8_t(0));
+    cv::Size const plot_size(max_x - min_x, max_y - min_y);
+    cv::Mat_<cv::Vec2f> residuals(plot_size, cv::Vec2f(0,0));
+    cv::Mat_<uint8_t> errors(plot_size, uint8_t(0));
     for (auto const& it : map) {
         const cv::Point2f mean_res = meanResidual(it.second);
         mean_residuals_by_marker.push_back({mean_res.x, mean_res.y});
-        cv::Point3f const f_coord = getInitial3DCoord(it.first);
-        residuals(int(f_coord.y), int(f_coord.x)) = cv::Vec2f(mean_res);
-        errors(int(f_coord.y), int(f_coord.x)) = cv::saturate_cast<uint8_t>(255*std::sqrt(mean_res.dot(mean_res)));
+        cv::Point3f const f_coord = getInitial3DCoord(it.first) / markerSize;
+        int ii = int(std::round(f_coord.y)) - min_y;
+        int jj = int(std::round(f_coord.x)) - min_x;
+        if (ii < 0 || ii >= plot_size.height) {
+            continue;
+        }
+        if (jj < 0 || jj >= plot_size.width) {
+            continue;
+        }
+        residuals.at<cv::Vec2f>(ii, jj) = cv::Vec2f(mean_res);
+        errors.at<uint8_t>(int(f_coord.y), int(f_coord.x)) = cv::saturate_cast<uint8_t>(255*std::sqrt(mean_res.dot(mean_res)));
     }
 
-    std::stringstream plot_command;
     std::string plot_name = prefix + "residuals-by-marker";
 
     cv::writeOpticalFlow(plot_name + "." + suffix + ".flo", residuals);
     cv::imwrite(plot_name + ".errors." + suffix + ".png", errors);
 
+    residuals.deallocate();
+    errors.deallocate();
+
+    std::stringstream plot_command;
     gnuplotio::Gnuplot plot;
 
     plot_command << "set term svg enhanced background rgb \"white\";\n"
@@ -271,7 +286,8 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
             }
         }
     }
-    res_x.plotHist(prefix + "all-x" + suffix, res_x.FriedmanDiaconisBinSize(), false);
+    std::string name_x = prefix + "all-x" + suffix;
+    res_x.plotHist(name_x, res_x.FriedmanDiaconisBinSize(), false);
     res_y.plotHist(prefix + "all-y" + suffix, res_y.FriedmanDiaconisBinSize(), false);
     res_all.plotHist(prefix + "all-xy" + suffix, res_all.FriedmanDiaconisBinSize(), false);
     //plotErrorsByMarker(residuals_by_marker);
