@@ -232,15 +232,6 @@ int main(int argc, char* argv[]) {
     }
 
     if (has_cached_calib) {
-        removed = calib.removeAllOutliers(2);
-
-        TIMELOG("removeOutliers() #1");
-
-        if (removed) {
-            calib.CeresCalibFlexibleTarget();
-
-            TIMELOG("CeresCalibFlexibleTarget()");
-        }
         bool found_new_files = false;
 #pragma omp parallel for schedule(dynamic)
         for (size_t ii = 0; ii < input_files.size(); ++ii) {
