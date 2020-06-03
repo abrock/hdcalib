@@ -99,9 +99,9 @@ void read(const cv::FileNode& node, Rates& x, const Rates& default_value = Rates
         x.read(node);
 }
 
-Rates analyzeRates(fs::path const& file, int8_t const recursion) {
+Rates analyzeRates(fs::path const& file, int8_t const recursion, int const page) {
     Rates result;
-    fs::path const rates_cache_file = file.string() + "-rates-r" + std::to_string(recursion) + ".yaml";
+    fs::path const rates_cache_file = file.string() + "-rates-r" + std::to_string(recursion) + "-p" + std::to_string(page) + ".yaml";
     if (fs::is_regular_file(rates_cache_file)) {
         try {
             cv::FileStorage cache(rates_cache_file.string(), cv::FileStorage::READ);
@@ -112,7 +112,7 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion) {
                       << e.what() << std::endl;
         }
     }
-    std::vector<hdmarker::Corner> corners = hdcalib::Calib::readCorners(file.string());
+    std::vector<hdmarker::Corner> corners = hdcalib::Calib::purgeInvalidPages(hdcalib::Calib::readCorners(file.string()), {page});
     std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
     int const factor = hdcalib::Calib::computeCornerIdFactor(recursion);
 
@@ -170,7 +170,7 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion) {
     return result;
 }
 
-void analyzeDirectory(std::string const& dir, int const recursion) {
+void analyzeDirectory(std::string const& dir, int const recursion, int const page) {
     std::map<double, std::string> data;
     std::vector<fs::path> files;
     for (fs::recursive_directory_iterator itr(dir); itr!=fs::recursive_directory_iterator(); ++itr) {
@@ -188,7 +188,7 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < files.size(); ++ii) {
         fs::path const& p = files[ii];
-        Rates const result = analyzeRates(p, recursion);
+        Rates const result = analyzeRates(p, recursion, page);
 #pragma omp critical
         {
             rates[result.mean_dist] = result;
@@ -197,7 +197,8 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     if (rates.empty()) {
         return;
     }
-    std::ofstream logfile(dir + "-log");
+    std::string prefix = dir + std::to_string(page);
+    std::ofstream logfile(prefix + "-log");
     Rates previous = rates.begin()->second;
     for (auto const& it : rates) {
         if (it.first > 0) {
@@ -215,17 +216,17 @@ void analyzeDirectory(std::string const& dir, int const recursion) {
     }
 
     cmd << "set term svg enhanced background rgb \"white\";\n"
-        << "set output \"" << dir << "-log.svg\";\n"
+        << "set output \"" << prefix << "-log.svg\";\n"
         << "set title 'Marker detection rates';\n"
-        << "set xrange [3:15];\n"
+        << "set xrange [4.5:10];\n"
         << "set yrange [0:100];\n"
         << "set xlabel 'submarker distance [px]';\n"
         << "set ylabel 'detection rate [%]';\n"
-        << "plot '" << dir << "-log' u 1:2 w lp title 'combined rate',"
+        << "plot '" << prefix << "-log' u 1:2 w lp title 'combined rate',"
         << "'' u 1:3 w lp title 'black rate',"
         << "'' u 1:4 w lp title 'white rate'\n";
     plt << cmd.str();
-    std::ofstream gpl_file(dir + "-log.gpl");
+    std::ofstream gpl_file(prefix + "-log.gpl");
     gpl_file << cmd.str();
 }
 
@@ -238,6 +239,7 @@ int main(int argc, char ** argv) {
 
     std::vector<std::string> input_dirs;
     int recursion_depth = -1;
+    std::vector<int> pages;
 
     try {
         TCLAP::CmdLine cmd("hdcalib tool for analyzing submarker detection rates", ' ', "0.1");
@@ -246,6 +248,11 @@ int main(int argc, char ** argv) {
                                                  "Recursion depth of the sub-marker detection. Set this to the actual recursion depth of the used target.",
                                                  false, -1, "int");
         cmd.add(recursive_depth_arg);
+
+        TCLAP::MultiArg<int> pages_arg("p", "pages",
+                                                 "page number (s) of the calibration target.",
+                                                 true, "int");
+        cmd.add(pages_arg);
 
         TCLAP::MultiArg<std::string> directories_arg("i",
                                                      "input",
@@ -257,6 +264,7 @@ int main(int argc, char ** argv) {
 
         cmd.parse(argc, argv);
 
+        pages = pages_arg.getValue();
 
         recursion_depth = recursive_depth_arg.getValue();
         if (recursion_depth < 1) {
@@ -284,8 +292,29 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
+    for (int const page : pages) {
+        for (auto const& dir : input_dirs) {
+            analyzeDirectory(dir, recursion_depth, page);
+        }
+    }
     for (auto const& dir : input_dirs) {
-        analyzeDirectory(dir, recursion_depth);
+        gnuplotio::Gnuplot plt;
+        std::stringstream cmd;
+        cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << ".svg';\n"
+            << "set title 'Marker detection rates';\n"
+            << "set xrange [4:10];\n"
+            << "set yrange [0:100];\n"
+            << "set xlabel 'submarker distance [px]';\n"
+            << "set ylabel 'detection rate [%]';\n"
+            << "set key out horiz;\n"
+            << "plot '" << dir << pages[0] << "-log' u 1:2 w lp title '" << pages[0] << "'";
+        for (size_t ii = 1; ii < pages.size(); ++ii) {
+            cmd << ", '" << dir << pages[ii] << "-log' u 1:2 w lp title '" << pages[ii] << "'";
+        }
+        plt << cmd.str();
+        std::ofstream gpl_file(std::string("all-") + dir + "-log.gpl");
+        gpl_file << cmd.str();
     }
 
     std::cout << "Total time: " << total_time.print() << std::endl;
