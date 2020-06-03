@@ -172,6 +172,7 @@ cv::Mat_<uint8_t> Calib::getMainMarkersArea(const std::vector<Corner> &submarker
         }
         plotPoly(result, poly, color, line);
     }
+    /*
     for (auto const& c : squares) {
         std::vector<cv::Point> poly;
         if (c[0].id.y == factor) {
@@ -192,6 +193,7 @@ cv::Mat_<uint8_t> Calib::getMainMarkersArea(const std::vector<Corner> &submarker
             plotPoly(result, poly, cv::Scalar(127), line);
         }
     }
+    */
     return result;
 }
 
@@ -691,7 +693,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 }
             }
         }
-        submarkers = keep_submarkers;
+        //submarkers = keep_submarkers;
 
 
         if (plotMarkers) {
