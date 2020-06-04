@@ -115,6 +115,17 @@ std::vector<Corner> CornerStore::getSquaresTopLeft(int const cornerIdFactor, run
     return result;
 }
 
+std::vector<hdmarker::Corner> CornerStore::getMainMarkers(const int cornerIdFactor) const {
+    std::vector<hdmarker::Corner> result;
+    for (hdmarker::Corner const& c : corners) {
+        if (0 == (c.id.x % cornerIdFactor)
+                && 0 == (c.id.y % cornerIdFactor)) {
+            result.push_back(c);
+        }
+    }
+    return result;
+}
+
 CornerStore::CornerStore(const CornerStore &c) :
     idx_adapt(*this),
     pos_adapt(*this),
@@ -354,6 +365,32 @@ bool CornerStore::purgeDuplicates() {
         return true;
     }
     return false;
+}
+
+bool CornerStore::purgeOutOfBounds(const int min_x, const int min_y, const int max_x, const int max_y) {
+    std::vector<hdmarker::Corner> keep;
+    keep.reserve(size());
+    for (hdmarker::Corner const& c : corners) {
+        if (c.id.x >= min_x
+                && c.id.y >= min_y
+                && c.id.x <= max_x
+                && c.id.y <= max_y) {
+            keep.push_back(c);
+        }
+    }
+    if (size() != keep.size()) {
+        replaceCorners(keep);
+        return true;
+    }
+    return false;
+}
+
+string Calib::printAllCameraMatrices() {
+    std::stringstream result;
+    for (auto & it : calibrations) {
+        result << it.first << std::endl << it.second.cameraMatrix << std::endl << std::endl;
+    }
+    return result.str();
 }
 
 bool CornerStore::purge32() {

@@ -146,6 +146,80 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
+void Calib::setMaxOutlierPercentage(const double new_val) {
+    max_outlier_percentage = new_val;
+}
+
+void Calib::deleteCalib(const string name) {
+    auto it = calibrations.find(name);
+    if (it != calibrations.end()) {
+        calibrations.erase(it);
+    }
+}
+
+void Calib::setCauchyParam(const double new_val) {
+    cauchy_param = new_val;
+}
+
+void Calib::plotResidualsIntoImages(const string calib_name) {
+    CalibResult & calib = getCalib(calib_name);
+
+    size_t counter = 0;
+#pragma omp parallel for schedule(dynamic)
+    for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
+        std::vector<cv::Point2d> markers, reprojections;
+        getReprojections(calib, ii, markers, reprojections);
+        cv::Mat img = readImage(imageFiles[ii], demosaic, libraw, useOnlyGreen);
+        if (1 == img.channels()) {
+            cv::Mat _img[3] = {img, img, img};
+            cv::merge(_img, 3, img);
+        }
+        for (size_t jj = 0; jj < markers.size(); ++jj) {
+            cv::Point2d const & marker = markers[jj];
+            cv::Point2d const & repr = reprojections[jj];
+            cv::Point2d const residual = marker - repr;
+            double const err_sq = residual.dot(residual);
+            cv::circle(img, marker, 2, cv::Scalar(0,0,255), cv::FILLED);
+            cv::Scalar line_color = err_sq > outlier_threshold * outlier_threshold ? cv::Scalar(0,255,255) : cv::Scalar(0,255,0);
+            cv::Scalar target_color = err_sq > outlier_threshold * outlier_threshold ? cv::Scalar(0,255,255) : cv::Scalar(0,255,0);
+            cv::circle(img, repr, 2, target_color, cv::FILLED);
+            cv::line(img, marker, repr, line_color, 3, cv::LINE_AA);
+        }
+        cv::imwrite(imageFiles[ii] + "-repr.png", img);
+#pragma omp critical
+        {
+            clog::L(__func__, 2) << "Plotted " << ++counter << " out of " << imageFiles.size() << " files" << std::endl;
+        }
+    }
+}
+
+void Calib::setOutlierThreshold(const double new_val) {
+    outlier_threshold = new_val;
+}
+
+void Calib::purgeUnlikelyByDetectedRectangles() {
+    int min_x = std::numeric_limits<int>::max();
+    int min_y = std::numeric_limits<int>::max();
+    int max_x = 0;
+    int max_y = 0;
+    cornerIdFactor = computeCornerIdFactor(recursionDepth);
+    for (auto const& it : data) {
+        CornerStore const & store = it.second;
+        std::vector<hdmarker::Corner> main_markers = store.getMainMarkers(cornerIdFactor);
+        for (hdmarker::Corner const& c : main_markers) {
+            min_x = std::min(min_x, c.id.x);
+            min_y = std::min(min_y, c.id.y);
+            max_x = std::max(max_x, c.id.x);
+            max_y = std::max(max_y, c.id.y);
+        }
+    }
+    clog::L(__func__, 2) << "Rect limit: (" << min_x << ", " << min_y << ") / (" << max_x << ", " << max_y << ")" << std::endl;
+    for (auto & it : data) {
+        CornerStore & store = it.second;
+        store.purgeOutOfBounds(min_x, min_y, max_x, max_y);
+    }
+}
+
 double Calib::distance(const Corner &a, const Corner &b) {
     cv::Point2f res = a.p - b.p;
     return std::sqrt(res.dot(res));
@@ -197,24 +271,34 @@ cv::Mat_<uint8_t> Calib::getMainMarkersArea(const std::vector<Corner> &submarker
     return result;
 }
 
-void Calib::exportPointClouds(const string &calib_name) {
+void Calib::exportPointClouds(const string &calib_name, double const outlier_threshold) {
     if (!hasCalibName(calib_name)) {
         throw std::runtime_error(std::string("Calib name ") + calib_name + " not available in exportPointClouds.");
     }
+    prepareCalibration();
     CalibResult & calib = calibrations[calib_name];
 
+    std::vector<cv::Point2d> markers, reprojections;
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
         std::string const& filename = imageFiles[ii];
-        std::ofstream out(filename + "-target-points.txt", std::ofstream::out);
+        std::ofstream out(filename + "-" + calib_name + "-target-points.txt", std::ofstream::out);
         CornerStore const& store = data[filename];
+        getReprojections(calib, ii, markers, reprojections);
+        if (markers.size() != reprojections.size() || markers.size() != store.size()) {
+            throw std::runtime_error("Vector sizes don't match in exportPointClouds");
+        }
         for (size_t jj = 0; jj < store.size(); ++jj) {
-            cv::Vec3d p = get3DPoint(calib, store.get(jj), calib.rvecs[ii], calib.tvecs[ii]);
-            out << p[0] << "\t" << p[1] << "\t" << p[2] << std::endl;
+            if (outlier_threshold <= 0 || distance(markers[jj], reprojections[jj]) < outlier_threshold) {
+                cv::Vec3d p = get3DPoint(calib, store.get(jj), calib.rvecs[ii], calib.tvecs[ii]);
+                out << p[0] << "\t" << p[1] << "\t" << p[2] << std::endl;
+            }
         }
     }
 }
 
 Mat Calib::calculateUndistortRectifyMap(CalibResult & calib) {
+    clog::L(__func__, 2) << "initial cameraMatrix: " << calib.cameraMatrix << std::endl;
+
     cv::Mat_<double> newCameraMatrix = calib.cameraMatrix.clone();
     // We want the principal point at the image center in the resulting images.
     //newCameraMatrix(0,2) = imageSize.width/2;
@@ -236,11 +320,15 @@ Mat Calib::calculateUndistortRectifyMap(CalibResult & calib) {
                                 calib.undistortRectifyMap,
                                 tmp_dummy);
 
+    clog::L(__func__, 2) << "final cameraMatrix: " << newCameraMatrix << std::endl;
+    clog::L(__func__, 2) << "arguments for pointcloud renderer: -f " << std::sqrt(newCameraMatrix(0,0) * newCameraMatrix(1,1))
+                         << " --cx " << newCameraMatrix(0,2) << " --cy " << newCameraMatrix(1,2) << std::endl;
+
     return calib.undistortRectifyMap;
 }
 
 Mat Calib::getCachedUndistortRectifyMap(std::string const& calibName) {
-    CalibResult & calib = calibrations[calibName];
+    CalibResult & calib = getCalib(calibName);
     if (calib.undistortRectifyMap.size() != imageSize) {
         calculateUndistortRectifyMap(calib);
     }
@@ -514,6 +602,10 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     std::string submarkers_file = input_file + "-submarkers.yaml.gz";
     vector<Corner> corners, submarkers;
 
+    this->effort = effort;
+    this->demosaic = demosaic;
+    this->libraw = raw;
+
     Mat img, paint;
 
     bool read_cache_success = false;
@@ -693,7 +785,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 }
             }
         }
-        //submarkers = keep_submarkers;
+        submarkers = keep_submarkers;
 
 
         if (plotMarkers) {
@@ -819,9 +911,15 @@ std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {
 double Calib::openCVCalib(bool const simple) {
     prepareOpenCVCalibration();
 
-    CalibResult & res = calibrations[simple ? "SimpleOpenCV" : "OpenCV"];
+    std::string const name = simple ? "SimpleOpenCV" : "OpenCV";
+    bool const has_precalib = hasCalibName(name);
+    CalibResult & res = calibrations[name];
 
     int flags = 0;
+    flags |= CALIB_USE_LU;
+    if (has_precalib) {
+        flags |= CALIB_USE_INTRINSIC_GUESS;
+    }
     if (simple) {
         flags |= CALIB_FIX_PRINCIPAL_POINT;
         flags |= CALIB_FIX_ASPECT_RATIO;
@@ -907,6 +1005,22 @@ double Calib::openCVCalib(bool const simple) {
     res.imageFiles = imageFiles;
 
     return result_err;
+}
+
+double Calib::runCalib(const string name, const double outlier_threshold) {
+    if ("OpenCV" == name) {
+        return openCVCalib(false);
+    }
+    if ("SimpleOpenCV" == name) {
+        return openCVCalib(true);
+    }
+    if ("Ceres" == name) {
+        return CeresCalib(outlier_threshold);
+    }
+    if ("Flexible" == name) {
+        return CeresCalibFlexibleTarget(outlier_threshold);
+    }
+    throw std::runtime_error(std::string("Calib type ") + name + " unknown");
 }
 
 void Calib::setPlotMarkers(bool plot) {

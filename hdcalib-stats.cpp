@@ -228,6 +228,7 @@ void Calib::plotResidualsByMarkerStats(
     cv::Size const plot_size(max_x - min_x, max_y - min_y);
     cv::Mat_<cv::Vec2f> residuals(plot_size, cv::Vec2f(0,0));
     cv::Mat_<uint8_t> errors(plot_size, uint8_t(0));
+    cv::Mat_<float> errors_raw(plot_size, uint8_t(0));
     for (auto const& it : map) {
         const cv::Point2f mean_res = meanResidual(it.second);
         mean_residuals_by_marker.push_back({mean_res.x, mean_res.y});
@@ -241,13 +242,15 @@ void Calib::plotResidualsByMarkerStats(
             continue;
         }
         residuals.at<cv::Vec2f>(ii, jj) = cv::Vec2f(mean_res);
-        errors.at<uint8_t>(int(f_coord.y), int(f_coord.x)) = cv::saturate_cast<uint8_t>(255*std::sqrt(mean_res.dot(mean_res)));
+        errors.at<uint8_t>(ii, jj) = cv::saturate_cast<uint8_t>(255*std::sqrt(mean_res.dot(mean_res)));
+        errors_raw.at<float>(ii, jj) = std::sqrt(mean_res.dot(mean_res));
     }
 
     std::string plot_name = prefix + "residuals-by-marker";
 
     cv::writeOpticalFlow(plot_name + "." + suffix + ".flo", residuals);
     cv::imwrite(plot_name + ".errors." + suffix + ".png", errors);
+    cv::imwrite(plot_name + ".errors." + suffix + ".pfm", errors_raw);
 
     residuals.deallocate();
     errors.deallocate();

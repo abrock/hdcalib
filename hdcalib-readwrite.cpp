@@ -406,6 +406,8 @@ void CalibResult::write(FileStorage &fs) const {
     fs << "{"
        << "cameraMatrix" << cameraMatrix
        << "distCoeffs" << distCoeffs;
+    fs << "outlier_percentages" << outlier_percentages;
+    fs << "rectification" << rectification;
 
     fs << "images" << "[";
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
@@ -427,14 +429,14 @@ void CalibResult::write(FileStorage &fs) const {
         }
     }
     fs << "]";
-    fs << "rectification" << rectification;
-
     fs << "}";
 }
 
 void CalibResult::read(const FileNode &node) {
     node["cameraMatrix"] >> cameraMatrix;
     node["distCoeffs"] >> distCoeffs;
+    node["rectification"] >> rectification;
+    node["outlier_percentages"] >> outlier_percentages;
     FileNode n = node["objectPointCorrections"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
         throw std::runtime_error("Error while reading cached calibration result: objectPointCorrections is not a sequence. Aborting.");
@@ -462,8 +464,6 @@ void CalibResult::read(const FileNode &node) {
         tvecs.push_back(tvec);
         //cv::FileNode corners_node = (*it)["corners"];
     }
-
-    node["rectification"] >> rectification;
 }
 
 

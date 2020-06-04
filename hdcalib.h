@@ -154,6 +154,7 @@ public:
 
 
     std::vector<hdmarker::Corner> getSquaresTopLeft(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
+    std::vector<hdmarker::Corner> getMainMarkers(int const cornerIdFactor) const;
 
     std::vector<std::vector<hdmarker::Corner> > getSquares(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
 
@@ -236,6 +237,8 @@ public:
      * @return true if duplicates were found.
      */
     bool purgeDuplicates();
+
+    bool purgeOutOfBounds(int const min_x, int const min_y, int const max_x, int const max_y);
 
     /**
      * @brief purge32 removes markers where the id's x or y component is 32 and where a second
@@ -453,6 +456,8 @@ public:
      * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
      */
     cv::Mat_<double> cameraMatrix;
+
+    std::vector<double> outlier_percentages;
 
     /**
      * @brief distCoeffs distortion coefficients
@@ -676,15 +681,41 @@ class Calib {
      */
     std::map<std::string, CalibResult> calibrations;
 
+    /**
+     * @brief max_outlier_percentage Maximum percentage of outliers for an image to be included in the Ceres calibration methods.
+     */
+    double max_outlier_percentage = 105;
+
+    double cauchy_param;
+
+    bool demosaic = false;
+    bool libraw = false;
+    double effort = 0.5;
+    double outlier_threshold = 5;
+
 public:
     Calib();
+
+    std::string printAllCameraMatrices();
+
+    void setMaxOutlierPercentage(double const new_val);
+
+    void deleteCalib(std::string const name);
+
+    void setCauchyParam(double const new_val);
+
+    void plotResidualsIntoImages(std::string const calib_name);
+
+    void setOutlierThreshold(double const new_val);
+
+    void purgeUnlikelyByDetectedRectangles();
 
 
     static double distance(hdmarker::Corner const& a, hdmarker::Corner const& b);
 
     cv::Mat_<uint8_t> getMainMarkersArea(std::vector<hdmarker::Corner> const& submarkers, const Scalar color = cv::Scalar::all(255), const int line = cv::LINE_AA);
 
-    void exportPointClouds(std::string const& calib_name);
+    void exportPointClouds(std::string const& calib_name, const double outlier_threshold = -1);
 
     /**
      * @brief calculateUndistortion calculates the undistortion map using cv::initUndistortRectifyMap from OpenCV.
@@ -977,6 +1008,8 @@ public:
      */
     double openCVCalib(const bool simple = false);
 
+    double runCalib(std::string const name, double const outlier_threshold = -1);
+
     /**
      * @brief CeresCalib run the OpenCV calibration re-implemented using Ceres.
      * @param outlier_threshold maximum distance between marker and reprojection when building the problem.
@@ -1192,7 +1225,7 @@ private:
             const int8_t axis,
             double rot_vec[]);
 
-    double ceres_tolerance = 1e-12;
+    double ceres_tolerance = 1e-10;
 
     template<class T>
     void ignore_unused(T&) {}

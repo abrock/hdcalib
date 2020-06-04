@@ -84,7 +84,6 @@ int main(int argc, char ** argv) {
 
 
         input_files[""] = input_img_arg.getValue();
-        num_files += input_img_arg.getValue().size();
 
         libraw = read_raw_arg.getValue();
         only_green = only_green_arg.getValue();
@@ -106,7 +105,6 @@ int main(int argc, char ** argv) {
                 trim(line);
                 if (fs::is_regular_file(line)) {
                     input_files[file].push_back(line);
-                    num_files++;
                     fs::path p(line);
                     if (p.has_parent_path()) {
                         fs::create_directories(output_dir / p.parent_path());
@@ -122,13 +120,15 @@ int main(int argc, char ** argv) {
             return EXIT_FAILURE;
         }
 
+        calibName = calibNameArg.getValue();
         std::cout << "Parameters: " << std::endl
                   << "Number of input files: " << input_files.size() << std::endl
                   << "demosaic: " << (demosaic ? "true" : "false") << std::endl
                   << "use libraw: " << (libraw ? "true" : "false") << std::endl
                   << "only green channel: " << (only_green ? "true" : "false") << std::endl
                   << "output directory: " << output_dir << std::endl
-                  << "cache file: " << cache_file << std::endl;
+                  << "cache file: " << cache_file << std::endl
+                  << "calib name: " << calibName << std::endl;
 
         calib.only_green(only_green);
 #if CATCH_EXCEPTIONS
@@ -170,25 +170,28 @@ int main(int argc, char ** argv) {
         return EXIT_FAILURE;
     }
 
-    const cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap("Flexible");
+    const cv::Mat_<cv::Vec2f> remap = calib.getCachedUndistortRectifyMap(calibName);
 
-    size_t ii = 0;
+    std::vector<std::string> images;
     for (const auto& it : input_files) {
-        std::stringstream cache;
         for (const auto& file : it.second) {
-            ii++;
-            clog::L(__func__, 1) << "Remapping file " << ii << " out of " << num_files << ": " << file << std::endl;
-            const cv::Mat img = hdcalib::Calib::readImage(file, demosaic, libraw, only_green);
-            cv::Mat remapped;
-            cv::remap(img, remapped, remap, cv::Mat(), cv::INTER_LINEAR);
-            fs::path output_path = output_dir / (file + "-rect.png");
-            cv::imwrite(output_path.string(), remapped);
-            cache << (file + "-rect.png") << std::endl;
+            images.push_back(file);
         }
-        if (!it.first.empty()) {
-            std::ofstream out((output_dir/it.first).string());
-            out << cache.str();
+    }
+
+    size_t counter = 0;
+#pragma omp parallel for schedule(dynamic)
+    for (size_t ii = 0; ii < images.size(); ++ii) {
+        std::string const& file = images[ii];
+#pragma omp critical
+        {
+            clog::L(__func__, 1) << "Remapping file " << ++counter << " out of " << images.size() << ": " << file << std::endl;
         }
+        const cv::Mat img = hdcalib::Calib::readImage(file, demosaic, libraw, only_green);
+        cv::Mat remapped;
+        cv::remap(img, remapped, remap, cv::Mat(), cv::INTER_LINEAR);
+        fs::path output_path = output_dir / (file + "-rect.png");
+        cv::imwrite(output_path.string(), remapped);
     }
 
     return EXIT_SUCCESS;

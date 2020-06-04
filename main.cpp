@@ -52,10 +52,13 @@ int main(int argc, char* argv[]) {
     bool only_green = false;
     bool verbose = true;
     bool gnuplot = false;
+    bool del = false;
     std::vector<int> valid_pages;
     std::string calibration_type;
     std::string cache_file;
-    double outlier_threshold = 5;
+    double outlier_threshold = 20;
+    double max_outlier_percentage = 105;
+    double cauchy_param = 1;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -70,10 +73,26 @@ int main(int argc, char* argv[]) {
                                           false, .5, "float");
         cmd.add(effort_arg);
 
+        TCLAP::ValueArg<float> cauchy_param_arg("", "cauchy",
+                                          "Scale parameter (px) for the cauchy loss. Use negative numbers to disable the robust solving (not recommended "
+                                          "except you know exactly what you're doing).",
+                                          false, 1, "cauchy loss scale [px]");
+        cmd.add(cauchy_param_arg);
+
         TCLAP::ValueArg<float> marker_size_arg("m", "marker-size",
                                                "Physical size (width/height) of the main markers.",
                                                false, 1, "physical marker size");
         cmd.add(marker_size_arg);
+
+        TCLAP::ValueArg<float> max_outlier_arg("", "mout",
+                                               "Maximum outlier percentage for an image to be included in the calibration.",
+                                               false, 105, "max. outlier percentage");
+        cmd.add(max_outlier_arg);
+
+        TCLAP::ValueArg<float> outlier_threshold_arg("", "thresh",
+                                               "Maximum error from previous calibrations for a marker to be included in the calibration.",
+                                               false, 20, "max. error threshold");
+        cmd.add(outlier_threshold_arg);
 
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
                                                "Cache file for the calibration results. "
@@ -93,6 +112,11 @@ int main(int argc, char* argv[]) {
                                       "Use this flag if the input images are raw images and demosaicing should be used.",
                                       false);
         cmd.add(demosaic_arg);
+
+        TCLAP::SwitchArg delete_arg("", "del",
+                                      "Delete the specified calibration in order to re-calculate it.",
+                                      false);
+        cmd.add(delete_arg);
 
         TCLAP::SwitchArg read_raw_arg("", "raw",
                                       "Use this flag if the input images are raw images "
@@ -152,6 +176,10 @@ int main(int argc, char* argv[]) {
         gnuplot = gnuplot_arg.getValue();
         valid_pages = valid_pages_arg.getValue();
         calibration_type = type_arg.getValue();
+        max_outlier_percentage = max_outlier_arg.getValue();
+        del = delete_arg.getValue();
+        outlier_threshold = outlier_threshold_arg.getValue();
+        cauchy_param = cauchy_param_arg.getValue();
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -194,6 +222,9 @@ int main(int argc, char* argv[]) {
         calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
         calib.setMarkerSize(marker_size_arg.getValue());
+        calib.setCauchyParam(cauchy_param);
+        calib.setRecursionDepth(recursion_depth);
+        calib.setMaxOutlierPercentage(max_outlier_percentage);
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
@@ -205,8 +236,6 @@ int main(int argc, char* argv[]) {
     }
 
     std::map<std::string, std::vector<hdmarker::Corner> > detected_markers;
-
-    calib.setRecursionDepth(recursion_depth);
 
     TIMELOG("Argument parsing");
 
@@ -222,6 +251,11 @@ int main(int argc, char* argv[]) {
             has_cached_calib = true;
             fs.release();
             calib.purgeInvalidPages();
+            if (del) {
+                calib.deleteCalib(calibration_type);
+            }
+            clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
+
 #if CATCH_STORAGE
         }
         catch (std::exception const& e) {
@@ -251,172 +285,60 @@ int main(int argc, char* argv[]) {
 #endif
             }
         }
-
         TIMELOG("Reading missing files");
-
         for (auto const& it : detected_markers) {
             if (!calib.hasFile(it.first)) {
                 calib.addInputImageAfterwards(it.first, it.second);
                 found_new_files = true;
             }
         }
-
         TIMELOG("Adding missing files");
-
-        calib.CeresCalibFlexibleTarget(outlier_threshold);
-
-        TIMELOG("CeresCalibFlexibleTarget()");
-
-        calib.CeresCalibFlexibleTarget(outlier_threshold);
-
-        TIMELOG("CeresCalibFlexibleTarget()");
-
-        calib.printObjectPointCorrectionsStats("Flexible");
-
-        TIMELOG("printObjectPointCorrectionsStats");
-
-        calib.CeresCalib(outlier_threshold);
-        TIMELOG("CeresCalib");
-        calib.CeresCalib(outlier_threshold);
-        TIMELOG("CeresCalib");
-
-        calib.exportPointClouds("Ceres");
-
-        if (gnuplot) {
-            calib.plotReprojectionErrors("Ceres", "ceres2");
-            calib.plotReprojectionErrors("Flexible", "Flexible");
-            TIMELOG("plotReprojectionErrors");
-        }
-
-        cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
-        fs << "calibration" << calib;
-        fs.release();
-        // */
-        return EXIT_SUCCESS;
     }
-
+    else {
 #pragma omp parallel for schedule(dynamic)
-    for (size_t ii = 0; ii < input_files.size(); ++ii) {
-        std::string const& input_file = input_files[ii];
-        try {
-            std::vector<hdmarker::Corner> const corners = calib.getCorners(input_file, effort, demosaic, libraw);
+        for (size_t ii = 0; ii < input_files.size(); ++ii) {
+            std::string const& input_file = input_files[ii];
+            try {
+                std::vector<hdmarker::Corner> const corners = calib.getCorners(input_file, effort, demosaic, libraw);
 #pragma omp critical
-            {
-                detected_markers[input_file] = corners;
+                {
+                    detected_markers[input_file] = corners;
+                }
+            }
+            catch (const std::exception &e) {
+                clog::L("main", 1) << "Reading file " << input_file << " failed with an exception: " << std::endl
+                                   << e.what() << std::endl;
             }
         }
-        catch (const std::exception &e) {
-            clog::L("main", 1) << "Reading file " << input_file << " failed with an exception: " << std::endl
-                               << e.what() << std::endl;
+        TIMELOG("Reading markers");
+        std::cout << std::string(detected_markers.size(), '-') << std::endl;
+        for (auto const& it : detected_markers) {
+            calib.addInputImage(it.first, it.second);
+            std::cout << "." << std::flush;
         }
+        std::cout << std::endl;
+        TIMELOG("Adding input images");
     }
 
-    TIMELOG("Reading markers");
-
-    std::cout << std::string(detected_markers.size(), '-') << std::endl;
-    for (auto const& it : detected_markers) {
-        calib.addInputImage(it.first, it.second);
-        std::cout << "." << std::flush;
-    }
-    std::cout << std::endl;
-
-    TIMELOG("Adding input images");
 
     calib.purgeInvalidPages();
-
     TIMELOG("Purging invalid pages");
 
-    if ("SimpleOpenCV" == calibration_type) {
-        calib.openCVCalib(true);
-        TIMELOG("Calib SimpleOpenCV");
+    calib.purgeUnlikelyByDetectedRectangles();
+    TIMELOG("purgeUnlikelyByDetectedRectangles");
 
-        calib.removeOutliers("SimpleOpenCV", 5);
+    calib.runCalib(calibration_type, outlier_threshold);
+    TIMELOG("Calib");
+    calib.plotReprojectionErrors(calibration_type, calibration_type);
+    TIMELOG("plotReprojectionErrors");
+    calib.exportPointClouds(calibration_type);
+    TIMELOG("exportPointClouds");
 
-        if (gnuplot) {
-            calib.plotReprojectionErrors("SimpleOpenCV", "SimpleOpenCV/");
-            TIMELOG("plotReprojectionErrors SimpleOpenCV");
-        }
-
-        calib.SimpleCeresCalib();
-        TIMELOG("Calib SimpleCeres");
-
-        calib.removeOutliers("SimpleCeres", 5);
-
-        calib.SimpleCeresCalib();
-        TIMELOG("Calib SimpleCeres");
-
-        calib.removeOutliers("SimpleCeres", 2);
-        TIMELOG("Calib SimpleCeres");
-
-        calib.SimpleCeresCalib();
-        TIMELOG("Calib SimpleCeres");
-
-        if (gnuplot) {
-            calib.plotReprojectionErrors("SimpleCeres", "SimpleCeresCalib/");
-            TIMELOG("plotReprojectionErrors SimpleCeresCalib");
-        }
-
-        calib.exportPointClouds("SimpleCeres");
-        TIMELOG("exportPointClouds");
-
-
-        return EXIT_SUCCESS;
-    }
-
-    clog::L("main", 2) << "checking for OpenCV calib: " << calib.hasCalibName("OpenCV") << std::endl;
-
-    calib.openCVCalib();
-
-    clog::L("main", 2) << "checking for OpenCV calib: " << calib.hasCalibName("OpenCV") << std::endl;
-
-    TIMELOG("openCVCalib");
+    calib.plotResidualsIntoImages(calibration_type);
+    TIMELOG("plotResidualsIntoImages");
 
     if (gnuplot) {
-        calib.plotReprojectionErrors("OpenCV", "OpenCV");
-        TIMELOG("plotReprojectionErrors initial");
-    }
-
-    calib.prepareCalibration();
-
-    TIMELOG("prepareCalibration");
-
-    if (gnuplot) {
-        calib.plotReprojectionErrors("OpenCV", "OpenCV-all-markers");
-        TIMELOG("plotReprojectionErrors initial all markers");
-    }
-
-    calib.CeresCalib(5);
-
-    TIMELOG("CeresCalib");
-
-    if (gnuplot) {
-        calib.plotReprojectionErrors("Ceres", "Ceres");
-        TIMELOG("plotReprojectionErrors ceres");
-    }
-
-    calib.CeresCalib(5);
-
-    TIMELOG("CeresCalib");
-
-    if (gnuplot) {
-        calib.plotReprojectionErrors("Ceres", "ceres2");
-        TIMELOG("plotReprojectionErrors ceres2");
-    }
-
-    calib.CeresCalibFlexibleTarget(5);
-
-    TIMELOG("CeresCalibFlexibleTarget");
-
-    calib.CeresCalibFlexibleTarget(5);
-
-    TIMELOG("CeresCalibFlexibleTarget");
-
-    calib.printObjectPointCorrectionsStats("Flexible");
-
-    TIMELOG("printObjectPointCorrectionsStats");
-
-    if (gnuplot) {
-        calib.plotReprojectionErrors("Flexible", "ceres3flexible");
+        calib.plotReprojectionErrors(calibration_type, calibration_type);
         TIMELOG("plotReprojectionErrors ceres3");
     }
 
@@ -427,11 +349,11 @@ int main(int argc, char* argv[]) {
         TIMELOG("Writing cache file");
     }
 
+    clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
+
     std::cout << "Level 1 log entries: " << std::endl;
     clog::Logger::getInstance().printAll(std::cout, 1);
     TIMELOG("print all log entries");
-
-    calib.exportPointClouds("Flexible");
 
     //  microbench_measure_output("app finish");
     return EXIT_SUCCESS;

@@ -70,8 +70,12 @@ double Calib::CeresCalib(double const outlier_threshold) {
     cv::Mat_<double> old_cam = calib.cameraMatrix.clone();
     cv::Mat_<double> old_dist = calib.distCoeffs.clone();
 
-
+    if (calib.outlier_percentages.size() != data.size()) {
+        calib.outlier_percentages = std::vector<double>(data.size(), 0.0);
+    }
+    std::multimap<double, std::string> outlier_ranking;
     runningstats::RunningStats outlier_stats;
+    size_t ignored_files_counter = 0;
     for (size_t image_index = 0; image_index < data.size(); ++image_index) {
         local_rvecs[image_index] = mat2vec(calib.rvecs[image_index]);
         local_tvecs[image_index] = mat2vec(calib.tvecs[image_index]);
@@ -94,7 +98,14 @@ double Calib::CeresCalib(double const outlier_threshold) {
                     local_object_points.push_back(objectPoints[image_index][ii]);
                 }
             }
-            outlier_stats.push_unsafe(100.0 * double(imagePoints[image_index].size() - local_image_points.size()) / imagePoints[image_index].size());
+            double const outlier_percentage = 100.0 * double(imagePoints[image_index].size() - local_image_points.size()) / imagePoints[image_index].size();
+            outlier_stats.push_unsafe(outlier_percentage);
+            outlier_ranking.insert({outlier_percentage, imageFiles[image_index]});
+            calib.outlier_percentages[image_index] = outlier_percentage;
+            if (outlier_percentage > max_outlier_percentage) {
+                ignored_files_counter++;
+                continue;
+            }
         }
 
         ceres::CostFunction * cost_function =
@@ -113,7 +124,7 @@ double Calib::CeresCalib(double const outlier_threshold) {
                   int(2*local_image_points.size()) // Number of residuals
                   );
         problem.AddResidualBlock(cost_function,
-                                 nullptr, // Loss function (nullptr = L2)
+                                 cauchy_param > 0 ? new ceres::CauchyLoss(cauchy_param) : nullptr, // Loss function (nullptr = L2)
                                  &calib.cameraMatrix(0,0), // focal length x
                                  &calib.cameraMatrix(1,1), // focal length y
                                  &calib.cameraMatrix(0,2), // principal point x
@@ -124,9 +135,14 @@ double Calib::CeresCalib(double const outlier_threshold) {
                                  );
 
     }
+    clog::L(__func__, 2) << "Outlier ranking:" << std::endl;
+    for (auto const& it : outlier_ranking) {
+        clog::L(__func__, 2) << it.second << ": \t" << it.first << std::endl;
+    }
     if (outlier_threshold > 0) {
         clog::L(__func__, 1) << "Outlier percentage per image stats: " << outlier_stats.print() << std::endl;
     }
+    std::cout << "Ignored files: " << 100.0 * double(ignored_files_counter) / data.size() << "%" << std::endl;
 
 
     // Run the solver!
@@ -309,10 +325,20 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
 
     std::set<cv::Point3i, cmpSimpleIndex3<cv::Point3i> > ids;
 
+    if (calib.outlier_percentages.size() != data.size()) {
+        calib.outlier_percentages = std::vector<double>(data.size(), 0.0);
+    }
+    size_t ignored_files_counter = 0;
+    std::map<double, std::string> outlier_ranking;
     runningstats::RunningStats outlier_percentages;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
         local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
+        bool ignore_current_file = false;
+        if (calib.outlier_percentages[ii] > max_outlier_percentage) {
+            ignore_current_file = true;
+            ignored_files_counter++;
+        }
 
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
@@ -340,6 +366,9 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
                         continue;
                     }
                 }
+                if (ignore_current_file) {
+                    continue;
+                }
                 ceres::CostFunction * cost_function =
                         new ceres::AutoDiffCostFunction<
                         FlexibleTargetProjectionFunctor,
@@ -358,7 +387,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
                               objectPoints[ii][jj]
                               ));
                 problem.AddResidualBlock(cost_function,
-                                         new ceres::CauchyLoss(0.5), // Loss function (nullptr = L2)
+                                         cauchy_param > 0 ? new ceres::CauchyLoss(cauchy_param) : nullptr, // Loss function (nullptr = L2)
                                          &calib.cameraMatrix(0,0), // focal length x
                                          &calib.cameraMatrix(1,1), // focal length y
                                          &calib.cameraMatrix(0,2), // principal point x
@@ -370,8 +399,16 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
                                          );
             }
         }
-        outlier_percentages.push_unsafe(100.0 * double(outlier_counter) / sub_data.size());
+        double const outlier_percentage = 100.0 * double(outlier_counter) / sub_data.size();
+        outlier_percentages.push_unsafe(outlier_percentage);
+        outlier_ranking[outlier_percentage] = imageFiles[ii];
+        calib.outlier_percentages[ii] = outlier_percentage;
     }
+    clog::L(__func__, 2) << "Outlier ranking:" << std::endl;
+    for (auto const& it : outlier_ranking) {
+        clog::L(__func__, 2) << it.second << ": \t" << it.first << std::endl;
+    }
+    std::cout << "Ignored " << 100.0 * double(ignored_files_counter) / data.size() << "% of files" << std::endl;
     if (outlier_threshold > 0) {
         clog::L(__func__, 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
     }
