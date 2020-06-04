@@ -91,7 +91,7 @@ void Calib::plotReprojectionErrors(
             error_hist.push(error);
         }
 
-
+/*
         std::cout << "Error stats for image " << filename << ": "
                   << std::endl << error_hist.printBoth() << ", quantiles for .25, .5, .75, .9, .95: "
                   << error_stats.getQuantile(.25) << ", "
@@ -105,6 +105,7 @@ void Calib::plotReprojectionErrors(
                   << proj_y.getCorr() << " for y" << std::endl;
 
         std::cout << std::endl;
+        */
 
         std::sort(errors.begin(), errors.end());
 
@@ -277,12 +278,16 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
 #pragma omp critical
         {
             for (auto const it : local_res_x) {
-                res_x.push_unsafe(it);
-                res_all.push_unsafe(it);
+                if (std::abs(it) < 3) {
+                    res_x.push_unsafe(it);
+                    res_all.push_unsafe(it);
+                }
             }
             for (auto const it : local_res_y) {
-                res_y.push_unsafe(it);
-                res_all.push_unsafe(it);
+                if (std::abs(it) < 3) {
+                    res_y.push_unsafe(it);
+                    res_all.push_unsafe(it);
+                }
             }
         }
     }

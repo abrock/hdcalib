@@ -55,6 +55,7 @@ int main(int argc, char* argv[]) {
     std::vector<int> valid_pages;
     std::string calibration_type;
     std::string cache_file;
+    double outlier_threshold = 5;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -70,8 +71,8 @@ int main(int argc, char* argv[]) {
         cmd.add(effort_arg);
 
         TCLAP::ValueArg<float> marker_size_arg("m", "marker-size",
-                                          "Physical size (width/height) of the main markers.",
-                                          false, 1, "physical marker size");
+                                               "Physical size (width/height) of the main markers.",
+                                               false, 1, "physical marker size");
         cmd.add(marker_size_arg);
 
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
@@ -82,10 +83,10 @@ int main(int argc, char* argv[]) {
         cmd.add(cache_arg);
 
         TCLAP::ValueArg<std::string> type_arg("t", "type",
-                                               "Type of the calibration to run. "
-                                               "Possibilities in increasing order of computational complexity:"
-                                               "SimpleOpenCV, OpenCV, Ceres, Flexible, SemiFlexible ",
-                                               true, "", "Calibration type.");
+                                              "Type of the calibration to run. "
+                                              "Possibilities in increasing order of computational complexity:"
+                                              "SimpleOpenCV, OpenCV, Ceres, Flexible, SemiFlexible ",
+                                              true, "", "Calibration type.");
         cmd.add(type_arg);
 
         TCLAP::SwitchArg demosaic_arg("d", "demosaic",
@@ -262,32 +263,30 @@ int main(int argc, char* argv[]) {
 
         TIMELOG("Adding missing files");
 
-        if (found_new_files) {
-            calib.CeresCalibFlexibleTarget();
+        calib.CeresCalibFlexibleTarget(outlier_threshold);
 
-            TIMELOG("CeresCalibFlexibleTarget()");
+        TIMELOG("CeresCalibFlexibleTarget()");
 
-            removed = calib.removeOutliers("Flexible", 2);
+        calib.CeresCalibFlexibleTarget(outlier_threshold);
 
-            TIMELOG("removeOutliers");
-
-            if (removed) {
-                calib.CeresCalibFlexibleTarget();
-
-                TIMELOG("CeresCalibFlexibleTarget()");
-            }
-        }
+        TIMELOG("CeresCalibFlexibleTarget()");
 
         calib.printObjectPointCorrectionsStats("Flexible");
 
         TIMELOG("printObjectPointCorrectionsStats");
 
-        if (gnuplot) {
-            calib.plotReprojectionErrors("Flexible", "Flexible");
-            TIMELOG("plotReprojectionErrors ceres3");
-        }
+        calib.CeresCalib(outlier_threshold);
+        TIMELOG("CeresCalib");
+        calib.CeresCalib(outlier_threshold);
+        TIMELOG("CeresCalib");
 
-        calib.exportPointClouds("Flexible");
+        calib.exportPointClouds("Ceres");
+
+        if (gnuplot) {
+            calib.plotReprojectionErrors("Ceres", "ceres2");
+            calib.plotReprojectionErrors("Flexible", "Flexible");
+            TIMELOG("plotReprojectionErrors");
+        }
 
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
@@ -386,7 +385,7 @@ int main(int argc, char* argv[]) {
         TIMELOG("plotReprojectionErrors initial all markers");
     }
 
-    calib.CeresCalib();
+    calib.CeresCalib(5);
 
     TIMELOG("CeresCalib");
 
@@ -395,11 +394,7 @@ int main(int argc, char* argv[]) {
         TIMELOG("plotReprojectionErrors ceres");
     }
 
-    calib.removeOutliers("Ceres", 150);
-
-    TIMELOG("removeOutliers(150)");
-
-    calib.CeresCalib();
+    calib.CeresCalib(5);
 
     TIMELOG("CeresCalib");
 
@@ -408,19 +403,13 @@ int main(int argc, char* argv[]) {
         TIMELOG("plotReprojectionErrors ceres2");
     }
 
-    calib.CeresCalibFlexibleTarget();
+    calib.CeresCalibFlexibleTarget(5);
 
     TIMELOG("CeresCalibFlexibleTarget");
 
-    removed = calib.removeOutliers("Flexible", 2);
+    calib.CeresCalibFlexibleTarget(5);
 
-    TIMELOG("removeOutliers(2)");
-
-    if (removed) {
-        calib.CeresCalibFlexibleTarget();
-
-        TIMELOG("CeresCalibFlexibleTarget");
-    }
+    TIMELOG("CeresCalibFlexibleTarget");
 
     calib.printObjectPointCorrectionsStats("Flexible");
 

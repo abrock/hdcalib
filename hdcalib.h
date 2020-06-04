@@ -350,8 +350,8 @@ public:
 };
 
 class ProjectionFunctor {
-    std::vector<cv::Point2f> const& markers;
-    std::vector<cv::Point3f> const& points;
+    std::vector<cv::Point2f> const markers;
+    std::vector<cv::Point3f> const points;
 
 public:
     ProjectionFunctor(std::vector<cv::Point2f> const& _markers,
@@ -408,8 +408,8 @@ public:
 class FlexibleTargetProjectionFunctor {
     cv::Point2f const marker;
     cv::Point3f const point;
-
 public:
+    double weight = 1;
     FlexibleTargetProjectionFunctor(cv::Point2f const& _marker,
                                     cv::Point3f const& _point);
     /*
@@ -977,7 +977,14 @@ public:
      */
     double openCVCalib(const bool simple = false);
 
-    double CeresCalib();
+    /**
+     * @brief CeresCalib run the OpenCV calibration re-implemented using Ceres.
+     * @param outlier_threshold maximum distance between marker and reprojection when building the problem.
+     * Set this to a negative number for the first run in order to make the function ignore it
+     * and to a positive number (e.g. 2(px)) for subsequent runs to ignore outliers.
+     * @return
+     */
+    double CeresCalib(double const outlier_threshold = -1);
 
     double CeresCalibRot4();
 
@@ -986,7 +993,7 @@ public:
      * algorithm where the exact locations of the markers are free variables.
      * @return
      */
-    double CeresCalibFlexibleTarget();
+    double CeresCalibFlexibleTarget(const double outlier_threshold = -1);
 
     void setPlotMarkers(bool plot = true);
     void setPlotSubMarkers(bool plot = true);

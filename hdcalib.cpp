@@ -54,7 +54,7 @@ bool Calib::removeOutliers(std::string const& calibName, const double threshold)
         return false;
     }
     CornerStore subtrahend(outliers);
-    clog::L(__func__, 2) << "Outlier percentage by image:" << std::endl;
+    //clog::L(__func__, 2) << "Outlier percentage by image:" << std::endl;
     runningstats::RunningStats percent_stats;
     for (auto& it : data) {
         size_t const before = it.second.size();
@@ -62,9 +62,9 @@ bool Calib::removeOutliers(std::string const& calibName, const double threshold)
         size_t const after = it.second.size();
         double const percent = (double(before - after)/before)*100.0;
         percent_stats.push(percent);
-        clog::L(__func__, 2) << it.first << ": removed " << (before-after) << " out of " << before << " corners (" << percent << "%)" << std::endl;
+        //clog::L(__func__, 2) << it.first << ": removed " << (before-after) << " out of " << before << " corners (" << percent << "%)" << std::endl;
     }
-    clog::L(__func__, 1) << "Removeal percentage stats: " << percent_stats.print() << std::endl;
+    clog::L(__func__, 1) << "Removal percentage stats: " << percent_stats.print() << std::endl;
     invalidateCache();
     return true;
 }
@@ -217,8 +217,8 @@ void Calib::exportPointClouds(const string &calib_name) {
 Mat Calib::calculateUndistortRectifyMap(CalibResult & calib) {
     cv::Mat_<double> newCameraMatrix = calib.cameraMatrix.clone();
     // We want the principal point at the image center in the resulting images.
-    newCameraMatrix(0,2) = imageSize.width/2;
-    newCameraMatrix(1,2) = imageSize.height/2;
+    //newCameraMatrix(0,2) = imageSize.width/2;
+    //newCameraMatrix(1,2) = imageSize.height/2;
     cv::Mat tmp_dummy;
     cv::Mat rectification_3x3;
     if (calib.rectification.empty()) {
@@ -952,10 +952,12 @@ void Calib::findOutliers(
         outlier_stats.push_unsafe(error);
         hdmarker::Corner c = data[imageFiles[image_index]].get(ii);
         outliers.push_back(c);
+        /*
         clog::L(__func__, 3) << "found outlier in image " << imageFiles[image_index]
                                 << ": id " << c.id << ", " << c.page << ", marker: "
                                 << markers[ii] << ", proj: " << projections[ii]
                                    << ", dist: " << error << std::endl;
+                                   */
     }
     clog::L(__func__, 2) << "Stats for " << imageFiles[image_index] << ": inliers: " << inlier_stats.print() << ", outliers: " << outlier_stats.print() << std::endl;
 }

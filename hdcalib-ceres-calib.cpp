@@ -49,7 +49,7 @@ void CornerStore::getPoints(
     }
 }
 
-double Calib::CeresCalib() {
+double Calib::CeresCalib(double const outlier_threshold) {
     // Build the problem.
     ceres::Problem problem;
 
@@ -71,10 +71,31 @@ double Calib::CeresCalib() {
     cv::Mat_<double> old_dist = calib.distCoeffs.clone();
 
 
+    runningstats::RunningStats outlier_stats;
+    for (size_t image_index = 0; image_index < data.size(); ++image_index) {
+        local_rvecs[image_index] = mat2vec(calib.rvecs[image_index]);
+        local_tvecs[image_index] = mat2vec(calib.tvecs[image_index]);
 
-    for (size_t ii = 0; ii < data.size(); ++ii) {
-        local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
-        local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
+        std::vector<cv::Point2d> markers, reprojections;
+        getReprojections(calib, image_index, markers, reprojections);
+        std::vector<cv::Point2f> local_image_points;
+        std::vector<cv::Point3f> local_object_points;
+        if (outlier_threshold < 0) {
+            local_image_points = imagePoints[image_index];
+            local_object_points = objectPoints[image_index];
+        }
+        else {
+            for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
+                cv::Point2d const& marker = markers[ii];
+                cv::Point2d const& reprojection = reprojections[ii];
+                double const error = distance(marker, reprojection);
+                if (error < outlier_threshold) {
+                    local_image_points.push_back(imagePoints[image_index][ii]);
+                    local_object_points.push_back(objectPoints[image_index][ii]);
+                }
+            }
+            outlier_stats.push_unsafe(100.0 * double(imagePoints[image_index].size() - local_image_points.size()) / imagePoints[image_index].size());
+        }
 
         ceres::CostFunction * cost_function =
                 new ceres::AutoDiffCostFunction<
@@ -88,8 +109,8 @@ double Calib::CeresCalib() {
                 3, // translation vector for the target
                 14 // distortion coefficients
 
-                >(new ProjectionFunctor(imagePoints[ii], objectPoints[ii]),
-                  int(2*imagePoints[ii].size()) // Number of residuals
+                >(new ProjectionFunctor(local_image_points, local_object_points),
+                  int(2*local_image_points.size()) // Number of residuals
                   );
         problem.AddResidualBlock(cost_function,
                                  nullptr, // Loss function (nullptr = L2)
@@ -97,11 +118,14 @@ double Calib::CeresCalib() {
                                  &calib.cameraMatrix(1,1), // focal length y
                                  &calib.cameraMatrix(0,2), // principal point x
                                  &calib.cameraMatrix(1,2), // principal point y
-                                 local_rvecs[ii].data(), // rotation vector for the target
-                                 local_tvecs[ii].data(), // translation vector for the target
+                                 local_rvecs[image_index].data(), // rotation vector for the target
+                                 local_tvecs[image_index].data(), // translation vector for the target
                                  local_dist.data() // distortion coefficients
                                  );
 
+    }
+    if (outlier_threshold > 0) {
+        clog::L(__func__, 1) << "Outlier percentage per image stats: " << outlier_stats.print() << std::endl;
     }
 
 
@@ -135,14 +159,14 @@ double Calib::CeresCalib() {
     calib.imageFiles = imageFiles;
 
     clog::L(__func__, 1) << "Parameters before: " << std::endl
-            << "Camera matrix: " << old_cam << std::endl
-            << "Distortion: " << old_dist << std::endl;
+                         << "Camera matrix: " << old_cam << std::endl
+                         << "Distortion: " << old_dist << std::endl;
     clog::L(__func__, 1) << "Parameters after: " << std::endl
-            << "Camera matrix: " << calib.cameraMatrix << std::endl
-            << "Distortion: " << calib.distCoeffs << std::endl;
+                         << "Camera matrix: " << calib.cameraMatrix << std::endl
+                         << "Distortion: " << calib.distCoeffs << std::endl;
     clog::L(__func__, 1) << "Difference: old - new" << std::endl
-            << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl
-            << "Distortion: " << (old_dist - calib.distCoeffs) << std::endl;
+                         << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl
+                         << "Distortion: " << (old_dist - calib.distCoeffs) << std::endl;
 
     hasCalibration = true;
 
@@ -218,12 +242,12 @@ double Calib::SimpleCeresCalib() {
     calib.imageFiles = imageFiles;
 
     clog::L(__func__, 1) << "Parameters before: " << std::endl
-            << "Camera matrix: " << old_cam << std::endl;
+                         << "Camera matrix: " << old_cam << std::endl;
     clog::L(__func__, 1) << "Parameters after: " << std::endl
-            << "Camera matrix: " << calib.cameraMatrix << std::endl
-            << "Distortion: " << calib.distCoeffs << std::endl;
+                         << "Camera matrix: " << calib.cameraMatrix << std::endl
+                         << "Distortion: " << calib.distCoeffs << std::endl;
     clog::L(__func__, 1) << "Difference: old - new" << std::endl
-            << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl;
+                         << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl;
 
     hasCalibration = true;
 
@@ -249,7 +273,7 @@ struct LocalCorrectionsSum {
     }
 };
 
-double Calib::CeresCalibFlexibleTarget() {
+double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
     // Build the problem.
     ceres::Problem problem;
 
@@ -285,15 +309,37 @@ double Calib::CeresCalibFlexibleTarget() {
 
     std::set<cv::Point3i, cmpSimpleIndex3<cv::Point3i> > ids;
 
+    runningstats::RunningStats outlier_percentages;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
         local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
 
         auto const & sub_data = data[imageFiles[ii]];
+        size_t outlier_counter = 0;
         for (size_t jj = 0; jj < sub_data.size(); ++jj) {
             cv::Point3i const c = getSimpleId(sub_data.get(jj));
             ids.insert(c);
             {
+                FlexibleTargetProjectionFunctor loss (
+                            imagePoints[ii][jj],
+                            objectPoints[ii][jj]
+                            );
+                double residuals[2] = {0,0};
+                if (outlier_threshold > 0) {
+                    loss(&calib.cameraMatrix(0,0), // focal length x
+                         &calib.cameraMatrix(1,1), // focal length y
+                         &calib.cameraMatrix(0,2), // principal point x
+                         &calib.cameraMatrix(1,2), // principal point y
+                         local_rvecs[ii].data(), // rotation vector for the target
+                         local_tvecs[ii].data(), // translation vector for the target
+                         local_corrections[c].data(),
+                         local_dist.data(),
+                         residuals);
+                    if (residuals[0] * residuals[0] + residuals[1] * residuals[1] > outlier_threshold * outlier_threshold) {
+                        outlier_counter++;
+                        continue;
+                    }
+                }
                 ceres::CostFunction * cost_function =
                         new ceres::AutoDiffCostFunction<
                         FlexibleTargetProjectionFunctor,
@@ -307,11 +353,10 @@ double Calib::CeresCalibFlexibleTarget() {
                         3, // correction vector for the 3d marker position
                         14 // distortion coefficients
 
-                        >(new FlexibleTargetProjectionFunctor(
+                        >(new FlexibleTargetProjectionFunctor (
                               imagePoints[ii][jj],
                               objectPoints[ii][jj]
-                              )
-                          );
+                              ));
                 problem.AddResidualBlock(cost_function,
                                          new ceres::CauchyLoss(0.5), // Loss function (nullptr = L2)
                                          &calib.cameraMatrix(0,0), // focal length x
@@ -325,6 +370,10 @@ double Calib::CeresCalibFlexibleTarget() {
                                          );
             }
         }
+        outlier_percentages.push_unsafe(100.0 * double(outlier_counter) / sub_data.size());
+    }
+    if (outlier_threshold > 0) {
+        clog::L(__func__, 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
     }
 
     for (cv::Point3i const& it : ids) {
@@ -368,14 +417,14 @@ double Calib::CeresCalibFlexibleTarget() {
     }
 
     clog::L(__func__, 1) << "Parameters before: " << std::endl
-            << "Camera matrix: " << old_cam << std::endl
-            << "Distortion: " << old_dist << std::endl;
+                         << "Camera matrix: " << old_cam << std::endl
+                         << "Distortion: " << old_dist << std::endl;
     clog::L(__func__, 1) << "Parameters after: " << std::endl
-            << "Camera matrix: " << calib.cameraMatrix << std::endl
-            << "Distortion: " << calib.distCoeffs << std::endl;
+                         << "Camera matrix: " << calib.cameraMatrix << std::endl
+                         << "Distortion: " << calib.distCoeffs << std::endl;
     clog::L(__func__, 1) << "Difference: old - new" << std::endl
-            << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl
-            << "Distortion: " << (old_dist - calib.distCoeffs) << std::endl;
+                         << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl
+                         << "Distortion: " << (old_dist - calib.distCoeffs) << std::endl;
 
     return 0;
 }
@@ -793,8 +842,8 @@ bool FlexibleTargetProjectionFunctor::operator()(
                       T(point.y) + correction[1],
                       T(point.z) + correction[2]};
     Calib::project(src, result, f, c, rot_mat, tvec, dist);
-    residuals[0] = result[0] - T(marker.x);
-    residuals[1] = result[1] - T(marker.y);
+    residuals[0] = T(weight) * (result[0] - T(marker.x));
+    residuals[1] = T(weight) * (result[1] - T(marker.y));
     return true;
 }
 
