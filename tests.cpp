@@ -1641,6 +1641,23 @@ TEST(CornerColor, all) {
     std::cout << "Num calls: " << CornerColor::getNumCalls() << std::endl;
 }
 
+TEST(Calib, matchSuffixes) {
+    std::vector<std::string> images {"a/a.png", "a/b.png", "a/c.png", "b/a.png", "b/b.png", "c/x.png"};
+    std::vector<std::string> suffixes {"a.png", "b.png"};
+    std::map<std::string, std::vector<std::string> > matches = hdcalib::Calib::matchSuffixes(images, suffixes);
+
+    for (auto const& it : matches) {
+        std::cout << "Prefix: " << it.first << ", matches: " << std::endl;
+        for (std::string const& im : it.second) {
+            std::cout << im << ", ";
+        }
+        std::cout << std::endl;
+    }
+
+    std::map<std::string, std::vector<std::string> > reference {{"a/", {"a/a.png", "a/b.png"}}, {"b/", {"b/a.png", "b/b.png"}}};
+    EXPECT_EQ(matches, reference);
+}
+
 
 std::string type2str(int type) {
   std::string r;

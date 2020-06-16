@@ -189,7 +189,7 @@ double Calib::CeresCalib(double const outlier_threshold) {
     return 0;
 }
 
-double Calib::SimpleCeresCalib() {
+double Calib::SimpleCeresCalib(const double outlier_threshold) {
     // Build the problem.
     ceres::Problem problem;
 

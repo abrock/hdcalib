@@ -42,6 +42,8 @@ int main(int argc, char* argv[]) {
 
     bool removed = false;
 
+    bool calib_updated = false;
+
     hdcalib::Calib calib;
     std::vector<std::string> input_files;
     int recursion_depth = -1;
@@ -52,9 +54,10 @@ int main(int argc, char* argv[]) {
     bool only_green = false;
     bool verbose = true;
     bool gnuplot = false;
-    bool del = false;
+    std::string del = "";
     std::vector<int> valid_pages;
-    std::string calibration_type;
+    std::vector<std::string> calibration_types;
+    std::vector<std::string> same_pos_suffixes;
     std::string cache_file;
     double outlier_threshold = 20;
     double max_outlier_percentage = 105;
@@ -74,9 +77,9 @@ int main(int argc, char* argv[]) {
         cmd.add(effort_arg);
 
         TCLAP::ValueArg<float> cauchy_param_arg("", "cauchy",
-                                          "Scale parameter (px) for the cauchy loss. Use negative numbers to disable the robust solving (not recommended "
-                                          "except you know exactly what you're doing).",
-                                          false, 1, "cauchy loss scale [px]");
+                                                "Scale parameter (px) for the cauchy loss. Use negative numbers to disable the robust solving (not recommended "
+                                                "except you know exactly what you're doing).",
+                                                false, 1, "cauchy loss scale [px]");
         cmd.add(cauchy_param_arg);
 
         TCLAP::ValueArg<float> marker_size_arg("m", "marker-size",
@@ -90,8 +93,8 @@ int main(int argc, char* argv[]) {
         cmd.add(max_outlier_arg);
 
         TCLAP::ValueArg<float> outlier_threshold_arg("", "thresh",
-                                               "Maximum error from previous calibrations for a marker to be included in the calibration.",
-                                               false, 20, "max. error threshold");
+                                                     "Maximum error from previous calibrations for a marker to be included in the calibration.",
+                                                     false, 20, "max. error threshold");
         cmd.add(outlier_threshold_arg);
 
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
@@ -101,22 +104,31 @@ int main(int argc, char* argv[]) {
                                                false, "", "Calibration cache.");
         cmd.add(cache_arg);
 
-        TCLAP::ValueArg<std::string> type_arg("t", "type",
-                                              "Type of the calibration to run. "
+        TCLAP::ValueArg<std::string> delete_arg("", "delete",
+                                              "Specify a calibration result to delete from the cached calibration. ",
+                                              false, "", "Calibration type.");
+        cmd.add(delete_arg);
+
+        TCLAP::MultiArg<std::string> type_arg("t", "type",
+                                              "Type of the calibration(s) to run. "
                                               "Possibilities in increasing order of computational complexity:"
                                               "SimpleOpenCV, OpenCV, Ceres, Flexible, SemiFlexible ",
-                                              true, "", "Calibration type.");
+                                              false, "Calibration type.");
         cmd.add(type_arg);
+
+        TCLAP::MultiArg<std::string> same_pos_arg("", "same",
+                                                  "This option allows the user to verify if two shots show the same target position. "
+                                                  "The option specifies a suffix for the full path of the shot. "
+                                                  "Specify at least twice in order to name two path suffixes which are expected to show identical target positions. "
+                                                  "This is meant to be used for checking if the target accidentally moved while a motion stage was moving the camera, "
+                                                  "or to test the repeatability of the translation stage.",
+                                                  false, "Same position suffix.");
+        cmd.add(same_pos_arg);
 
         TCLAP::SwitchArg demosaic_arg("d", "demosaic",
                                       "Use this flag if the input images are raw images and demosaicing should be used.",
                                       false);
         cmd.add(demosaic_arg);
-
-        TCLAP::SwitchArg delete_arg("", "del",
-                                      "Delete the specified calibration in order to re-calculate it.",
-                                      false);
-        cmd.add(delete_arg);
 
         TCLAP::SwitchArg read_raw_arg("", "raw",
                                       "Use this flag if the input images are raw images "
@@ -175,7 +187,8 @@ int main(int argc, char* argv[]) {
         cache_file = cache_arg.getValue();
         gnuplot = gnuplot_arg.getValue();
         valid_pages = valid_pages_arg.getValue();
-        calibration_type = type_arg.getValue();
+        calibration_types = type_arg.getValue();
+        same_pos_suffixes = same_pos_arg.getValue();
         max_outlier_percentage = max_outlier_arg.getValue();
         del = delete_arg.getValue();
         outlier_threshold = outlier_threshold_arg.getValue();
@@ -251,8 +264,9 @@ int main(int argc, char* argv[]) {
             has_cached_calib = true;
             fs.release();
             calib.purgeInvalidPages();
-            if (del) {
-                calib.deleteCalib(calibration_type);
+            if (!del.empty()) {
+                calib.deleteCalib(del);
+                calib_updated = true;
             }
             clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
 
@@ -311,6 +325,7 @@ int main(int argc, char* argv[]) {
             }
         }
         TIMELOG("Reading markers");
+        clog::L(__func__, 2) << "Adding images to the calibration..." << std::endl;
         std::cout << std::string(detected_markers.size(), '-') << std::endl;
         for (auto const& it : detected_markers) {
             calib.addInputImage(it.first, it.second);
@@ -327,29 +342,43 @@ int main(int argc, char* argv[]) {
     calib.purgeUnlikelyByDetectedRectangles();
     TIMELOG("purgeUnlikelyByDetectedRectangles");
 
-    calib.runCalib(calibration_type, outlier_threshold);
-    TIMELOG("Calib");
-    calib.plotReprojectionErrors(calibration_type, calibration_type);
-    TIMELOG("plotReprojectionErrors");
-    calib.exportPointClouds(calibration_type);
-    TIMELOG("exportPointClouds");
-
-    calib.plotResidualsIntoImages(calibration_type);
-    TIMELOG("plotResidualsIntoImages");
-
-    if (gnuplot) {
+    for (std::string const& calibration_type : calibration_types) {
+        clog::L(__func__, 2) << "Running calib " << calibration_type << std::endl;
+        calib.runCalib(calibration_type, outlier_threshold);
+        calib_updated = true;
+        TIMELOG("Calib");
         calib.plotReprojectionErrors(calibration_type, calibration_type);
-        TIMELOG("plotReprojectionErrors ceres3");
+        TIMELOG("plotReprojectionErrors");
+        calib.exportPointClouds(calibration_type);
+        TIMELOG("exportPointClouds");
+
+        calib.plotResidualsIntoImages(calibration_type);
+        TIMELOG("plotResidualsIntoImages");
+
+        if (gnuplot) {
+            calib.plotReprojectionErrors(calibration_type, calibration_type);
+            TIMELOG("plotReprojectionErrors ceres3");
+        }
+
+        clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
     }
 
-    if (!cache_file.empty()) {
+    if (!same_pos_suffixes.empty()) {
+        clog::L(__func__, 2) << "Checking same positions 2D";
+        calib.checkSamePosition2D(same_pos_suffixes);
+        TIMELOG("checkSamePosition2D");
+        clog::L(__func__, 2) << "Checking same positions 3D";
+        calib.checkSamePosition(same_pos_suffixes);
+        TIMELOG("checkSamePosition");
+    }
+
+    if (calib_updated && !cache_file.empty()) {
         cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
         fs << "calibration" << calib;
         fs.release();
         TIMELOG("Writing cache file");
     }
 
-    clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
 
     std::cout << "Level 1 log entries: " << std::endl;
     clog::Logger::getInstance().printAll(std::cout, 1);

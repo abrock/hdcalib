@@ -696,6 +696,13 @@ class Calib {
 public:
     Calib();
 
+    void checkSamePosition(std::vector<std::string> const& suffixes, std::string const calibration_type = "Flexible");
+    void checkSamePosition2D(std::vector<std::string> const& suffixes);
+
+    std::vector<std::vector<cv::Vec3d> > getCommon3DPoints(CalibResult & calib, std::vector<std::string> const& files);
+
+    static std::map<std::string, std::vector<std::string> > matchSuffixes(std::vector<std::string> const& images, std::vector<std::string> const& suffixes);
+
     std::string printAllCameraMatrices();
 
     void setMaxOutlierPercentage(double const new_val);
@@ -1211,7 +1218,7 @@ public:
     static std::vector<hdmarker::Corner> readCorners(const std::string &input_file);
     Vec3d get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec);
     void plotPoly(cv::Mat &img, const std::vector<cv::Point> &poly, const cv::Scalar &color, const int line);
-    double SimpleCeresCalib();
+    double SimpleCeresCalib(double const outlier_threshold = -1);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

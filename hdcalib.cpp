@@ -7,6 +7,8 @@
 #include <catlogger/catlogger.h>
 #include "gnuplot-iostream.h"
 
+#undef NDEBUG
+#include <assert.h>   // reinclude the header to update the definition of assert()
 
 namespace  {
 template<class T>
@@ -146,6 +148,121 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
+void Calib::checkSamePosition(const std::vector<string> &suffixes, const string calibration_type) {
+    CalibResult & calib = getCalib(calibration_type);
+
+    prepareCalibration();
+
+    std::map<std::string, std::vector<std::string> > comparisons = matchSuffixes(imageFiles, suffixes);
+
+    std::multimap<double, std::string> errors;
+
+    for (std::pair<std::string, std::vector<std::string> > const& it : comparisons) {
+        if (it.second.size() < 2) {
+            continue;
+        }
+        std::string const& prefix = it.first;
+        std::vector<std::string> const& files = it.second;
+
+        std::vector<std::vector<Vec3d> > pts = getCommon3DPoints(calib, files);
+        assert(pts.size() == files.size());
+        runningstats::QuantileStats<float> diff_stats;
+        for (size_t ref_index = 0; ref_index < pts.size(); ++ref_index) {
+            std::vector<cv::Vec3d> const& ref = pts[ref_index];
+            for (size_t comp_index = ref_index+1; comp_index < pts.size(); comp_index++) {
+                std::vector<cv::Vec3d> const& comp = pts[comp_index];
+                assert(ref.size() == comp.size());
+                for (size_t ii = 0; ii < ref.size() && ii < comp.size(); ++ii) {
+                    cv::Vec3d residual = ref[ii] - comp[ii];
+                    double const diff = std::sqrt(residual.dot(residual));
+                    diff_stats.push_unsafe(diff);
+                }
+            }
+        }
+        double const median = diff_stats.getMedian();
+        errors.insert({median, prefix});
+    }
+    clog::L(__func__, 2) << "Error stats:" << std::endl;
+    for (std::pair<double, std::string> const& it : errors) {
+        clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
+    }
+}
+
+void Calib::checkSamePosition2D(const std::vector<string> &suffixes) {
+    std::map<std::string, std::vector<std::string> > comparisons = matchSuffixes(imageFiles, suffixes);
+
+    std::multimap<double, std::string> errors;
+    for (std::pair<std::string, std::vector<std::string> > const& it : comparisons) {
+        if (it.second.size() < 2) {
+            continue;
+        }
+        std::string const& prefix = it.first;
+        std::vector<std::string> const& files = it.second;
+        runningstats::QuantileStats<float> diff_stats;
+        for (size_t ref_index = 0; ref_index < files.size(); ++ref_index) {
+            CornerStore & ref = data[files[ref_index]];
+            for (size_t comp_index = ref_index+1; comp_index < files.size(); comp_index++) {
+                CornerStore & comp = data[files[comp_index]];
+                for (size_t ii = 0; ii < ref.size(); ++ii) {
+                    hdmarker::Corner const ref_p = ref.get(ii);
+                    std::vector<hdmarker::Corner> comp_p = comp.findByID(ref_p);
+                    if (comp_p.empty()) {
+                        continue;
+                    }
+                    cv::Point2f residual = ref_p.p - comp_p[0].p;
+                    double const dist = std::sqrt(residual.dot(residual));
+                    diff_stats.push_unsafe(dist);
+                }
+            }
+        }
+        double const median = diff_stats.getMedian();
+        errors.insert({median, prefix});
+    }
+    clog::L(__func__, 2) << "Error stats:" << std::endl;
+    for (std::pair<double, std::string> const& it : errors) {
+        clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
+    }
+}
+
+std::vector<std::vector<Vec3d> > Calib::getCommon3DPoints(CalibResult &calib, const std::vector<string> &files) {
+    std::vector<std::vector<cv::Vec3d> > result(files.size());
+    if (files.size() < 2) {
+        return result;
+    }
+    CornerStore intersection = data[files[0]];
+    std::vector<CornerStore> stores;
+    for (size_t ii = 0; ii < files.size(); ++ii) {
+        stores.push_back(data[files[ii]]);
+        intersection.intersect(data[files[ii]]);
+    }
+    for (size_t ii = 0; ii < stores.size(); ++ii) {
+        CornerStore & store = stores[ii];
+        store.intersect(intersection);
+        assert(store.size() == intersection.size());
+        size_t const file_index = getId(files[ii]);
+        for (size_t jj = 0; jj < store.size(); ++jj) {
+            result[ii].push_back(get3DPoint(calib, store.get(jj), calib.rvecs[file_index], calib.tvecs[file_index]));
+        }
+    }
+    return result;
+}
+
+std::map<string, std::vector<string> > Calib::matchSuffixes(const std::vector<string> &images, const std::vector<string> &suffixes) {
+    std::map<std::string, std::vector<std::string> > result;
+    for (std::string const & image : images) {
+        for (std::string const& suff : suffixes) {
+            if (suff.size() > image.size()) {
+                continue;
+            }
+            if (suff == image.substr(image.size() - suff.size())) {
+                std::string const prefix = image.substr(0, image.size() - suff.size());
+                result[prefix].push_back(image);
+            }
+        }
+    }
+    return result;
+}
+
 void Calib::setMaxOutlierPercentage(const double new_val) {
     max_outlier_percentage = new_val;
 }
@@ -164,7 +281,7 @@ void Calib::setCauchyParam(const double new_val) {
 void Calib::plotResidualsIntoImages(const string calib_name) {
     CalibResult & calib = getCalib(calib_name);
 
-    size_t counter = 0;
+    std::cout << std::string(imageFiles.size(), '-') << std::endl;
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
         std::vector<cv::Point2d> markers, reprojections;
@@ -186,11 +303,9 @@ void Calib::plotResidualsIntoImages(const string calib_name) {
             cv::line(img, marker, repr, line_color, 3, cv::LINE_AA);
         }
         cv::imwrite(imageFiles[ii] + "-repr.png", img);
-#pragma omp critical
-        {
-            clog::L(__func__, 2) << "Plotted " << ++counter << " out of " << imageFiles.size() << " files" << std::endl;
-        }
+        std::cout << '.' << std::flush;
     }
+    std::cout << std::endl;
 }
 
 void Calib::setOutlierThreshold(const double new_val) {
@@ -214,10 +329,13 @@ void Calib::purgeUnlikelyByDetectedRectangles() {
         }
     }
     clog::L(__func__, 2) << "Rect limit: (" << min_x << ", " << min_y << ") / (" << max_x << ", " << max_y << ")" << std::endl;
+    std::cout << std::string(data.size(), '-') << std::endl;
     for (auto & it : data) {
         CornerStore & store = it.second;
         store.purgeOutOfBounds(min_x, min_y, max_x, max_y);
+        std::cout << '.' << std::flush;
     }
+    std::cout << std::endl;
 }
 
 double Calib::distance(const Corner &a, const Corner &b) {
@@ -300,6 +418,8 @@ Mat Calib::calculateUndistortRectifyMap(CalibResult & calib) {
     clog::L(__func__, 2) << "initial cameraMatrix: " << calib.cameraMatrix << std::endl;
 
     cv::Mat_<double> newCameraMatrix = calib.cameraMatrix.clone();
+    double const focal = std::sqrt(newCameraMatrix(0,0) * newCameraMatrix(1,1));
+    newCameraMatrix(0,0) = newCameraMatrix(1,1) = focal;
     // We want the principal point at the image center in the resulting images.
     //newCameraMatrix(0,2) = imageSize.width/2;
     //newCameraMatrix(1,2) = imageSize.height/2;
@@ -311,6 +431,7 @@ Mat Calib::calculateUndistortRectifyMap(CalibResult & calib) {
     if (calib.rectification.size() != Size(3,3)) {
         cv::Rodrigues(calib.rectification, rectification_3x3);
     }
+
     cv::initUndistortRectifyMap(calib.cameraMatrix,
                                 calib.distCoeffs,
                                 rectification_3x3,
@@ -710,9 +831,9 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         clog::L(__func__, 1) << "Input image 16 bit, converting for painting to 8 bit." << std::endl;
         paint.convertTo(paint, CV_8UC3, 1.0 / 256.0);
     }
-    clog::L(__func__, 0) << "Paint type: " << paint.type() << std::endl;
-    clog::L(__func__, 0) << "Paint depth: " << paint.depth() << std::endl;
-    clog::L(__func__, 0) << "Input image size of file " << input_file << ": " << img.size << std::endl;
+    //clog::L(__func__, 0) << "Paint type: " << paint.type() << std::endl;
+    //clog::L(__func__, 0) << "Paint depth: " << paint.depth() << std::endl;
+    //clog::L(__func__, 0) << "Input image size of file " << input_file << ": " << img.size << std::endl;
 
     Marker::init();
 
@@ -746,7 +867,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         pointcache << "imageHeight" << imageSize.height;
     }
 
-    printf("final score %zu corners\n", corners.size());
+    clog::L(__func__, 2) << "Final number of corners: " << corners.size() << std::endl;
 
     Mat gray;
     if (img_scaled.channels() != 1) {
@@ -785,7 +906,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 }
             }
         }
-        submarkers = keep_submarkers;
+        //submarkers = keep_submarkers;
 
 
         if (plotMarkers) {
@@ -868,13 +989,13 @@ Mat Calib::readImage(std::string const& input_file,
         }
         double min_val = 0, max_val = 0;
         cv::minMaxIdx(img, &min_val, &max_val);
-        clog::L(__func__, 2) << "Image min/max: " << min_val << " / " << max_val << std::endl;
+        //clog::L(__func__, 2) << "Image min/max: " << min_val << " / " << max_val << std::endl;
 
         cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
     }
     else {
         img = cv::imread(input_file);
-        clog::L(__func__, 2) << "Input file " << input_file << " image size: " << img.size() << std::endl;
+        //clog::L(__func__, 2) << "Input file " << input_file << " image size: " << img.size() << std::endl;
     }
     if (useOnlyGreen) {
         if (img.channels() > 1) {
@@ -955,7 +1076,7 @@ double Calib::openCVCalib(bool const simple) {
 
     clog::L(__func__, 1) << "RMSE: " << result_err << std::endl
                          << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl;
-                         //<< "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
+    //<< "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
 
     /*
     clog::L(__func__, 2) << "stdDevIntrinsics: " << std::endl << res.stdDevIntrinsics << std::endl
@@ -1013,6 +1134,9 @@ double Calib::runCalib(const string name, const double outlier_threshold) {
     }
     if ("SimpleOpenCV" == name) {
         return openCVCalib(true);
+    }
+    if ("SimpleCeres" == name) {
+        return SimpleCeresCalib(outlier_threshold);
     }
     if ("Ceres" == name) {
         return CeresCalib(outlier_threshold);
