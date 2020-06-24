@@ -289,7 +289,11 @@ int main(int argc, char* argv[]) {
 #if CATCH_EXCEPTIONS
                 try {
 #endif
-                    detected_markers[input_file] = calib.getCorners(input_file, effort, demosaic, libraw);
+                    std::vector<hdmarker::Corner> corners = calib.getCorners(input_file, effort, demosaic, libraw);
+#pragma omp critical
+                    {
+                        detected_markers[input_file] = corners;
+                    }
 #if CATCH_EXCEPTIONS
                 }
                 catch (const std::exception &e) {
