@@ -5,6 +5,9 @@
 #include <runningstats/runningstats.h>
 #include "gnuplot-iostream.h"
 
+#undef NDEBUG
+#include <assert.h>
+
 namespace {
 boost::system::error_code ignore_error_code;
 }
@@ -91,7 +94,7 @@ void Calib::plotReprojectionErrors(
             error_hist.push(error);
         }
 
-/*
+        /*
         std::cout << "Error stats for image " << filename << ": "
                   << std::endl << error_hist.printBoth() << ", quantiles for .25, .5, .75, .9, .95: "
                   << error_stats.getQuantile(.25) << ", "
@@ -274,30 +277,38 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
     MarkerMap residuals_by_marker;
     getCalib(calibName);
     runningstats::QuantileStats<float> res_x, res_y, res_all;
+    runningstats::Stats2D<float> res_xy;
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         std::vector<float> local_res_x, local_res_y;
         plotReprojectionErrors(calibName, ii, residuals_by_marker, prefix, suffix, local_res_x, local_res_y);
 #pragma omp critical
         {
-            for (auto const it : local_res_x) {
-                if (std::abs(it) < 3) {
-                    res_x.push_unsafe(it);
-                    res_all.push_unsafe(it);
+            assert(local_res_x.size() == local_res_y.size());
+            for (size_t ii = 0; ii < local_res_x.size(); ++ii) {
+                if (std::abs(local_res_x[ii]) > 3 || std::abs(local_res_y[ii]) > 3) {
+                    continue;
                 }
-            }
-            for (auto const it : local_res_y) {
-                if (std::abs(it) < 3) {
-                    res_y.push_unsafe(it);
-                    res_all.push_unsafe(it);
-                }
+                res_x.push_unsafe(local_res_x[ii]);
+                res_all.push_unsafe(local_res_x[ii]);
+
+                res_xy.push_unsafe(local_res_x[ii], local_res_y[ii]);
+
+                res_y.push_unsafe(local_res_y[ii]);
+                res_all.push_unsafe(local_res_y[ii]);
             }
         }
     }
     std::string name_x = prefix + "all-x" + suffix;
-    res_x.plotHist(name_x, res_x.FriedmanDiaconisBinSize(), false);
-    res_y.plotHist(prefix + "all-y" + suffix, res_y.FriedmanDiaconisBinSize(), false);
-    res_all.plotHist(prefix + "all-xy" + suffix, res_all.FriedmanDiaconisBinSize(), false);
+    runningstats::HistConfig conf;
+    using runningstats::HistConfig;
+    conf.setXLabel("Residual [px]")
+            .setYLabel("Estimated probability density");
+    res_x.plotHist(name_x, res_x.FreedmanDiaconisBinSize(), conf.setTitle("x-component of residuals"));
+    res_y.plotHist(prefix + "all-y" + suffix, res_y.FreedmanDiaconisBinSize(), conf.setTitle("y-component of residuals"));
+    res_all.plotHist(prefix + "all-xy" + suffix, res_all.FreedmanDiaconisBinSize(), conf.setTitle("x- and y-residuals"));
+    std::pair<double, double> bins = res_xy.FreedmanDiaconisBinSize();
+    res_xy.getHistogram2Dfixed({bins.first/2, bins.second/2}).plotHist(prefix + "hm" + suffix, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Residuals Heatmap"));
     //plotErrorsByMarker(residuals_by_marker);
     plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
 }

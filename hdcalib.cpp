@@ -288,7 +288,7 @@ void Calib::plotResidualsIntoImages(const string calib_name) {
         getReprojections(calib, ii, markers, reprojections);
         cv::Mat img = readImage(imageFiles[ii], demosaic, libraw, useOnlyGreen);
         if (1 == img.channels()) {
-            cv::Mat _img[3] = {img, img, img};
+            cv::Mat _img[3] = {img.clone(), img.clone(), img.clone()};
             cv::merge(_img, 3, img);
         }
         for (size_t jj = 0; jj < markers.size(); ++jj) {
