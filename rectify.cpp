@@ -32,7 +32,6 @@ int main(int argc, char ** argv) {
     bool only_green = false;
     fs::path output_dir;
     std::string cache_file;
-    size_t num_files = 0;
     std::string calibName = "Flexible";
 
 #if CATCH_EXCEPTIONS

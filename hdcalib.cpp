@@ -120,7 +120,14 @@ void Calib::getReprojections(
 
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
-        cv::Point3f current_objPoint = objPoints[jj] + calib.objectPointCorrections[getSimpleId(store.get(jj))];
+        Corner const& current_corner = store.get(jj);
+        cv::Point3i simple_id = getSimpleId(current_corner);
+        cv::Point3f correction;
+        auto const it = calib.objectPointCorrections.find(simple_id);
+        if (calib.objectPointCorrections.end() != it) {
+            correction = it->second;
+        }
+        cv::Point3f current_objPoint = objPoints[jj] + correction;
 
         vec2arr(p, current_objPoint);
         cv::Point2d marker_pos(imgPoints[jj]);
@@ -614,7 +621,7 @@ void Calib::only_green(bool only_green) {
 
 std::vector<double> Calib::mat2vec(const Mat &in) {
     std::vector<double> result;
-    result.reserve(size_t(in.cols*in.rows));
+    result.reserve(size_t(in.cols*in.rows+1));
     cv::Mat_<double> _in(in);
     for (auto const& it : _in) {
         result.push_back(it);
@@ -1268,6 +1275,13 @@ bool cmpSimpleIndex3<C>::operator()(const C &a, const C &b) const {
 }
 
 template bool cmpSimpleIndex3<cv::Point3i>::operator()(const cv::Point3i &, const cv::Point3i &b) const;
+
+bool cmpPoint3i::operator()(const cv::Point3i &a, const cv::Point3i &b) const {
+    if (a.z != b.z) return a.z < b.z;
+    if (a.y != b.y) return a.y < b.y;
+    return a.x < b.x;
+}
+
 
 template<class F, class T>
 void Calib::get3DPoint(const F p[], T result[], const T R[], const T t[]) {

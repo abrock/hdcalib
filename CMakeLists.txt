@@ -76,6 +76,8 @@ target_link_libraries(hdcalib
 
 add_executable(hdcalib-tool "main.cpp")
 
+add_executable(hdcalib-overexposed hdcalib-overexposed.cpp)
+
 add_executable(hdcalib-analyze-lf "analyze-lf.cpp")
 
 add_executable(extract-green "extract-green.cpp")
@@ -142,6 +144,11 @@ target_link_libraries(valgrind-tests
 add_executable(hdcalib-compare-images compare-images.cpp)
 
 target_link_libraries(hdcalib-compare-images
+      ${OpenCV_LIBS}
+      ${RUNNINGSTATS_LIBRARIES}
+    )
+
+target_link_libraries(hdcalib-overexposed
       ${OpenCV_LIBS}
       ${RUNNINGSTATS_LIBRARIES}
     )

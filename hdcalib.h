@@ -359,6 +359,8 @@ class ProjectionFunctor {
 public:
     ProjectionFunctor(std::vector<cv::Point2f> const& _markers,
                       std::vector<cv::Point3f> const& _points);
+    ~ProjectionFunctor();
+
     /*
     1, // focal length x
     1, // focal length y
@@ -443,6 +445,10 @@ struct cmpSimpleIndex3 {
     bool operator()(const C& a, const C& b) const;
 };
 
+struct cmpPoint3i {
+    bool operator()(const cv::Point3i &a, const cv::Point3i &b) const;
+};
+
 class CalibResult {
 public:
     /**
@@ -450,7 +456,7 @@ public:
      * which allow the optimization to account for systematic misplacements
      * by the marker detection algorithm
      */
-    std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > objectPointCorrections;
+    std::map<cv::Point3i, cv::Point3f, cmpPoint3i> objectPointCorrections;
 
     /**
      * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
@@ -551,7 +557,7 @@ class Calib {
      */
     size_t openCVMaxPoints = 1000;
 
-    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > const& corrections) const;
+    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpPoint3i> const& corrections) const;
 
     /**
      * @brief imageSize Resolution of the input images.
@@ -766,7 +772,7 @@ public:
 
     void setRecursionDepth(const int _recursionDepth);
 
-    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex3<cv::Point3i> > MarkerMap;
+    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpPoint3i> MarkerMap;
 
     static void scaleCornerIds(std::vector<hdmarker::Corner>& corners, int factor);
 
@@ -1219,6 +1225,8 @@ public:
     Vec3d get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec);
     void plotPoly(cv::Mat &img, const std::vector<cv::Point> &poly, const cv::Scalar &color, const int line);
     double SimpleCeresCalib(double const outlier_threshold = -1);
+
+    void setCeresTolerance(double const new_tol);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

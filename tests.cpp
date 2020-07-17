@@ -12,7 +12,7 @@
 #include "hdcalib.h"
 
 static std::random_device rd;
-static std::default_random_engine engine(rd());
+static std::mt19937_64 engine(rd());
 static std::normal_distribution<double> dist;
 
 ::testing::AssertionResult RelativeNear(const double a, const double b, double delta) {
@@ -38,7 +38,7 @@ const double threshold = 1e-12) {
                     << "] and b[" << ii << "] is " << std::abs(a[ii] - b[ii])
                     << ", which exceeds " << threshold << ", where a["
                     << ii << "] evaluates to " << a[ii]
-                    << " and b[" << ii << "] evaluates to " << b[ii];
+                       << " and b[" << ii << "] evaluates to " << b[ii];
         }
     }
     return ::testing::AssertionSuccess();
@@ -81,6 +81,11 @@ void getCornerGridConditional(
 
 cv::Point2d randomPoint() {
     return cv::Point2d(dist(engine), dist(engine));
+}
+
+cv::Point3i randomPoint3i(int const max_val = 2) {
+    std::uniform_int_distribution dist(0,max_val);
+    return cv::Point3i(dist(engine), dist(engine), dist(engine));
 }
 
 bool float_eq(float const a, float const b) {
@@ -1410,9 +1415,9 @@ TEST(Calib, rot4_rot3_rot4_conversion) {
     for (size_t jj = 0; jj < 10*1000; ++jj) {
 
         double rotation[4] = {zero_dice(engine)*dist(engine),
-                                    zero_dice(engine)*dist(engine),
-                                    zero_dice(engine)*dist(engine),
-                                    zero_dice(engine)*dist(engine)};
+                              zero_dice(engine)*dist(engine),
+                              zero_dice(engine)*dist(engine),
+                              zero_dice(engine)*dist(engine)};
 
         Calib::normalize_rot4(rotation, rotation);
 
@@ -1658,14 +1663,127 @@ TEST(Calib, matchSuffixes) {
     EXPECT_EQ(matches, reference);
 }
 
+bool lt(cv::Point3i const& a, cv::Point3i const& b) {
+    return hdcalib::cmpPoint3i().operator ()(a, b);
+}
+
+bool eq(cv::Point3i const& a, cv::Point3i const& b) {
+    return !lt(a,b) && !lt(b,a);
+}
+
+std::map<std::string, size_t> ordering_checks;
+
+void asymmetry(cv::Point3i const& a, cv::Point3i const& b) {
+    static bool found_problem = false;
+    if (found_problem) {
+        return;
+    }
+    if (lt(a,b)) {
+        EXPECT_FALSE(lt(b,a));
+        ordering_checks["asymmetry-1"]++;
+        if (lt(b,a)) {
+            std::cout << "Asymmetry violated: " << a << ", " << b << std::endl;
+            found_problem = true;
+        }
+    }
+    if (lt(b,a)) {
+        EXPECT_FALSE(lt(a,b));
+        ordering_checks["asymmetry-2"]++;
+        if (lt(a,b)) {
+            std::cout << "Asymmetry violated: " << a << ", " << b << std::endl;
+            found_problem = true;
+        }
+    }
+}
+
+void irreflexible(cv::Point3i const& a) {
+    static bool found_problem = false;
+    if (found_problem) {
+        return;
+    }
+    EXPECT_FALSE(lt(a,a));
+    if (lt(a,a)) {
+        std::cout << "Irreflexibility violated: " << a << std::endl;
+        found_problem = true;
+    }
+}
+
+void transitive(cv::Point3i const& a, cv::Point3i const& b, cv::Point3i const& c) {
+    static bool found_problem = false;
+    if (found_problem) {
+        return;
+    }
+    if (lt(a,b) && lt(b,c)) {
+        EXPECT_TRUE(lt(a,c));
+        ordering_checks["transitivity"]++;
+        if (!lt(a,c)) {
+            std::cout << "Transitivity violated: " << a << std::endl;
+            found_problem = true;
+        }
+    }
+}
+
+void transitive_eq(cv::Point3i const& a, cv::Point3i const& b, cv::Point3i const& c) {
+    static bool found_problem = false;
+    if (found_problem) {
+        return;
+    }
+    if (eq(a,b) && eq(b,c)) {
+        EXPECT_TRUE(eq(a,c));
+        ordering_checks["transitivity_eq"]++;
+        if (!eq(a,c)) {
+            std::cout << "Transitivity of incomparability violated: " << a << std::endl;
+            found_problem = true;
+        }
+    }
+}
+
+TEST(Ordering, cmpPoint3i) {
+
+    for (int max_val = 0; max_val < 3; ++max_val) {
+        for (size_t ii = 0; ii < 1000*1000; ++ii) {
+            cv::Point3i const a = randomPoint3i(max_val);
+            cv::Point3i const b = randomPoint3i(max_val);
+            cv::Point3i const c = randomPoint3i(max_val);
+            asymmetry(a, b);
+            asymmetry(a, c);
+            asymmetry(b, c);
+            irreflexible(a);
+            irreflexible(b);
+            irreflexible(c);
+            transitive(a,b,c);
+            transitive(a,c,b);
+            transitive(b,a,c);
+            transitive(b,c,a);
+            transitive(c,a,b);
+            transitive(c,b,a);
+            transitive_eq(a,b,c);
+        }
+    }
+
+    std::cout << "Check counts:" << std::endl;
+    for (auto const& it : ordering_checks) {
+        std::cout << it.first << "\t" << it.second << std::endl;
+    }
+}
+
+TEST(Ordering, map) {
+    std::map<cv::Point3i, size_t, hdcalib::cmpPoint3i> map;
+    for (size_t ii = 0; ii < 100*1000; ++ii) {
+        cv::Point3i x = randomPoint3i();
+        auto const it = map.find(x);
+        map[x]++;
+    }
+}
+
 
 std::string type2str(int type) {
-  std::string r;
+    std::string r;
 
-  uchar depth = type & CV_MAT_DEPTH_MASK;
-  uchar chans = uchar(1 + (type >> CV_CN_SHIFT));
+    uchar depth = type & CV_MAT_DEPTH_MASK;
+    uchar chans = uchar(1 + (type >> CV_CN_SHIFT));
 
-  switch ( depth ) {
+    switch ( depth ) {
     case CV_8U:  r = "8U"; break;
     case CV_8S:  r = "8S"; break;
     case CV_16U: r = "16U"; break;
@@ -1674,12 +1792,12 @@ std::string type2str(int type) {
     case CV_32F: r = "32F"; break;
     case CV_64F: r = "64F"; break;
     default:     r = "User"; break;
-  }
+    }
 
-  r += "C";
-  r += char(chans+'0');
+    r += "C";
+    r += char(chans+'0');
 
-  return r;
+    return r;
 }
 
 int main(int argc, char** argv) {

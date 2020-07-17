@@ -14,8 +14,7 @@ boost::system::error_code ignore_error_code;
 
 namespace hdcalib {
 
-void Calib::printObjectPointCorrectionsStats(
-        const std::map<Point3i, Point3f, cmpSimpleIndex3<Point3i> > &corrections) const {
+void Calib::printObjectPointCorrectionsStats(const std::map<Point3i, Point3f, cmpPoint3i> &corrections) const {
     runningstats::RunningStats dx, dy, dz, abs_dx, abs_dy, abs_dz, length;
     for (std::pair<cv::Point3i, cv::Point3f> const& it : corrections) {
         dx.push(it.second.x);
@@ -71,7 +70,7 @@ void Calib::plotReprojectionErrors(
 
     std::vector<std::vector<double> > data;
 
-#pragma omp critical (plotReprojectionErrors)
+#pragma omp critical
     {
         prepareCalibration();
         getReprojections(calib, image_index, markers, reprojections);
@@ -83,15 +82,15 @@ void Calib::plotReprojectionErrors(
             data.push_back({marker.x, marker.y,
                             reprojection.x, reprojection.y,
                             error});
-            proj_x.push(marker.x, reprojection.x);
-            proj_y.push(marker.y, reprojection.y);
+            proj_x.push_unsafe(marker.x, reprojection.x);
+            proj_y.push_unsafe(marker.y, reprojection.y);
             res_x.push_back(marker.x - reprojection.x);
             res_y.push_back(marker.y - reprojection.y);
             auto const id = getSimpleId(store.get(ii));
             residuals_by_marker[id].push_back(std::make_pair(marker, reprojection));
             errors.push_back(error);
-            error_stats.push(error);
-            error_hist.push(error);
+            error_stats.push_unsafe(error);
+            error_hist.push_unsafe(error);
         }
 
         /*
@@ -149,7 +148,7 @@ void Calib::plotReprojectionErrors(
                  << "set title 'CDF of the Reprojection Error';\n"
                  << "set xlabel 'error';\n"
                  << "set ylabel 'CDF';\n"
-                 << "plot " << plot.file1d(errors, plot_name + ".errors." + suffix + ".data") << " u 1:($0/" << errors.size()-1 << ") w l notitle;\n"
+                 << "plot " << plot.file(errors, plot_name + ".errors." + suffix + ".data") << " u 1:($0/" << errors.size()-1 << ") w l notitle;\n"
                  << "set logscale x;\n"
                  << "set output \"" << plot_name + ".error-dist-log." << suffix << ".svg\";\n"
                  << "replot;\n"
@@ -158,7 +157,7 @@ void Calib::plotReprojectionErrors(
                  << "set title 'Reprojection Error Histogram';\n"
                  << "set xlabel 'error';\n"
                  << "set ylabel 'absolute frequency';\n"
-                 << "plot " << plot.file1d(error_hist.getAbsoluteHist(), error_hist_data)
+                 << "plot " << plot.file(error_hist.getAbsoluteHist(), error_hist_data)
                  << " w boxes notitle;\n"
                  << "set output \"" << plot_name + ".error-hist-log." << suffix << ".svg\";\n"
                  << "set logscale xy;\n"
@@ -278,14 +277,20 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
     getCalib(calibName);
     runningstats::QuantileStats<float> res_x, res_y, res_all;
     runningstats::Stats2D<float> res_xy;
-#pragma omp parallel for schedule(dynamic)
+    std::multimap<double, std::string> error_overview;
+    std::cout << "Plotting reprojection errors:" << std::endl
+              << std::string(imagePoints.size(), '-') << std::endl;
+//#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         std::vector<float> local_res_x, local_res_y;
         plotReprojectionErrors(calibName, ii, residuals_by_marker, prefix, suffix, local_res_x, local_res_y);
 #pragma omp critical
         {
             assert(local_res_x.size() == local_res_y.size());
+            runningstats::QuantileStats<float> error_lengths;
             for (size_t ii = 0; ii < local_res_x.size(); ++ii) {
+                double const length = std::sqrt(local_res_x[ii] * local_res_x[ii] + local_res_y[ii] * local_res_y[ii]);
+                error_lengths.push_unsafe(length);
                 if (std::abs(local_res_x[ii]) > 3 || std::abs(local_res_y[ii]) > 3) {
                     continue;
                 }
@@ -297,7 +302,13 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
                 res_y.push_unsafe(local_res_y[ii]);
                 res_all.push_unsafe(local_res_y[ii]);
             }
+            error_overview.insert({error_lengths.getMedian(), imageFiles[ii]});
         }
+        std::cout << "." << std::flush;
+    }
+    clog::L(__func__, 2) << "Median error length overview:" << std::endl;
+    for (auto const& it : error_overview) {
+        clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
     }
     std::string name_x = prefix + "all-x" + suffix;
     runningstats::HistConfig conf;
@@ -308,7 +319,9 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
     res_y.plotHist(prefix + "all-y" + suffix, res_y.FreedmanDiaconisBinSize(), conf.setTitle("y-component of residuals"));
     res_all.plotHist(prefix + "all-xy" + suffix, res_all.FreedmanDiaconisBinSize(), conf.setTitle("x- and y-residuals"));
     std::pair<double, double> bins = res_xy.FreedmanDiaconisBinSize();
-    res_xy.getHistogram2Dfixed({bins.first/2, bins.second/2}).plotHist(prefix + "hm" + suffix, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Residuals Heatmap"));
+    runningstats::Histogram2Dfixed hist = res_xy.getHistogram2Dfixed({bins.first/2, bins.second/2});
+    hist.plotHist(prefix + "hm" + suffix, conf.setXLabel("x").setYLabel("y").setTitle("Residuals Heatmap"));
+    hist.plotHist(prefix + "hmlog" + suffix, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Residuals Heatmap"));
     //plotErrorsByMarker(residuals_by_marker);
     plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
 }
