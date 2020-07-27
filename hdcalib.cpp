@@ -164,7 +164,7 @@ void Calib::checkSamePosition(const std::vector<string> &suffixes, const string 
 
     std::multimap<double, std::string> errors;
 
-    for (std::pair<std::string, std::vector<std::string> > const& it : comparisons) {
+    for (std::pair<const std::string, std::vector<std::string> > const& it : comparisons) {
         if (it.second.size() < 2) {
             continue;
         }
@@ -190,7 +190,7 @@ void Calib::checkSamePosition(const std::vector<string> &suffixes, const string 
         errors.insert({median, prefix});
     }
     clog::L(__func__, 2) << "Error stats:" << std::endl;
-    for (std::pair<double, std::string> const& it : errors) {
+    for (std::pair<const double, std::string> const& it : errors) {
         clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
     }
 }
@@ -199,7 +199,7 @@ void Calib::checkSamePosition2D(const std::vector<string> &suffixes) {
     std::map<std::string, std::vector<std::string> > comparisons = matchSuffixes(imageFiles, suffixes);
 
     std::multimap<double, std::string> errors;
-    for (std::pair<std::string, std::vector<std::string> > const& it : comparisons) {
+    for (std::pair<const std::string, std::vector<std::string> > const& it : comparisons) {
         if (it.second.size() < 2) {
             continue;
         }
@@ -226,7 +226,7 @@ void Calib::checkSamePosition2D(const std::vector<string> &suffixes) {
         errors.insert({median, prefix});
     }
     clog::L(__func__, 2) << "Error stats:" << std::endl;
-    for (std::pair<double, std::string> const& it : errors) {
+    for (std::pair<const double, std::string> const& it : errors) {
         clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
     }
 }
