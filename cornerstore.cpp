@@ -34,6 +34,12 @@ void CornerStore::add(const std::vector<Corner> &vec) {
     pos_tree->addPoints(corners.size() - vec.size(), corners.size()-1);
 }
 
+void CornerStore::addConditional(const std::vector<Corner> &vec) {
+    for (auto const& pt : vec) {
+        push_conditional(pt);
+    }
+}
+
 void CornerStore::getMajorPoints(
         std::vector<Point2f> &imagePoints,
         std::vector<Point3f> &objectPoints,

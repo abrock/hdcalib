@@ -55,12 +55,18 @@ target_link_libraries(hdcalib-analyze-grid
     hdcalib-rectify
 )
 
+add_library(griddescription griddescription.cpp)
+
+add_library(hdcalib-fit-grid fitgrid-lib.cpp)
+
 target_link_libraries(hdcalib
   cornerstore
   calib-stats
+  griddescription
   hdcalib-readwrite
   hdcalib-ceres-calib
   hdcalib-cornercolor
+  hdcalib-fit-grid
   hdcalib-analyze-grid
   hdcalib-rectify
   hdmarker
@@ -96,12 +102,15 @@ add_executable(hdcalib-simulate "simulate.cpp")
 
 add_executable(hdcalib-rectify-tool rectify.cpp)
 
+add_executable(hdcalib-fitgrid fit-grid.cpp)
+
 add_executable(hdcalib-analyze-detection-rates analyze-detection-rates.cpp)
 
 foreach(program
         hdcalib-tool
         extract-green
         hdcalib-localize-exception
+        hdcalib-fitgrid
         hdcalib-analyze-detection-rates
         hdcalib-analyze-lf
         hdcalib-marker-detection
@@ -115,6 +124,7 @@ endforeach()
 
 foreach(program
         hdcalib-analyze-detection-rates
+        hdcalib-fitgrid
         hdcalib-offset-comparison
         hdcalib-tool
         hdcalib-speedtest-prepare-calibration

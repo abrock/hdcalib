@@ -29,6 +29,8 @@
 
 #include <glog/logging.h>
 
+#include "griddescription.h"
+
 namespace hdcalib {
 using namespace std;
 using namespace hdmarker;
@@ -318,6 +320,7 @@ public:
             std::vector<Point3f> &objectPoints,
             hdcalib::Calib const& calib) const;
 
+    void addConditional(const std::vector<Corner> &vec);
 };
 
 template<int LENGTH>
@@ -527,8 +530,24 @@ public:
         return *this;
     }
 
+    void keepMarkers(const CornerStore &keep);
+
     void write(cv::FileStorage & fs) const;
     void read(const FileNode &node);
+
+    /**
+     * @brief getTVec returns the translation vector corresponding to a given filename.
+     * @param filename
+     * @return
+     */
+    Mat getTVec(const string &filename) const;
+
+    /**
+     * @brief getRVec returns the rotation vector corresponding to a given filename.
+     * @param filename
+     * @return
+     */
+    cv::Mat getRVec(std::string const& filename) const;
 };
 
 void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);
@@ -702,6 +721,19 @@ class Calib {
 public:
     Calib();
 
+    /**
+     * @brief getImageNames returns a (sorted) list of all filenames stored in the data map.
+     * @return
+     */
+    std::vector<std::string> getImageNames() const;
+
+    /**
+     * @brief purgeSubmarkers removes all submarkers from the data so only the main markers remain.
+     */
+    void purgeSubmarkers();
+
+    static cv::Point3f getTransformedPoint(CalibResult& res, std::string const& filename, cv::Point3f const& pt);
+
     void checkSamePosition(std::vector<std::string> const& suffixes, std::string const calibration_type = "Flexible");
     void checkSamePosition2D(std::vector<std::string> const& suffixes);
 
@@ -722,6 +754,12 @@ public:
     void setOutlierThreshold(double const new_val);
 
     void purgeUnlikelyByDetectedRectangles();
+
+    /**
+     * @brief getIdRectangleUnion Finds the rectangle containing all main marker ids
+     * @return
+     */
+    Rect_<int> getIdRectangleUnion() const;
 
 
     static double distance(hdmarker::Corner const& a, hdmarker::Corner const& b);
@@ -1227,6 +1265,7 @@ public:
     double SimpleCeresCalib(double const outlier_threshold = -1);
 
     void setCeresTolerance(double const new_tol);
+    static Vec3d get3DPointWithoutCorrection(const cv::Point3f &_src, const Mat &_rvec, const Mat &_tvec);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1244,6 +1283,16 @@ private:
 
     template<class T>
     void ignore_unused(T&) {}
+};
+
+struct FitGrid {
+    double scale = 1;
+
+    void findGrids(std::map<std::string, std::map<std::string, std::vector<cv::Point3f> > > &detected_grids,
+                   const GridDescription &desc, Calib &calib, CalibResult & calib_result, std::vector<Point3f> initial_points);
+
+public:
+    void runFit(Calib &calib, CalibResult &calib_result, const std::vector<GridDescription> &desc);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

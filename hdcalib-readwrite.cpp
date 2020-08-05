@@ -402,6 +402,40 @@ void Calib::read(const FileNode &node) {
     }
 }
 
+Mat CalibResult::getRVec(const string &filename) const {
+    assert(imageFiles.size() == rvecs.size());
+    for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
+        if (filename == imageFiles[ii]) {
+            return rvecs[ii];
+        }
+    }
+    throw std::runtime_error(std::string("CalibResult does not contain the requested file ") + filename);
+}
+
+Mat CalibResult::getTVec(const string &filename) const {
+    assert(imageFiles.size() == tvecs.size());
+    for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
+        if (filename == imageFiles[ii]) {
+            return tvecs[ii];
+        }
+    }
+    throw std::runtime_error(std::string("CalibResult does not contain the requested file ") + filename);
+}
+
+void CalibResult::keepMarkers(CornerStore const& keep) {
+    std::map<cv::Point3i, cv::Point3f, cmpPoint3i> new_objectPointCorrections;
+    for (std::pair<const cv::Point3i, cv::Point3f> const& it : objectPointCorrections) {
+        hdmarker::Corner c;
+        c.id.x = it.first.x;
+        c.id.y = it.first.y;
+        c.page = it.first.z;
+        if (keep.hasID(c, c)) {
+            new_objectPointCorrections[it.first] = it.second;
+        }
+    }
+    objectPointCorrections = new_objectPointCorrections;
+}
+
 void CalibResult::write(FileStorage &fs) const {
     fs << "{"
        << "cameraMatrix" << cameraMatrix
