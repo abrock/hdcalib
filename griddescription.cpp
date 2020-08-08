@@ -6,6 +6,10 @@ GridPointDesc::GridPointDesc(const std::string _suffix, const cv::Vec3d _point) 
 
 GridPointDesc::GridPointDesc() {}
 
+cv::Point3f GridPointDesc::getPt() const {
+    return cv::Point3f(point[0], point[1], point[2]);
+}
+
 void GridPointDesc::write(cv::FileStorage &fs) const {
     fs << "{"
        << "suffix" << suffix

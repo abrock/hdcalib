@@ -1,5 +1,7 @@
 #include "hdcalib.h"
 
+#include <opencv2/highgui.hpp>
+
 namespace {
 
 template<class T>
@@ -50,8 +52,11 @@ struct GridFitCost {
     GridFitCost(cv::Point3f _src, cv::Point3f _dst) : src(_src), dst(_dst) {}
 
     template<class T>
-    bool operator()(T * residuals, T const * const scale, T const * const rvec, T const * const tvec) const {
-        T pt[3] = {scale[0]*src.x, scale[0]*src.y, scale[0]*src.z};
+    bool operator()(T const * const scale,
+                    T const * const rvec,
+                    T const * const tvec,
+                    T * residuals) const {
+        T pt[3] = {scale[0]*T(src.x), scale[0]*T(src.y), scale[0]*T(src.z)};
         rotate_translate(pt, residuals, rvec, tvec);
         residuals[0] -= dst.x;
         residuals[1] -= dst.y;
@@ -100,14 +105,14 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
     /**
      * @brief target_pts holds the initial 3D coordinates of the 3D markers used in the fit.
      */
-    std::vector<cv::Point3f> target_pts;
+    std::vector<cv::Point3f> known_grid_pts;
     for (double xx = 0; xx <= num_x+.1; ++xx) {
         for (double yy = 0; yy <= num_y+.1; ++yy) {
             hdmarker::Corner c;
             c.page = 0;
             c.id.x = std::round(area.x + area.width * xx / num_x);
             c.id.y = std::round(area.y + area.width * yy / num_y);
-            target_pts.push_back(calib.getInitial3DCoord(c));
+            known_grid_pts.push_back(calib.getInitial3DCoord(c));
         }
     }
 
@@ -120,10 +125,10 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
     // desc index        grid prefix  vector of tvecs, one for each marker on the target
     std::vector<std::map<std::string, std::vector<cv::Vec3d> > > tvecs(desc.size());
 
-    double scale = 1;
+    double scale = 102.24;
 
     for (size_t grid = 0; grid < desc.size(); ++grid) {
-        findGrids(detected_grids[grid], desc[grid], calib, calib_result, target_pts);
+        findGrids(detected_grids[grid], desc[grid], calib, calib_result, known_grid_pts);
     }
 
     for (size_t ii = 0; ii < desc.size(); ++ii) {
@@ -139,7 +144,7 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
 
     ceres::Problem problem;
 
-    for (size_t ii = 0; ii < desc.size(); ++ii) {
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Debug output only
         std::cout << "Grid name: " << desc[ii].name << std::endl
                   << "#points: " << desc[ii].points.size() << std::endl
                   << "#detected: " << detected_grids[ii].size() << std::endl
@@ -150,7 +155,7 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
         std::cout << std::endl;
     }
 
-    for (size_t ii = 0; ii < desc.size(); ++ii) {
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Initialize all the rvecs and tvecs in the nested containers.
         GridDescription const& grid_desc = desc[ii];
         for (auto const& it : detected_grids[ii]) {
             std::string const& grid_prefix = it.first;
@@ -161,12 +166,132 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
 
                 GridPointDesc const& pt_desc = grid_desc.getDesc(suffix);
 
-
+                rvecs[ii][grid_prefix] = cv::Vec3d(0.1, 0.1, 0.1);
+                rvecs[ii][grid_prefix][0] = 0.11;
+                rvecs[ii][grid_prefix][1] = 0.12;
+                rvecs[ii][grid_prefix][2] = 0.13;
+                tvecs[ii][grid_prefix] = std::vector<cv::Vec3d>(target_pts.size(), cv::Vec3d(0,0,0));
             }
         }
     }
 
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Initialize all the rvecs and tvecs in the nested containers.
+        GridDescription const& grid_desc = desc[ii];
+        for (auto const& it : detected_grids[ii]) {
+            std::string const& grid_prefix = it.first;
+            std::map<std::string, std::vector<cv::Point3f> > const& grid = it.second;
+            for (auto const& it2 : grid) {
+                std::string const& suffix = it2.first;
+                std::vector<cv::Point3f> const& target_pts = it2.second;
 
+                GridPointDesc const& pt_desc = grid_desc.getDesc(suffix);
+
+                assert(target_pts.size() == tvecs[ii][grid_prefix].size());
+                for (size_t jj = 0; jj < target_pts.size(); ++jj) {
+                    auto const rvec_it = rvecs[ii].find(grid_prefix);
+                    assert(rvec_it != rvecs[ii].end());
+                    cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
+                    assert(r_vec.dot(r_vec) > 0.0001);
+                    problem.AddResidualBlock(
+                                new ceres::AutoDiffCostFunction<GridFitCost, 3, 1, 3, 3>(
+                                    new GridFitCost(target_pts[ii], pt_desc.getPt())
+                                    ),
+                                nullptr, // loss function
+                                &scale,
+                                r_vec.val,
+                                tvecs[ii][grid_prefix][jj].val
+                                );
+                }
+            }
+        }
+    }
+
+    ceres::Solver::Options options;
+    options.num_threads = int(calib.threads);
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.max_num_iterations = 150*1000;
+    options.minimizer_progress_to_stdout = true;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
+    ceres::Solver::Summary summary;
+    Solve(options, &problem, &summary);
+
+    clog::L(__func__, 1) << summary.BriefReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
+
+    std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_x(desc.size());
+    std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_y(desc.size());
+    std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_z(desc.size());
+
+    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_x(desc.size());
+    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_y(desc.size());
+    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_z(desc.size());
+
+    std::multimap<double, std::string> max_errors_per_image;
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Evaluate residuals.
+        GridDescription const& grid_desc = desc[ii];
+        for (auto const& it : detected_grids[ii]) {
+            std::string const& grid_prefix = it.first;
+            std::map<std::string, std::vector<cv::Point3f> > const& grid = it.second;
+            for (auto const& it2 : grid) {
+                std::string const& suffix = it2.first;
+                std::vector<cv::Point3f> const& target_pts = it2.second;
+
+                GridPointDesc const& pt_desc = grid_desc.getDesc(suffix);
+
+                double max_error_length = 0;
+                for (size_t jj = 0; jj < target_pts.size(); ++jj) {
+                    auto const rvec_it = rvecs[ii].find(grid_prefix);
+                    assert(rvec_it != rvecs[ii].end());
+                    cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
+                    GridFitCost cost (target_pts[ii], known_grid_pts[ii]);
+                    cv::Vec3d residual(0,0,0);
+                    cost(&scale,
+                         r_vec.val,
+                         tvecs[ii][grid_prefix][jj].val,
+                         residual.val
+                         );
+                    per_grid_stats_x[ii][grid_prefix].push_unsafe(residual[0]);
+                    per_grid_stats_y[ii][grid_prefix].push_unsafe(residual[1]);
+                    per_grid_stats_z[ii][grid_prefix].push_unsafe(residual[2]);
+
+                    per_grid_type_stats_x[ii].push_unsafe(residual[0]);
+                    per_grid_type_stats_y[ii].push_unsafe(residual[1]);
+                    per_grid_type_stats_z[ii].push_unsafe(residual[2]);
+
+                    double const error_length = std::sqrt(residual.dot(residual));
+                    max_error_length = std::max(max_error_length, error_length);
+                }
+                max_errors_per_image.insert({max_error_length, grid_prefix + suffix});
+            }
+
+            /*
+            std::cout << "Residual stats for grid " << grid_prefix << ": " << std::endl
+                      << "x: " << per_grid_stats_x[ii][grid_prefix].print() << std::endl
+                      << "y: " << per_grid_stats_y[ii][grid_prefix].print() << std::endl
+                      << "z: " << per_grid_stats_z[ii][grid_prefix].print() << std::endl << std::endl;
+                      */
+        }
+    }
+
+    std::cout << "Max errors per image, sorted: " << std::endl;
+    for (auto const& it : max_errors_per_image) {
+        double const error = it.first;
+        std::string const& filename = it.second;
+        std::cout << error << "\t" << filename << std::endl;
+    }
+    std::cout << std::endl;
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) {
+        std::cout << "Residual stats for grid type " << desc[ii].name << ": " << std::endl
+                  << "x: " << per_grid_type_stats_x[ii].print() << std::endl
+                  << "y: " << per_grid_type_stats_y[ii].print() << std::endl
+                  << "z: " << per_grid_type_stats_z[ii].print() << std::endl << std::endl;
+    }
+
+    std::cout << "estimated scale: " << scale << std::endl;
 
 }
 

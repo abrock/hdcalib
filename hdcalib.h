@@ -676,8 +676,6 @@ class Calib {
      */
     std::vector<int> validPages = {6,7};
 
-    unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
-
     bool preparedOpenCVCalib = false;
     bool preparedCalib = false;
 
@@ -720,6 +718,9 @@ class Calib {
 
 public:
     Calib();
+
+    unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
+
 
     /**
      * @brief getImageNames returns a (sorted) list of all filenames stored in the data map.
@@ -1266,6 +1267,9 @@ public:
 
     void setCeresTolerance(double const new_tol);
     static Vec3d get3DPointWithoutCorrection(const cv::Point3f &_src, const Mat &_rvec, const Mat &_tvec);
+
+    double ceres_tolerance = 1e-10;
+
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1279,14 +1283,14 @@ private:
             const int8_t axis,
             double rot_vec[]);
 
-    double ceres_tolerance = 1e-10;
-
     template<class T>
     void ignore_unused(T&) {}
 };
 
 struct FitGrid {
     double scale = 1;
+
+    double ceres_tolerance = 1e-16;
 
     void findGrids(std::map<std::string, std::map<std::string, std::vector<cv::Point3f> > > &detected_grids,
                    const GridDescription &desc, Calib &calib, CalibResult & calib_result, std::vector<Point3f> initial_points);

@@ -27,6 +27,8 @@ struct GridPointDesc {
      * @param node
      */
     void read(const cv::FileNode& node);
+
+    cv::Point3f getPt() const;
 };
 
 void write(cv::FileStorage &fs, const std::string &, const GridPointDesc &x);
