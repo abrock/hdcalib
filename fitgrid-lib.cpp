@@ -264,7 +264,7 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
                     double const error_length = std::sqrt(residual.dot(residual));
                     max_error_length = std::max(max_error_length, error_length);
                 }
-                max_errors_per_image.insert({max_error_length, grid_prefix + suffix});
+                max_errors_per_image.insert({max_error_length, grid_desc.name + ": " + grid_prefix + suffix});
             }
 
             /*
@@ -280,7 +280,7 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
     for (auto const& it : max_errors_per_image) {
         double const error = it.first;
         std::string const& filename = it.second;
-        std::cout << error << "\t" << filename << std::endl;
+        std::cout << std::setw(8) << error << "\t" << filename << std::endl;
     }
     std::cout << std::endl;
 
@@ -289,6 +289,14 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
                   << "x: " << per_grid_type_stats_x[ii].print() << std::endl
                   << "y: " << per_grid_type_stats_y[ii].print() << std::endl
                   << "z: " << per_grid_type_stats_z[ii].print() << std::endl << std::endl;
+        runningstats::HistConfig conf;
+        conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", x-axis")
+                .setXLabel("Residual[mm]");
+        per_grid_type_stats_x[ii].plotHist(desc[ii].name + "-stats-x", per_grid_type_stats_x[ii].FreedmanDiaconisBinSize(), conf);
+        conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", y-axis");
+        per_grid_type_stats_y[ii].plotHist(desc[ii].name + "-stats-y", per_grid_type_stats_y[ii].FreedmanDiaconisBinSize());
+        conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", z-axis");
+        per_grid_type_stats_z[ii].plotHist(desc[ii].name + "-stats-z", per_grid_type_stats_z[ii].FreedmanDiaconisBinSize());
     }
 
     std::cout << "estimated scale: " << scale << std::endl;
