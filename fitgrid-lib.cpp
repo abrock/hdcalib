@@ -187,11 +187,11 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
                 GridPointDesc const& pt_desc = grid_desc.getDesc(suffix);
 
                 assert(target_pts.size() == tvecs[ii][grid_prefix].size());
+                auto const rvec_it = rvecs[ii].find(grid_prefix);
+                assert(rvec_it != rvecs[ii].end());
+                cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
+                assert(r_vec.dot(r_vec) > 0.0001);
                 for (size_t jj = 0; jj < target_pts.size(); ++jj) {
-                    auto const rvec_it = rvecs[ii].find(grid_prefix);
-                    assert(rvec_it != rvecs[ii].end());
-                    cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
-                    assert(r_vec.dot(r_vec) > 0.0001);
                     problem.AddResidualBlock(
                                 new ceres::AutoDiffCostFunction<GridFitCost, 3, 1, 3, 3>(
                                     new GridFitCost(target_pts[ii], pt_desc.getPt())
@@ -242,11 +242,11 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
                 GridPointDesc const& pt_desc = grid_desc.getDesc(suffix);
 
                 double max_error_length = 0;
+                auto const rvec_it = rvecs[ii].find(grid_prefix);
+                assert(rvec_it != rvecs[ii].end());
+                cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
                 for (size_t jj = 0; jj < target_pts.size(); ++jj) {
-                    auto const rvec_it = rvecs[ii].find(grid_prefix);
-                    assert(rvec_it != rvecs[ii].end());
-                    cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
-                    GridFitCost cost (target_pts[ii], known_grid_pts[ii]);
+                    GridFitCost cost (target_pts[ii], pt_desc.getPt());
                     cv::Vec3d residual(0,0,0);
                     cost(&scale,
                          r_vec.val,
