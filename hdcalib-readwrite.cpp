@@ -218,7 +218,8 @@ Mat Calib::read_raw(const string &filename) {
     }
 
     if ("Sony" == std::string(RawProcessor.imgdata.idata.make)
-            && "ILCE-7RM2" == std::string(RawProcessor.imgdata.idata.model)) {
+            && ("ILCE-7RM2" == std::string(RawProcessor.imgdata.idata.model)
+                || "DSC-RX10M3" == std::string(RawProcessor.imgdata.idata.model))) {
         clog::L(__func__, 2) << "Known camera detected, scaling result" << std::endl;
         //result *= 4;
         double min = 0, max = 0;
@@ -226,13 +227,12 @@ Mat Calib::read_raw(const string &filename) {
         clog::L(__func__, 2) << "original min/max: " << min << " / " << max << std::endl;
         result.forEach<uint16_t>([&](uint16_t& element, const int []) -> void
         {
-            element *= 4;
+            element *= 3;
         }
         );
         cv::minMaxIdx(result, &min, &max);
         clog::L(__func__, 2) << "scaled min/max: " << min << " / " << max << std::endl;
     }
-
 
     return result;
 }
