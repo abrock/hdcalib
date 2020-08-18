@@ -40,8 +40,6 @@ int main(int argc, char* argv[]) {
     ParallelTime t, total_time;
     std::stringstream time_log;
 
-    bool removed = false;
-
     bool calib_updated = false;
 
     hdcalib::Calib calib;
@@ -52,14 +50,15 @@ int main(int argc, char* argv[]) {
     bool libraw = false;
     bool plot_markers = false;
     bool only_green = false;
-    bool verbose = true;
     bool gnuplot = false;
     std::string del = "";
     std::vector<int> valid_pages;
     std::vector<std::string> calibration_types;
     std::vector<std::string> same_pos_suffixes;
     std::string cache_file;
-    double outlier_threshold = 20;
+    std::string cache_file_prefix;
+    std::string cache_file_reduced;
+    double outlier_threshold = -1;
     double max_outlier_percentage = 105;
     double cauchy_param = 1;
     try {
@@ -92,27 +91,31 @@ int main(int argc, char* argv[]) {
                                                false, 105, "max. outlier percentage");
         cmd.add(max_outlier_arg);
 
+        TCLAP::ValueArg<double> ceres_tolerance_arg("", "ceres-tol",
+                                                    "Value to be used for function, gradient- and parameter tolerance by the Ceres solver.",
+                                                    false, 1e-10, "max. outlier percentage");
+        cmd.add(ceres_tolerance_arg);
+
         TCLAP::ValueArg<float> outlier_threshold_arg("", "thresh",
                                                      "Maximum error from previous calibrations for a marker to be included in the calibration.",
-                                                     false, 20, "max. error threshold");
+                                                     false, -1, "max. error threshold");
         cmd.add(outlier_threshold_arg);
 
         TCLAP::ValueArg<std::string> cache_arg("c", "cache",
-                                               "Cache file for the calibration results. "
-                                               "This makes use of the opencv filestorage capabilities "
-                                               "so filename extension should be .xml/.xml.gz/.yaml/.yaml.gz",
+                                               "Cache filename prefix for the calibration results. "
+                                               ".yaml.gz will be appended.",
                                                false, "", "Calibration cache.");
         cmd.add(cache_arg);
 
         TCLAP::ValueArg<std::string> delete_arg("", "delete",
-                                              "Specify a calibration result to delete from the cached calibration. ",
-                                              false, "", "Calibration type.");
+                                                "Specify a calibration result to delete from the cached calibration. ",
+                                                false, "", "Calibration type.");
         cmd.add(delete_arg);
 
         TCLAP::MultiArg<std::string> type_arg("t", "type",
                                               "Type of the calibration(s) to run. "
                                               "Possibilities in increasing order of computational complexity:"
-                                              "SimpleOpenCV, OpenCV, Ceres, Flexible, SemiFlexible ",
+                                              "SimpleOpenCV, SimpleCeres, OpenCV, Ceres, Flexible, SemiFlexible ",
                                               false, "Calibration type.");
         cmd.add(type_arg);
 
@@ -184,7 +187,9 @@ int main(int argc, char* argv[]) {
         demosaic = demosaic_arg.getValue() || libraw;
         plot_markers = plot_markers_arg.getValue();
         std::vector<std::string> const textfiles = textfile_arg.getValue();
-        cache_file = cache_arg.getValue();
+        cache_file_prefix = cache_arg.getValue();
+        cache_file = cache_file_prefix + ".yaml.gz";
+        cache_file_reduced = cache_file_prefix + "-reduced.yaml.gz";
         gnuplot = gnuplot_arg.getValue();
         valid_pages = valid_pages_arg.getValue();
         calibration_types = type_arg.getValue();
@@ -230,6 +235,8 @@ int main(int argc, char* argv[]) {
                             << "Gnuplot: " << (gnuplot ? "true" : "false") << std::endl
                             << "Valid pages: " << str_pages.str() << std::endl;
         calib.setValidPages(valid_pages);
+
+        calib.setCeresTolerance(ceres_tolerance_arg.getValue());
 
 
         calib.setPlotMarkers(plot_markers);
@@ -350,18 +357,18 @@ int main(int argc, char* argv[]) {
         clog::L(__func__, 2) << "Running calib " << calibration_type << std::endl;
         calib.runCalib(calibration_type, outlier_threshold);
         calib_updated = true;
-        TIMELOG("Calib");
-        calib.plotReprojectionErrors(calibration_type, calibration_type);
-        TIMELOG("plotReprojectionErrors");
+        TIMELOG(std::string("Calib ") + calibration_type);
         calib.exportPointClouds(calibration_type);
         TIMELOG("exportPointClouds");
 
-        calib.plotResidualsIntoImages(calibration_type);
-        TIMELOG("plotResidualsIntoImages");
+        if (calibration_type == calibration_types.back()) {
+            calib.plotResidualsIntoImages(calibration_type);
+            TIMELOG("plotResidualsIntoImages");
+        }
 
         if (gnuplot) {
             calib.plotReprojectionErrors(calibration_type, calibration_type);
-            TIMELOG("plotReprojectionErrors ceres3");
+            TIMELOG("plotReprojectionErrors");
         }
 
         clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
@@ -377,10 +384,20 @@ int main(int argc, char* argv[]) {
     }
 
     if (calib_updated && !cache_file.empty()) {
-        cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
-        fs << "calibration" << calib;
-        fs.release();
-        TIMELOG("Writing cache file");
+        {
+            cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
+            fs << "calibration" << calib;
+            fs.release();
+            TIMELOG("Writing cache file");
+        }
+        {
+            cv::FileStorage fs(cache_file_reduced, cv::FileStorage::WRITE);
+            hdcalib::Calib c(calib);
+            c.purgeSubmarkers();
+            fs << "calibration" << c;
+            fs.release();
+            TIMELOG("Writing cache file");
+        }
     }
 
 

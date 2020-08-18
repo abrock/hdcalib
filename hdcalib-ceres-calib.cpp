@@ -1,5 +1,8 @@
 #include "hdcalib.h"
 
+#undef NDEBUG
+#include <assert.h>
+
 namespace  {
 template<class T>
 void vec2arr(T arr[3], cv::Point3d const& p) {
@@ -61,9 +64,19 @@ double Calib::CeresCalib(double const outlier_threshold) {
         if (hasCalibName("OpenCV")) {
             calibrations["Ceres"] = calibrations["OpenCV"];
         }
+        else if (hasCalibName("SimpleCeres")) {
+            calibrations["Ceres"] = calibrations["SimpleCeres"];
+        }
+        else if (hasCalibName("SimpleOpenCV")) {
+            calibrations["Ceres"] = calibrations["SimpleOpenCV"];
+        }
     }
 
     CalibResult & calib = calibrations["Ceres"];
+
+    assert(calib.rvecs.size() == imageFiles.size());
+    assert(calib.tvecs.size() == imageFiles.size());
+
 
     std::vector<double> local_dist = mat2vec(calib.distCoeffs);
 
@@ -270,6 +283,10 @@ double Calib::SimpleCeresCalib(const double outlier_threshold) {
     return 0;
 }
 
+void Calib::setCeresTolerance(const double new_tol) {
+    ceres_tolerance = std::abs(new_tol);
+}
+
 struct LocalCorrectionsSum {
     /**
     std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& local_corrections;
@@ -329,7 +346,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
         calib.outlier_percentages = std::vector<double>(data.size(), 0.0);
     }
     size_t ignored_files_counter = 0;
-    std::map<double, std::string> outlier_ranking;
+    std::multimap<double, std::string> outlier_ranking;
     runningstats::RunningStats outlier_percentages;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
@@ -401,7 +418,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
         }
         double const outlier_percentage = 100.0 * double(outlier_counter) / sub_data.size();
         outlier_percentages.push_unsafe(outlier_percentage);
-        outlier_ranking[outlier_percentage] = imageFiles[ii];
+        outlier_ranking.insert({outlier_percentage, imageFiles[ii]});
         calib.outlier_percentages[ii] = outlier_percentage;
     }
     clog::L(__func__, 2) << "Outlier ranking:" << std::endl;
@@ -764,6 +781,10 @@ ProjectionFunctor::ProjectionFunctor(
         const std::vector<Point3f> &_points) :
     markers(_markers),
     points(_points) {
+}
+
+ProjectionFunctor::~ProjectionFunctor() {
+
 }
 
 template<class T>

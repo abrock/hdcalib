@@ -55,12 +55,18 @@ target_link_libraries(hdcalib-analyze-grid
     hdcalib-rectify
 )
 
+add_library(griddescription griddescription.cpp)
+
+add_library(hdcalib-fit-grid fitgrid-lib.cpp)
+
 target_link_libraries(hdcalib
   cornerstore
   calib-stats
+  griddescription
   hdcalib-readwrite
   hdcalib-ceres-calib
   hdcalib-cornercolor
+  hdcalib-fit-grid
   hdcalib-analyze-grid
   hdcalib-rectify
   hdmarker
@@ -75,6 +81,8 @@ target_link_libraries(hdcalib
 )
 
 add_executable(hdcalib-tool "main.cpp")
+
+add_executable(hdcalib-overexposed hdcalib-overexposed.cpp)
 
 add_executable(hdcalib-analyze-lf "analyze-lf.cpp")
 
@@ -94,6 +102,8 @@ add_executable(hdcalib-simulate "simulate.cpp")
 
 add_executable(hdcalib-rectify-tool rectify.cpp)
 
+add_executable(hdcalib-fitgrid fit-grid.cpp)
+
 add_executable(hdcalib-analyze-detection-rates analyze-detection-rates.cpp)
 
 add_executable(raw2png raw2png.cpp)
@@ -102,6 +112,7 @@ foreach(program
         hdcalib-tool
         extract-green
         hdcalib-localize-exception
+        hdcalib-fitgrid
         hdcalib-analyze-detection-rates
         hdcalib-analyze-lf
         hdcalib-marker-detection
@@ -116,6 +127,7 @@ endforeach()
 
 foreach(program
         hdcalib-analyze-detection-rates
+        hdcalib-fitgrid
         hdcalib-offset-comparison
         hdcalib-tool
         hdcalib-speedtest-prepare-calibration
@@ -145,6 +157,11 @@ target_link_libraries(valgrind-tests
 add_executable(hdcalib-compare-images compare-images.cpp)
 
 target_link_libraries(hdcalib-compare-images
+      ${OpenCV_LIBS}
+      ${RUNNINGSTATS_LIBRARIES}
+    )
+
+target_link_libraries(hdcalib-overexposed
       ${OpenCV_LIBS}
       ${RUNNINGSTATS_LIBRARIES}
     )

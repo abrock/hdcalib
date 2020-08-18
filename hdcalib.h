@@ -29,6 +29,8 @@
 
 #include <glog/logging.h>
 
+#include "griddescription.h"
+
 namespace hdcalib {
 using namespace std;
 using namespace hdmarker;
@@ -318,6 +320,7 @@ public:
             std::vector<Point3f> &objectPoints,
             hdcalib::Calib const& calib) const;
 
+    void addConditional(const std::vector<Corner> &vec);
 };
 
 template<int LENGTH>
@@ -359,6 +362,8 @@ class ProjectionFunctor {
 public:
     ProjectionFunctor(std::vector<cv::Point2f> const& _markers,
                       std::vector<cv::Point3f> const& _points);
+    ~ProjectionFunctor();
+
     /*
     1, // focal length x
     1, // focal length y
@@ -443,6 +448,10 @@ struct cmpSimpleIndex3 {
     bool operator()(const C& a, const C& b) const;
 };
 
+struct cmpPoint3i {
+    bool operator()(const cv::Point3i &a, const cv::Point3i &b) const;
+};
+
 class CalibResult {
 public:
     /**
@@ -450,7 +459,7 @@ public:
      * which allow the optimization to account for systematic misplacements
      * by the marker detection algorithm
      */
-    std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > objectPointCorrections;
+    std::map<cv::Point3i, cv::Point3f, cmpPoint3i> objectPointCorrections;
 
     /**
      * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
@@ -521,8 +530,24 @@ public:
         return *this;
     }
 
+    void keepMarkers(const CornerStore &keep);
+
     void write(cv::FileStorage & fs) const;
     void read(const FileNode &node);
+
+    /**
+     * @brief getTVec returns the translation vector corresponding to a given filename.
+     * @param filename
+     * @return
+     */
+    Mat getTVec(const string &filename) const;
+
+    /**
+     * @brief getRVec returns the rotation vector corresponding to a given filename.
+     * @param filename
+     * @return
+     */
+    cv::Mat getRVec(std::string const& filename) const;
 };
 
 void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);
@@ -551,7 +576,7 @@ class Calib {
      */
     size_t openCVMaxPoints = 1000;
 
-    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpSimpleIndex3<cv::Point3i> > const& corrections) const;
+    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpPoint3i> const& corrections) const;
 
     /**
      * @brief imageSize Resolution of the input images.
@@ -651,8 +676,6 @@ class Calib {
      */
     std::vector<int> validPages = {6,7};
 
-    unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
-
     bool preparedOpenCVCalib = false;
     bool preparedCalib = false;
 
@@ -696,6 +719,22 @@ class Calib {
 public:
     Calib();
 
+    unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
+
+
+    /**
+     * @brief getImageNames returns a (sorted) list of all filenames stored in the data map.
+     * @return
+     */
+    std::vector<std::string> getImageNames() const;
+
+    /**
+     * @brief purgeSubmarkers removes all submarkers from the data so only the main markers remain.
+     */
+    void purgeSubmarkers();
+
+    static cv::Point3f getTransformedPoint(CalibResult& res, std::string const& filename, cv::Point3f const& pt);
+
     void checkSamePosition(std::vector<std::string> const& suffixes, std::string const calibration_type = "Flexible");
     void checkSamePosition2D(std::vector<std::string> const& suffixes);
 
@@ -716,6 +755,12 @@ public:
     void setOutlierThreshold(double const new_val);
 
     void purgeUnlikelyByDetectedRectangles();
+
+    /**
+     * @brief getIdRectangleUnion Finds the rectangle containing all main marker ids
+     * @return
+     */
+    Rect_<int> getIdRectangleUnion() const;
 
 
     static double distance(hdmarker::Corner const& a, hdmarker::Corner const& b);
@@ -766,7 +811,7 @@ public:
 
     void setRecursionDepth(const int _recursionDepth);
 
-    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpSimpleIndex3<cv::Point3i> > MarkerMap;
+    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpPoint3i> MarkerMap;
 
     static void scaleCornerIds(std::vector<hdmarker::Corner>& corners, int factor);
 
@@ -1219,6 +1264,12 @@ public:
     Vec3d get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec);
     void plotPoly(cv::Mat &img, const std::vector<cv::Point> &poly, const cv::Scalar &color, const int line);
     double SimpleCeresCalib(double const outlier_threshold = -1);
+
+    void setCeresTolerance(double const new_tol);
+    static Vec3d get3DPointWithoutCorrection(const cv::Point3f &_src, const Mat &_rvec, const Mat &_tvec);
+
+    double ceres_tolerance = 1e-10;
+
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1232,10 +1283,20 @@ private:
             const int8_t axis,
             double rot_vec[]);
 
-    double ceres_tolerance = 1e-10;
-
     template<class T>
     void ignore_unused(T&) {}
+};
+
+struct FitGrid {
+    double scale = 1;
+
+    double ceres_tolerance = 1e-16;
+
+    void findGrids(std::map<std::string, std::map<std::string, std::vector<cv::Point3f> > > &detected_grids,
+                   const GridDescription &desc, Calib &calib, CalibResult & calib_result, std::vector<Point3f> initial_points);
+
+public:
+    void runFit(Calib &calib, CalibResult &calib_result, const std::vector<GridDescription> &desc);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

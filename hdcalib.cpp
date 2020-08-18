@@ -120,7 +120,14 @@ void Calib::getReprojections(
 
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
-        cv::Point3f current_objPoint = objPoints[jj] + calib.objectPointCorrections[getSimpleId(store.get(jj))];
+        Corner const& current_corner = store.get(jj);
+        cv::Point3i simple_id = getSimpleId(current_corner);
+        cv::Point3f correction;
+        auto const it = calib.objectPointCorrections.find(simple_id);
+        if (calib.objectPointCorrections.end() != it) {
+            correction = it->second;
+        }
+        cv::Point3f current_objPoint = objPoints[jj] + correction;
 
         vec2arr(p, current_objPoint);
         cv::Point2d marker_pos(imgPoints[jj]);
@@ -148,6 +155,31 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
+std::vector<string> Calib::getImageNames() const {
+    std::vector<std::string> result;
+    for (const auto& it : data) {
+        result.push_back(it.first);
+    }
+    return result;
+}
+
+void Calib::purgeSubmarkers() {
+    CornerStore union_store;
+    for (auto& it : data) {
+        CornerStore & store = it.second;
+        store.replaceCorners(store.getMainMarkers(cornerIdFactor));
+        union_store.addConditional(store.getCorners());
+    }
+    for (std::pair<const std::string, CalibResult> & c : calibrations) {
+        c.second.keepMarkers(union_store);
+    }
+}
+
+Point3f Calib::getTransformedPoint(CalibResult &res, const string &filename, const Point3f &pt) {
+    cv::Vec3d result = get3DPointWithoutCorrection(pt, res.getRVec(filename), res.getTVec(filename));
+    return cv::Point3f(result[0], result[1], result[2]);
+}
+
 void Calib::checkSamePosition(const std::vector<string> &suffixes, const string calibration_type) {
     CalibResult & calib = getCalib(calibration_type);
 
@@ -157,7 +189,7 @@ void Calib::checkSamePosition(const std::vector<string> &suffixes, const string 
 
     std::multimap<double, std::string> errors;
 
-    for (std::pair<std::string, std::vector<std::string> > const& it : comparisons) {
+    for (std::pair<const std::string, std::vector<std::string> > const& it : comparisons) {
         if (it.second.size() < 2) {
             continue;
         }
@@ -183,7 +215,7 @@ void Calib::checkSamePosition(const std::vector<string> &suffixes, const string 
         errors.insert({median, prefix});
     }
     clog::L(__func__, 2) << "Error stats:" << std::endl;
-    for (std::pair<double, std::string> const& it : errors) {
+    for (std::pair<const double, std::string> const& it : errors) {
         clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
     }
 }
@@ -192,7 +224,7 @@ void Calib::checkSamePosition2D(const std::vector<string> &suffixes) {
     std::map<std::string, std::vector<std::string> > comparisons = matchSuffixes(imageFiles, suffixes);
 
     std::multimap<double, std::string> errors;
-    for (std::pair<std::string, std::vector<std::string> > const& it : comparisons) {
+    for (std::pair<const std::string, std::vector<std::string> > const& it : comparisons) {
         if (it.second.size() < 2) {
             continue;
         }
@@ -219,7 +251,7 @@ void Calib::checkSamePosition2D(const std::vector<string> &suffixes) {
         errors.insert({median, prefix});
     }
     clog::L(__func__, 2) << "Error stats:" << std::endl;
-    for (std::pair<double, std::string> const& it : errors) {
+    for (std::pair<const double, std::string> const& it : errors) {
         clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
     }
 }
@@ -313,14 +345,26 @@ void Calib::setOutlierThreshold(const double new_val) {
 }
 
 void Calib::purgeUnlikelyByDetectedRectangles() {
+    cv::Rect_<int> const limits = getIdRectangleUnion();
+    clog::L(__func__, 2) << "Purging unlikely markers by detected rectangles:" << std::endl;
+    std::cout << std::string(data.size(), '-') << std::endl;
+    for (auto & it : data) {
+        CornerStore & store = it.second;
+        store.purgeOutOfBounds(limits.x, limits.y, limits.x + limits.width, limits.y + limits.height);
+        std::cout << '.' << std::flush;
+    }
+    std::cout << std::endl;
+}
+
+Rect_<int> Calib::getIdRectangleUnion() const {
     int min_x = std::numeric_limits<int>::max();
     int min_y = std::numeric_limits<int>::max();
     int max_x = 0;
     int max_y = 0;
-    cornerIdFactor = computeCornerIdFactor(recursionDepth);
+    int const _cornerIdFactor = computeCornerIdFactor(recursionDepth);
     for (auto const& it : data) {
         CornerStore const & store = it.second;
-        std::vector<hdmarker::Corner> main_markers = store.getMainMarkers(cornerIdFactor);
+        std::vector<hdmarker::Corner> const main_markers = store.getMainMarkers(_cornerIdFactor);
         for (hdmarker::Corner const& c : main_markers) {
             min_x = std::min(min_x, c.id.x);
             min_y = std::min(min_y, c.id.y);
@@ -329,13 +373,7 @@ void Calib::purgeUnlikelyByDetectedRectangles() {
         }
     }
     clog::L(__func__, 2) << "Rect limit: (" << min_x << ", " << min_y << ") / (" << max_x << ", " << max_y << ")" << std::endl;
-    std::cout << std::string(data.size(), '-') << std::endl;
-    for (auto & it : data) {
-        CornerStore & store = it.second;
-        store.purgeOutOfBounds(min_x, min_y, max_x, max_y);
-        std::cout << '.' << std::flush;
-    }
-    std::cout << std::endl;
+    return cv::Rect_<int>(min_x, min_y, max_x - min_x, max_y - min_y);
 }
 
 double Calib::distance(const Corner &a, const Corner &b) {
@@ -614,7 +652,7 @@ void Calib::only_green(bool only_green) {
 
 std::vector<double> Calib::mat2vec(const Mat &in) {
     std::vector<double> result;
-    result.reserve(size_t(in.cols*in.rows));
+    result.reserve(size_t(in.cols*in.rows+1));
     cv::Mat_<double> _in(in);
     for (auto const& it : _in) {
         result.push_back(it);
@@ -1033,13 +1071,22 @@ double Calib::openCVCalib(bool const simple) {
     prepareOpenCVCalibration();
 
     std::string const name = simple ? "SimpleOpenCV" : "OpenCV";
-    bool const has_precalib = hasCalibName(name);
+    bool has_precalib = false;
+    if (simple) {
+        has_precalib = hasCalibName("SimpleOpenCV");
+    }
+    else {
+        if (!hasCalibName("OpenCV") && hasCalibName("SimpleOpenCV")) {
+            calibrations["OpenCV"] = calibrations["SimpleOpenCV"];
+        }
+    }
     CalibResult & res = calibrations[name];
 
     int flags = 0;
     flags |= CALIB_USE_LU;
     if (has_precalib) {
         flags |= CALIB_USE_INTRINSIC_GUESS;
+        flags |= CALIB_USE_EXTRINSIC_GUESS;
     }
     if (simple) {
         flags |= CALIB_FIX_PRINCIPAL_POINT;
@@ -1228,9 +1275,13 @@ Vec3d Calib::get3DPoint(CalibResult& calib, const Corner &c, const Mat &_rvec, c
 }
 
 Vec3d Calib::get3DPointWithoutCorrection(const Corner &c, const Mat &_rvec, const Mat &_tvec) {
+    cv::Point3f _src = getInitial3DCoord(c);
+    return get3DPointWithoutCorrection(_src, _rvec, _tvec);
+}
+
+Vec3d Calib::get3DPointWithoutCorrection(const cv::Point3f &_src, const Mat &_rvec, const Mat &_tvec) {
     cv::Mat_<double> rvec(_rvec);
     cv::Mat_<double> tvec(_tvec);
-    cv::Point3f _src = getInitial3DCoord(c);
     double src[3] = {double(_src.x), double(_src.y), double(_src.z)};
     double rot[9];
     double rvec_data[3] = {rvec(0), rvec(1), rvec(2)};
@@ -1268,6 +1319,13 @@ bool cmpSimpleIndex3<C>::operator()(const C &a, const C &b) const {
 }
 
 template bool cmpSimpleIndex3<cv::Point3i>::operator()(const cv::Point3i &, const cv::Point3i &b) const;
+
+bool cmpPoint3i::operator()(const cv::Point3i &a, const cv::Point3i &b) const {
+    if (a.z != b.z) return a.z < b.z;
+    if (a.y != b.y) return a.y < b.y;
+    return a.x < b.x;
+}
+
 
 template<class F, class T>
 void Calib::get3DPoint(const F p[], T result[], const T R[], const T t[]) {
