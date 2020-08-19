@@ -106,6 +106,8 @@ add_executable(hdcalib-fitgrid fit-grid.cpp)
 
 add_executable(hdcalib-analyze-detection-rates analyze-detection-rates.cpp)
 
+add_executable(raw2png raw2png.cpp)
+
 foreach(program
         hdcalib-tool
         extract-green
@@ -118,6 +120,7 @@ foreach(program
         hdcalib-speedtest-prepare-calibration
         hdcalib-simulate
         hdcalib-rectify-tool
+        raw2png
     )
     target_link_libraries(${program} hdcalib)
 endforeach()

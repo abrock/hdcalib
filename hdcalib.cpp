@@ -313,6 +313,7 @@ void Calib::setCauchyParam(const double new_val) {
 void Calib::plotResidualsIntoImages(const string calib_name) {
     CalibResult & calib = getCalib(calib_name);
 
+    std::cout << "Plot residuals into images" << std::endl;
     std::cout << std::string(imageFiles.size(), '-') << std::endl;
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
