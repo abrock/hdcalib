@@ -20,6 +20,7 @@ find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 add_library(cornerstore cornerstore.cpp)
 add_library(calib-stats hdcalib-stats.cpp)
 add_library(hdcalib-readwrite hdcalib-readwrite.cpp)
+target_link_libraries(hdcalib-readwrite ParallelTime)
 add_library(hdcalib-ceres-calib hdcalib-ceres-calib.cpp)
 add_library(hdcalib-analyze-grid hdcalib-analyze-grid.cpp)
 add_library(hdcalib-rectify hdcalib-rectify.cpp)
@@ -70,6 +71,7 @@ target_link_libraries(hdcalib
   hdcalib-analyze-grid
   hdcalib-rectify
   hdmarker
+  ParallelTime
   ${OpenCV_LIBS}
   ${CERES_LIBRARIES}
   ${Boost_FILESYSTEM_LIBRARY}

@@ -2,6 +2,8 @@
 
 #include <runningstats/runningstats.h>
 
+#include <ParallelTime/paralleltime.h>
+
 namespace hdcalib {
 
 template<class T, class T1, class T2>
@@ -48,6 +50,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
     clog::L(__func__, 2) << "Adding image " << filename << "..." << std::flush;
     invalidateCache();
 
+    ParallelTime t;
     std::vector<std::string> const old_imageFiles = imageFiles;
 
     for (auto& it : calibrations) {
@@ -61,9 +64,14 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         imageFiles = current_res.imageFiles;
 
         clog::L(__func__, 2) << "replacing corners..." << std::flush;
+        t.start();
         CornerStore & ref = data[filename];
         ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
+        clog::L(__func__, 2) << "replacing corners: " << t.print() << std::endl;
+        t.start();
         ref.clean(cornerIdFactor);
+        clog::L(__func__, 2) << "cleaning corners: " << t.print() << std::endl;
+        t.start();
 
         size_t index = 0;
         for (; index < current_res.imageFiles.size(); ++index) {
@@ -74,6 +82,8 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
 
         clog::L(__func__, 2) << "preparing calibration..." << std::flush;
         prepareCalibration();
+        clog::L(__func__, 2) << "preparing calibration: " << t.print() << std::endl;
+        t.start();
         clog::L(__func__, 2) << "solvePnP..." << std::flush;
         bool const success = cv::solvePnP (
                     objectPoints[index],
@@ -83,7 +93,7 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
                     current_res.rvecs[index],
                     current_res.tvecs[index]);
         ignore_unused(success);
-        clog::L(__func__, 2) << "done." << std::endl;
+        clog::L(__func__, 2) << "solvePnP: " << t.print() << std::endl;
     }
 }
 
