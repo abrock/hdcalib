@@ -758,8 +758,8 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                                  const float effort,
                                  const bool demosaic,
                                  const bool raw) {
-    std::string pointcache_file = input_file + "-pointcache.yaml.gz";
-    std::string submarkers_file = input_file + "-submarkers.yaml.gz";
+    std::string pointcache_file = input_file + "-pointcache.hdmarker.gz";
+    std::string submarkers_file = input_file + "-submarkers.hdmarker.gz";
     vector<Corner> corners, submarkers;
 
     this->effort = effort;
@@ -771,13 +771,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     bool read_cache_success = false;
     try {
         if (fs::exists(pointcache_file)) {
-            int width = 0, height = 0;
-            corners = readCorners(pointcache_file, width, height);
-            if (0 != width && 0 != height) {
-                imageSize.width = width;
-                imageSize.height = height;
-                resolutionKnown = true;
-            }
+            Corner::readFile(pointcache_file, corners);
             read_cache_success = true;
         }
     }
@@ -797,14 +791,8 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     bool read_submarkers_success = false;
     try {
         if (fs::exists(submarkers_file)) {
-            int width = 0, height = 0;
-            submarkers = readCorners(submarkers_file, width, height);
-            if (0 != width && 0 != height) {
-                imageSize.width = width;
-                imageSize.height = height;
-                resolutionKnown = true;
-            }
-            if (submarkers.size() > corners.size()) {
+            Corner::readFile(submarkers_file, submarkers);
+            if (submarkers.size() >= corners.size()) {
                 read_submarkers_success = true;
             }
         }
@@ -896,14 +884,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         }
         corners = filter_duplicate_markers(corners);
 
-        FileStorage pointcache(pointcache_file, FileStorage::WRITE);
-        pointcache << "corners" << "[";
-        for (hdmarker::Corner const& c : corners) {
-            pointcache << c;
-        }
-        pointcache << "]";
-        pointcache << "imageWidth" << imageSize.width;
-        pointcache << "imageHeight" << imageSize.height;
+        Corner::writeFile(pointcache_file, corners);
     }
 
     clog::L(__func__, 2) << "Final number of corners: " << corners.size() << std::endl;
@@ -928,13 +909,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
                 submarkers = purgeInvalidPages(submarkers, validPages);
             }
             clog::L(__func__, 1) << "Number of detected submarkers after purgeInvalidPages: " << submarkers.size() << std::endl;
-            FileStorage submarker_cache(submarkers_file, FileStorage::WRITE);
-            submarker_cache << "corners" << "[";
-            for (hdmarker::Corner const& c : submarkers) {
-                submarker_cache << c;
-            }
-            submarker_cache << "]";
-            submarker_cache.release();
+            Corner::writeFile(submarkers_file, submarkers);
         }
         cv::Mat_<uint8_t> main_markers_area = getMainMarkersArea(submarkers);
         std::vector<hdmarker::Corner> keep_submarkers;

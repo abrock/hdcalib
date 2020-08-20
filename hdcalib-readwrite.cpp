@@ -324,7 +324,10 @@ void Calib::write(FileStorage &fs) const {
        << "apertureWidth" << apertureWidth
        << "apertureHeight" << apertureHeight
        << "useOnlyGreen" << useOnlyGreen
-       << "recursionDepth" << recursionDepth;
+       << "recursionDepth" << recursionDepth
+       << "effort" << effort
+       << "demosaic" << demosaic
+       << "libraw" << libraw;
 
     fs << "calibrations" << "{";
     for (auto const& it : calibrations) {
@@ -340,7 +343,6 @@ void Calib::write(FileStorage &fs) const {
     for (const auto& it : data) {
         fs << "{"
            << "name" << it.first
-           << "corners" << it.second.getCorners()
            << "}";
     }
     fs << "]";
@@ -354,7 +356,9 @@ void Calib::read(const FileNode &node) {
     node["apertureWidth"] >> apertureWidth;
     node["apertureHeight"] >> apertureHeight;
     node["useOnlyGreen"] >> useOnlyGreen;
-    node["recursionDepth"] >> recursionDepth;
+    node["effort"] >> effort;
+    node["demosaic"] >> demosaic;
+    node["libraw"] >> libraw;
     setRecursionDepth(recursionDepth);
 
     FileNode n = node["validPages"]; // Read string sequence - Get node
@@ -373,20 +377,9 @@ void Calib::read(const FileNode &node) {
     }
 
     for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
-        std::vector<hdmarker::Corner> corners;
         std::string name;
         (*it)["name"] >> name;
-        cv::FileNode corners_node = (*it)["corners"];
-        if (corners_node.type() != FileNode::SEQ) {
-            throw std::runtime_error(std::string("Error while reading cached calibration result for image ") + name + ": Corners is not a sequence. Aborting.");
-        }
-        const FileNodeIterator corner_end = corners_node.end();
-        for (FileNodeIterator corner_it = corners_node.begin(); corner_it != corner_end; ++corner_it) { // Go through the node
-            hdmarker::Corner c;
-            *corner_it >> c;
-            corners.push_back(c);
-        }
-        addInputImage(name, corners);
+        addInputImage(name, getCorners(name, effort, demosaic, libraw));
     }
 
     n = node["calibrations"];
