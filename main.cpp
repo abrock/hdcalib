@@ -57,7 +57,6 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> same_pos_suffixes;
     std::string cache_file;
     std::string cache_file_prefix;
-    std::string cache_file_reduced;
     double outlier_threshold = -1;
     double max_outlier_percentage = 105;
     double cauchy_param = 1;
@@ -189,7 +188,6 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> const textfiles = textfile_arg.getValue();
         cache_file_prefix = cache_arg.getValue();
         cache_file = cache_file_prefix + ".yaml.gz";
-        cache_file_reduced = cache_file_prefix + "-reduced.yaml.gz";
         gnuplot = gnuplot_arg.getValue();
         valid_pages = valid_pages_arg.getValue();
         calibration_types = type_arg.getValue();
@@ -384,20 +382,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (calib_updated && !cache_file.empty()) {
-        {
             cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
             fs << "calibration" << calib;
             fs.release();
             TIMELOG("Writing cache file");
-        }
-        {
-            cv::FileStorage fs(cache_file_reduced, cv::FileStorage::WRITE);
-            hdcalib::Calib c(calib);
-            c.purgeSubmarkers();
-            fs << "calibration" << c;
-            fs.release();
-            TIMELOG("Writing cache file");
-        }
     }
 
 
