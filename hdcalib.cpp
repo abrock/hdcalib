@@ -785,7 +785,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             corners = purgeInvalidPages(corners, validPages);
         }
         corners = filter_duplicate_markers(corners);
-        clog::L(__func__, 2) << "Got " << corners.size() << " corners from pointcache file" << std::endl;
+        clog::L(__func__, 2) << "Got " << corners.size() << " corners from pointcache file" << pointcache_file << std::endl;
     }
 
     bool read_submarkers_success = false;
@@ -807,7 +807,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             submarkers = purgeInvalidPages(submarkers, validPages);
         }
         submarkers = filter_duplicate_markers(submarkers);
-        clog::L(__func__, 2) << "Got " << submarkers.size() << " submarkers from submarkers file" << std::endl;
+        clog::L(__func__, 2) << "Got " << submarkers.size() << " submarkers from submarkers file" << submarkers_file << std::endl;
     }
 
     if (!resolutionKnown || 0 == imageSize.width || 0 == imageSize.height) {
