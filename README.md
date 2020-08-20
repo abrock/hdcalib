@@ -13,6 +13,7 @@ This project aims at developing a camera calibration library which makes use of 
 
 Debian packages for the dependencies:
 
+libgzstream-dev
 libidn11-dev
 libopencv-calib3d-dev
 libpstreams-dev

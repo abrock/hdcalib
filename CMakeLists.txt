@@ -104,6 +104,8 @@ add_executable(hdcalib-rectify-tool rectify.cpp)
 
 add_executable(hdcalib-fitgrid fit-grid.cpp)
 
+add_executable(hdcalib-yaml2bin yaml2bin.cpp)
+
 add_executable(hdcalib-analyze-detection-rates analyze-detection-rates.cpp)
 
 add_executable(raw2png raw2png.cpp)
@@ -120,6 +122,7 @@ foreach(program
         hdcalib-speedtest-prepare-calibration
         hdcalib-simulate
         hdcalib-rectify-tool
+        hdcalib-yaml2bin
         raw2png
     )
     target_link_libraries(${program} hdcalib)
