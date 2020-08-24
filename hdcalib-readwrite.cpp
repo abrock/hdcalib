@@ -53,6 +53,22 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
     ParallelTime t;
     std::vector<std::string> const old_imageFiles = imageFiles;
 
+    clog::L(__func__, 2) << "replacing corners..." << std::flush;
+    t.start();
+    CornerStore & ref = data[filename];
+    ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
+    clog::L(__func__, 2) << "replacing corners: " << t.print() << std::endl;
+    t.start();
+    ref.clean(cornerIdFactor);
+    clog::L(__func__, 2) << "cleaning corners: " << t.print() << std::endl;
+    t.start();
+
+    clog::L(__func__, 2) << "preparing calibration..." << std::flush;
+    prepareOpenCVCalibration();
+    clog::L(__func__, 2) << "preparing calibration: " << t.print() << std::endl;
+
+
+    std::vector<CalibResult* > calibs;
     for (auto& it : calibrations) {
         CalibResult & current_res = it.second;
         current_res.rvecs.push_back(cv::Mat());
@@ -61,30 +77,20 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         current_res.imageFiles = old_imageFiles;
         current_res.imageFiles.push_back(filename);
         insertSorted(current_res.imageFiles, current_res.rvecs, current_res.tvecs);
-        imageFiles = current_res.imageFiles;
-
-        clog::L(__func__, 2) << "replacing corners..." << std::flush;
-        t.start();
-        CornerStore & ref = data[filename];
-        ref.replaceCorners(validPages.empty() ? corners : purgeInvalidPages(corners, validPages));
-        clog::L(__func__, 2) << "replacing corners: " << t.print() << std::endl;
-        t.start();
-        ref.clean(cornerIdFactor);
-        clog::L(__func__, 2) << "cleaning corners: " << t.print() << std::endl;
-        t.start();
-
-        size_t index = 0;
-        for (; index < current_res.imageFiles.size(); ++index) {
-            if (filename == current_res.imageFiles[index]) {
-                break;
-            }
+        calibs.push_back(&it.second);
+    }
+    size_t index = 0;
+    for (; index < calibs.front()->imageFiles.size(); ++index) {
+        if (filename == calibs.front()->imageFiles[index]) {
+            break;
         }
+    }
 
-        clog::L(__func__, 2) << "preparing calibration..." << std::flush;
-        prepareCalibration();
-        clog::L(__func__, 2) << "preparing calibration: " << t.print() << std::endl;
-        t.start();
-        clog::L(__func__, 2) << "solvePnP..." << std::flush;
+    t.start();
+    clog::L(__func__, 2) << "solvePnP..." << std::endl;
+//#pragma omp parallel for schedule(dynamic)
+    for (size_t ii = 0; ii < calibs.size(); ++ii) {
+        CalibResult & current_res = *(calibs[ii]);
         bool const success = cv::solvePnP (
                     objectPoints[index],
                     imagePoints[index],
@@ -93,8 +99,8 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
                     current_res.rvecs[index],
                     current_res.tvecs[index]);
         ignore_unused(success);
-        clog::L(__func__, 2) << "solvePnP: " << t.print() << std::endl;
     }
+    clog::L(__func__, 2) << "solvePnP: " << t.print() << std::endl;
 }
 
 void Calib::addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec) {
@@ -386,10 +392,27 @@ void Calib::read(const FileNode &node) {
         throw std::runtime_error("Error while reading cached calibration result: Images is not a sequence. Aborting.");
     }
 
+    std::vector<std::string> local_filenames;
     for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
         std::string name;
         (*it)["name"] >> name;
-        addInputImage(name, getCorners(name, effort, demosaic, libraw));
+        local_filenames.push_back(name);
+    }
+#pragma omp parallel for
+    for (size_t ii = 0; ii < local_filenames.size(); ++ii) {
+        std::string const& name = local_filenames[ii];
+        std::vector<Corner> corners = getCorners(name, effort, demosaic, libraw);
+#pragma omp critical
+        {
+            addInputImage(name, std::vector<Corner>());
+        }
+        data[name].replaceCorners(corners);
+        data[name].clean(cornerIdFactor);
+    }
+    if (local_filenames.size() != data.size()) {
+        throw std::runtime_error(std::string("Error in Calib::read: data.size() = ")
+                                 + std::to_string(data.size()) + " but local_filenames.size() = "
+                                 + std::to_string(local_filenames.size()));
     }
 
     n = node["calibrations"];
