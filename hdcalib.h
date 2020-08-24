@@ -721,6 +721,7 @@ public:
 
     unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
 
+    void save(std::string const& filename);
 
     /**
      * @brief getImageNames returns a (sorted) list of all filenames stored in the data map.

@@ -155,6 +155,11 @@ Calib::Calib() {
     clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
+void Calib::save(const string &filename) {
+    cv::FileStorage fs(filename, cv::FileStorage::WRITE);
+    fs << "calibration" << *this;
+    fs.release();}
+
 std::vector<string> Calib::getImageNames() const {
     std::vector<std::string> result;
     for (const auto& it : data) {

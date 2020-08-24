@@ -342,6 +342,10 @@ int main(int argc, char* argv[]) {
         }
         std::cout << std::endl;
         TIMELOG("Adding input images");
+        if (!cache_file.empty()) {
+            calib.save(cache_file);
+            TIMELOG("Writing cache file");
+        }
     }
 
 
@@ -356,6 +360,10 @@ int main(int argc, char* argv[]) {
         calib.runCalib(calibration_type, outlier_threshold);
         calib_updated = true;
         TIMELOG(std::string("Calib ") + calibration_type);
+        if (!cache_file.empty()) {
+            calib.save(cache_file);
+            TIMELOG("Writing cache file");
+        }
         calib.exportPointClouds(calibration_type);
         TIMELOG("exportPointClouds");
 
@@ -382,9 +390,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (calib_updated && !cache_file.empty()) {
-            cv::FileStorage fs(cache_file, cv::FileStorage::WRITE);
-            fs << "calibration" << calib;
-            fs.release();
+            calib.save(cache_file);
             TIMELOG("Writing cache file");
     }
 
