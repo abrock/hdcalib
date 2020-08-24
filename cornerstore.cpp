@@ -76,6 +76,10 @@ CornerStore::CornerStore() :
 
 }
 
+size_t CornerStore::lastCleanDifference() const {
+    return last_clean_diff;
+}
+
 std::vector<std::vector<Corner> > CornerStore::getSquares(const int cornerIdFactor, runningstats::QuantileStats<float> *distances) const
 {
     std::vector<std::vector<Corner> > result;
@@ -321,6 +325,8 @@ bool CornerStore::purgeUnlikely(int cornerIdFactor) {
             }
         }
     }
+
+    last_clean_diff = size() - keep.size();
 
     if (size() != keep.size()) {
         replaceCorners(keep);

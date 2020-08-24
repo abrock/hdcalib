@@ -397,16 +397,12 @@ void Calib::read(const FileNode &node) {
         std::string name;
         (*it)["name"] >> name;
         local_filenames.push_back(name);
+        addInputImage(name, std::vector<Corner>());
     }
 #pragma omp parallel for
     for (size_t ii = 0; ii < local_filenames.size(); ++ii) {
         std::string const& name = local_filenames[ii];
-        std::vector<Corner> corners = getCorners(name, effort, demosaic, libraw);
-#pragma omp critical
-        {
-            addInputImage(name, std::vector<Corner>());
-        }
-        data[name].replaceCorners(corners);
+        data[name].replaceCorners(getCorners(name, effort, demosaic, libraw));
         data[name].clean(cornerIdFactor);
     }
     if (local_filenames.size() != data.size()) {
@@ -414,6 +410,11 @@ void Calib::read(const FileNode &node) {
                                  + std::to_string(data.size()) + " but local_filenames.size() = "
                                  + std::to_string(local_filenames.size()));
     }
+
+    for (auto const& it : data) {
+        std::cout << it.second.lastCleanDifference() << " ";
+    }
+    std::cout << std::endl;
 
     n = node["calibrations"];
     if (n.isMap()) {

@@ -151,9 +151,12 @@ private:
 
     std::shared_ptr<CornerPositionTree> pos_tree;
 
+    size_t last_clean_diff = 0;
+
 public:
     CornerStore();
 
+    size_t lastCleanDifference() const;
 
     std::vector<hdmarker::Corner> getSquaresTopLeft(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
     std::vector<hdmarker::Corner> getMainMarkers(int const cornerIdFactor) const;
