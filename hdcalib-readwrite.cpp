@@ -411,6 +411,7 @@ void Calib::read(const FileNode &node) {
                                  + std::to_string(local_filenames.size()));
     }
 
+    std::cout << "Number of corners removed by CornerStore::clean:" << std::endl;
     for (auto const& it : data) {
         std::cout << it.second.lastCleanDifference() << " ";
     }
