@@ -278,9 +278,9 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
     runningstats::QuantileStats<float> res_x, res_y, res_all;
     runningstats::Stats2D<float> res_xy;
     std::multimap<double, std::string> error_overview;
-    std::cout << "Plotting reprojection errors:" << std::endl
+    std::cout << "Plotting reprojection errors for calib " << calibName << ":" << std::endl
               << std::string(imagePoints.size(), '-') << std::endl;
-//#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         std::vector<float> local_res_x, local_res_y;
         plotReprojectionErrors(calibName, ii, residuals_by_marker, prefix, suffix, local_res_x, local_res_y);
@@ -306,6 +306,7 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
         }
         std::cout << "." << std::flush;
     }
+    std::cout << std::endl;
     clog::L(__func__, 2) << "Median error length overview:" << std::endl;
     for (auto const& it : error_overview) {
         clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;

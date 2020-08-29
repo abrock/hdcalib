@@ -390,8 +390,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (calib_updated && !cache_file.empty()) {
-            calib.save(cache_file);
-            TIMELOG("Writing cache file");
+        calib.save(cache_file);
+        TIMELOG("Writing cache file");
     }
 
 

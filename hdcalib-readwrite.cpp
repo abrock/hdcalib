@@ -356,10 +356,13 @@ void Calib::write(FileStorage &fs) const {
     }
 
     fs << "images" << "[";
-    for (const auto& it : data) {
+    for (const std::pair<const std::string, CornerStore>& it : data) {
         fs << "{"
            << "name" << it.first
            << "}";
+        if (!fs::is_regular_file(it.first + "-submarkers-clean.hdmarker.gz")) {
+            Corner::writeFile(it.first + "-submarkers-clean.hdmarker.gz", it.second.getCorners());
+        }
     }
     fs << "]";
 
@@ -402,8 +405,11 @@ void Calib::read(const FileNode &node) {
 #pragma omp parallel for
     for (size_t ii = 0; ii < local_filenames.size(); ++ii) {
         std::string const& name = local_filenames[ii];
-        data[name].replaceCorners(getCorners(name, effort, demosaic, libraw));
-        data[name].clean(cornerIdFactor);
+        bool is_clean = false;
+        data[name].replaceCorners(getSubMarkers(name, effort, demosaic, libraw, &is_clean));
+        if (!is_clean) {
+            data[name].clean(cornerIdFactor);
+        }
     }
     if (local_filenames.size() != data.size()) {
         throw std::runtime_error(std::string("Error in Calib::read: data.size() = ")

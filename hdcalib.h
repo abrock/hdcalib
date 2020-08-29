@@ -551,6 +551,8 @@ public:
      * @return
      */
     cv::Mat getRVec(std::string const& filename) const;
+
+    bool is_valid = false;
 };
 
 void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);
@@ -1274,6 +1276,10 @@ public:
 
     double ceres_tolerance = 1e-10;
 
+    vector<Corner> getSubMarkers(const std::string input_file, const float effort, const bool demosaic, const bool raw, bool *is_clean = nullptr);
+    vector<Corner> getMainMarkers(const std::string input_file, const float effort, const bool demosaic, const bool raw);
+    cv::Mat getImageScaled(const string &input_file);
+    static cv::Mat scaleImage(const cv::Mat &img);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

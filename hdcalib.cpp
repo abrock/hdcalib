@@ -759,12 +759,175 @@ std::vector<Corner> Calib::readCorners(const string &input_file) {
     return readCorners(input_file, width, height);
 }
 
+vector<Corner> Calib::getMainMarkers(const std::string input_file,
+                                     const float effort,
+                                     const bool demosaic,
+                                     const bool raw) {
+    std::vector<Corner> result;
+
+    this->effort = effort;
+    this->demosaic = demosaic;
+    this->libraw = raw;
+
+    std::string const hdm_gz_cache_file = input_file + "-pointcache.hdmarker.gz";
+    if (fs::is_regular_file(hdm_gz_cache_file)) {
+        Corner::readFile(hdm_gz_cache_file, result);
+        if (!validPages.empty()) {
+            result = purgeInvalidPages(result, validPages);
+        }
+        result = filter_duplicate_markers(result);
+        return result;
+    }
+
+    std::string const cv_gz_cache_file = input_file + "-pointcache.yaml.gz";
+    if (fs::is_regular_file(cv_gz_cache_file)) {
+        Corner::readFile(cv_gz_cache_file, result);
+        int width = 0, height = 0;
+        result = readCorners(cv_gz_cache_file, width, height);
+        if (0 != width && 0 != height) {
+            imageSize.width = width;
+            imageSize.height = height;
+            resolutionKnown = true;
+        }
+        if (!validPages.empty()) {
+            result = purgeInvalidPages(result, validPages);
+        }
+        result = filter_duplicate_markers(result);
+        Corner::writeGzipFile(hdm_gz_cache_file, result);
+        return result;
+    }
+
+    cv::Mat img_scaled = getImageScaled(input_file);
+
+    Marker::init();
+    detect(img_scaled, result, use_rgb, 0, 10, effort);
+    std::map<int, int> counter;
+    for (auto const& it : result) {
+        counter[it.page]++;
+    }
+    clog::L(__func__, 2) << "Detected page stats: " << std::endl;
+    for (auto const& it : counter) {
+        clog::L(__func__, 2) << it.first << ": " << it.second << std::endl;
+    }
+
+    if (!validPages.empty()) {
+        result = purgeInvalidPages(result, validPages);
+    }
+    result = filter_duplicate_markers(result);
+
+    Corner::writeGzipFile(cv_gz_cache_file, result);
+
+    return result;
+}
+
+cv::Mat Calib::getImageScaled(std::string const& input_file) {
+    cv::Mat img = readImage(input_file, demosaic, libraw, useOnlyGreen);
+    if (img.empty()) {
+        clog::L("getCorners", 1) << "Input file empty, aborting." << std::endl;
+        return {};
+    }
+    setImageSize(img);
+
+    return scaleImage(img);
+}
+
+vector<Corner> Calib::getSubMarkers(const std::string input_file,
+                                    const float effort,
+                                    const bool demosaic,
+                                    const bool raw,
+                                    bool * is_clean) {
+    std::vector<Corner> result;
+
+    this->effort = effort;
+    this->demosaic = demosaic;
+    this->libraw = raw;
+
+    std::string const hdm_clean_gz_cache_file = input_file + "-submarkers-clean.hdmarker.gz";
+    if (fs::is_regular_file(hdm_clean_gz_cache_file)) {
+        Corner::readFile(hdm_clean_gz_cache_file, result);
+        if (nullptr != is_clean) {
+            *is_clean = true;
+        }
+        return result;
+    }
+    if (nullptr != is_clean) {
+        *is_clean = false;
+    }
+
+    std::string const hdm_gz_cache_file = input_file + "-submarkers.hdmarker.gz";
+    if (fs::is_regular_file(hdm_gz_cache_file)) {
+        Corner::readFile(hdm_gz_cache_file, result);
+        return result;
+    }
+
+    std::string const cv_gz_cache_file = input_file + "-submarkers.yaml.gz";
+    if (fs::is_regular_file(cv_gz_cache_file)) {
+        Corner::readFile(cv_gz_cache_file, result);
+        int width = 0, height = 0;
+        result = readCorners(cv_gz_cache_file, width, height);
+        if (0 != width && 0 != height) {
+            imageSize.width = width;
+            imageSize.height = height;
+            resolutionKnown = true;
+        }
+        Corner::writeGzipFile(hdm_gz_cache_file, result);
+        return result;
+    }
+
+    std::vector<Corner> main_markers = getMainMarkers(input_file, effort, demosaic, raw);
+
+    cv::Mat img = getImageScaled(input_file);
+
+    double msize = 1.0;
+    refineRecursiveByPage(img, main_markers, result, recursionDepth, msize);
+    clog::L(__func__, 1) << "Number of detected submarkers: " << result.size() << std::endl;
+    if (!validPages.empty()) {
+        result = purgeInvalidPages(result, validPages);
+    }
+    clog::L(__func__, 1) << "Number of detected submarkers after purgeInvalidPages: " << result.size() << std::endl;
+
+    if (result.size() <= main_markers.size()) {
+        clog::L(__func__, 0) << "Warning: Number of submarkers (" << std::to_string(result.size())
+                             << ") smaller than or equal to the number of corners (" << std::to_string(main_markers.size()) << "), in input file"
+                             << input_file << ", scaling ids." << std::endl;
+        int factor = 10;
+        for (int ii = 1; ii < recursionDepth; ++ii) {
+            factor *=5;
+        }
+        result = main_markers;
+        for (auto& it : result) {
+            it.id *= factor;
+        }
+    }
+
+    Corner::writeFile(hdm_gz_cache_file, result);
+
+    return result;
+}
+
+cv::Mat Calib::scaleImage(cv::Mat const& img) {
+    cv::Mat img_scaled = img.clone();
+    double min = 0;
+    double max = 0;
+    cv::minMaxIdx(img_scaled, &min, &max);
+    if (img_scaled.depth() == CV_16U) {
+        img_scaled *= std::floor(65535.0 / max);
+        img_scaled.convertTo(img_scaled, CV_8UC1, 1.0 / 256.0);
+    }
+    else if (img_scaled.depth() == CV_8U) {
+        img_scaled *= std::floor(255.0 / max);
+    }
+    if (img_scaled.channels() == 1 && (img_scaled.depth() == CV_16U || img_scaled.depth() == CV_16S)) {
+        clog::L(__func__, 0) << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
+        img_scaled.convertTo(img_scaled, CV_8UC1, 1.0 / 256.0);
+    }
+    return img_scaled;
+}
+
 vector<Corner> Calib::getCorners(const std::string input_file,
                                  const float effort,
                                  const bool demosaic,
                                  const bool raw) {
-    std::string pointcache_file = input_file + "-pointcache.hdmarker.gz";
-    std::string submarkers_file = input_file + "-submarkers.hdmarker.gz";
     vector<Corner> corners, submarkers;
 
     this->effort = effort;
@@ -773,48 +936,10 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     Mat img, paint;
 
-    bool read_cache_success = false;
-    try {
-        if (fs::exists(pointcache_file)) {
-            Corner::readFile(pointcache_file, corners);
-            read_cache_success = true;
-        }
+    corners = getMainMarkers(input_file, effort, demosaic, raw);
+    if (recursionDepth > 0) {
+        submarkers = getSubMarkers(input_file, effort, demosaic, raw);
     }
-    catch (const Exception& e) {
-        clog::L(__func__, 0) << "Reading pointcache file failed with exception: " << std::endl
-                             << e.what() << std::endl;
-        read_cache_success = false;
-    }
-    if (read_cache_success) {
-        if (!validPages.empty()) {
-            corners = purgeInvalidPages(corners, validPages);
-        }
-        corners = filter_duplicate_markers(corners);
-        clog::L(__func__, 2) << "Got " << corners.size() << " corners from pointcache file" << pointcache_file << std::endl;
-    }
-
-    bool read_submarkers_success = false;
-    try {
-        if (fs::exists(submarkers_file)) {
-            Corner::readFile(submarkers_file, submarkers);
-            if (submarkers.size() >= corners.size()) {
-                read_submarkers_success = true;
-            }
-        }
-    }
-    catch (const Exception& e) {
-        clog::L(__func__, 0) << "Reading pointcache file failed with exception: " << std::endl
-                             << e.what() << std::endl;
-        read_submarkers_success = false;
-    }
-    if (read_submarkers_success) {
-        if (!validPages.empty()) {
-            submarkers = purgeInvalidPages(submarkers, validPages);
-        }
-        submarkers = filter_duplicate_markers(submarkers);
-        clog::L(__func__, 2) << "Got " << submarkers.size() << " submarkers from submarkers file" << submarkers_file << std::endl;
-    }
-
     if (!resolutionKnown || 0 == imageSize.width || 0 == imageSize.height) {
         if (raw) {
             imageSize = read_raw_imagesize(input_file);
@@ -827,32 +952,17 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     cv::Mat img_scaled;
 
-    if (plotMarkers || !read_cache_success || (recursionDepth > 0 && !read_submarkers_success)) {
-        img = readImage(input_file, demosaic, raw, useOnlyGreen);
+    if (plotMarkers) {
+        img_scaled = getImageScaled(input_file);
+        img = readImage(input_file, demosaic, libraw, useOnlyGreen);
         if (img.empty()) {
             clog::L("getCorners", 1) << "Input file empty, aborting." << std::endl;
             return {};
         }
-        if (demosaic) {
-            cv::imwrite(input_file + "-demosaiced.png", img);
+        if (demosaic && !fs::is_regular_file(input_file + "-demosaiced.png")) {
+            cv::imwrite(input_file + "-demosaiced.png", img_scaled);
         }
-        img_scaled = img.clone();
         setImageSize(img);
-
-        double min = 0;
-        double max = 0;
-        cv::minMaxIdx(img, &min, &max);
-        if (img.depth() == CV_16U) {
-            img_scaled *= std::floor(65535.0 / max);
-            img_scaled.convertTo(img_scaled, CV_8UC1, 1.0 / 256.0);
-        }
-        else if (img.depth() == CV_8U) {
-            img_scaled *= std::floor(255.0 / max);
-        }
-        if (img.channels() == 1 && (img.depth() == CV_16U || img.depth() == CV_16S)) {
-            clog::L(__func__, 0) << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
-            img.convertTo(img, CV_8UC1, 1.0 / 256.0);
-        }
         paint = img.clone();
     }
     if (plotMarkers && paint.channels() == 1) {
@@ -873,26 +983,6 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         clog::L(__func__, 0) << "Input image for marker detection 16 bit, converting for painting to 8 bit." << std::endl;
         paint.convertTo(paint, CV_8UC1, 1.0 / 256.0);
     }
-    if (!read_cache_success) {
-        detect(img_scaled, corners, use_rgb, 0, 10, effort);
-        std::map<int, int> counter;
-        for (auto const& it : corners) {
-            counter[it.page]++;
-        }
-        clog::L(__func__, 2) << "Detected page stats: " << std::endl;
-        for (auto const& it : counter) {
-            clog::L(__func__, 2) << it.first << ": " << it.second << std::endl;
-        }
-
-        if (!validPages.empty()) {
-            corners = purgeInvalidPages(corners, validPages);
-        }
-        corners = filter_duplicate_markers(corners);
-
-        Corner::writeFile(pointcache_file, corners);
-    }
-
-    clog::L(__func__, 2) << "Final number of corners: " << corners.size() << std::endl;
 
     Mat gray;
     if (img_scaled.channels() != 1) {
@@ -904,50 +994,17 @@ vector<Corner> Calib::getCorners(const std::string input_file,
 
     if (recursionDepth > 0) {
         clog::L(__func__, 0) << "Drawing sub-markers" << std::endl;
-        double msize = 1.0;
-        if (!read_submarkers_success) {
-            //hdmarker::refine_recursive(gray, corners, submarkers, recursionDepth, &msize);
-            //piecewiseRefinement(gray, corners, submarkers, recursion_depth, msize);
-            refineRecursiveByPage(gray, corners, submarkers, recursionDepth, msize);
-            clog::L(__func__, 1) << "Number of detected submarkers: " << submarkers.size() << std::endl;
-            if (!validPages.empty()) {
-                submarkers = purgeInvalidPages(submarkers, validPages);
-            }
-            clog::L(__func__, 1) << "Number of detected submarkers after purgeInvalidPages: " << submarkers.size() << std::endl;
-            Corner::writeFile(submarkers_file, submarkers);
-        }
         cv::Mat_<uint8_t> main_markers_area = getMainMarkersArea(submarkers);
-        std::vector<hdmarker::Corner> keep_submarkers;
-        for (auto const& s : submarkers) {
-            if (s.p.x >= 0 && s.p.y >= 0 && s.p.x < main_markers_area.cols && s.p.y < main_markers_area.rows) {
-                if (main_markers_area(s.p) > 0) {
-                    keep_submarkers.push_back(s);
-                }
-            }
-        }
-        //submarkers = keep_submarkers;
-
-
         if (plotMarkers) {
             cv::Mat paint2 = paint.clone();
             for (hdmarker::Corner const& c : submarkers) {
                 circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
             }
-            imwrite(input_file + "-2.png", paint2);
-            cv::imwrite(input_file + "-main-area.png", main_markers_area);
-        }
-
-        if (submarkers.size() <= corners.size()) {
-            clog::L(__func__, 0) << "Warning: Number of submarkers (" << std::to_string(submarkers.size())
-                                 << ") smaller than or equal to the number of corners (" << std::to_string(corners.size()) << "), in input file"
-                                 << input_file << ", scaling ids." << std::endl;
-            int factor = 10;
-            for (int ii = 1; ii < recursionDepth; ++ii) {
-                factor *=5;
+            if (!fs::is_regular_file(input_file + "-2.png")) {
+                imwrite(input_file + "-2.png", paint2);
             }
-            submarkers = corners;
-            for (auto& it : submarkers) {
-                it.id *= factor;
+            if (!fs::is_regular_file(input_file + "-main-area.png")) {
+                cv::imwrite(input_file + "-main-area.png", main_markers_area);
             }
         }
     }
