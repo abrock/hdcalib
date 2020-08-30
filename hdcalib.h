@@ -882,7 +882,7 @@ public:
      * @param prefix prefix for all files
      * @param suffix suffix for all files (before filename extension)
      */
-    void plotReprojectionErrors(const string &calibName, const std::string prefix = "",
+    void plotReprojectionErrors(const string &calibName, string prefix = "",
                                 const std::string suffix ="");
 
     /**

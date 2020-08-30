@@ -68,6 +68,8 @@ void Calib::plotReprojectionErrors(
 
     std::vector<cv::Point2d> markers, reprojections;
 
+    runningstats::Stats2D<float> reprojection_residuals;
+
     std::vector<std::vector<double> > data;
 
 #pragma omp critical
@@ -84,8 +86,11 @@ void Calib::plotReprojectionErrors(
                             error});
             proj_x.push_unsafe(marker.x, reprojection.x);
             proj_y.push_unsafe(marker.y, reprojection.y);
-            res_x.push_back(marker.x - reprojection.x);
-            res_y.push_back(marker.y - reprojection.y);
+            double const residual_x = marker.x - reprojection.x;
+            double const residual_y = marker.y - reprojection.y;
+            res_x.push_back(residual_x);
+            res_y.push_back(residual_y);
+            reprojection_residuals.push_unsafe(residual_x, residual_y);
             auto const id = getSimpleId(store.get(ii));
             residuals_by_marker[id].push_back(std::make_pair(marker, reprojection));
             errors.push_back(error);
@@ -112,63 +117,28 @@ void Calib::plotReprojectionErrors(
         std::sort(errors.begin(), errors.end());
 
     } // #pragma omp critical (plotReprojectionErrors)
-
-    gnuplotio::Gnuplot plot;
     std::string const residuals_name = plot_name + ".residuals." + suffix;
     std::string const residuals_data = residuals_name + ".data";
     std::string const error_hist_data = plot_name + ".errors-hist." + suffix + ".data";
-    plot_command << std::setprecision(16);
-    plot_command << "set term svg enhanced background rgb \"white\";\n"
-                 << "set output \"" << residuals_name << ".svg\";\n"
-                 << "set title 'Reprojection Residuals';\n"
-                 << "plot " << plot.file1d(data, residuals_data)
-                 << " u ($1-$3):($2-$4) w p pt 7 ps 0.17 notitle;\n"
-                 << "set output \"" << plot_name << ".residuals-log." << suffix << ".svg\";\n"
-                 << "set title 'Reprojection Residuals';\n"
-                 << "set logscale xy;\n"
-                 << "plot \"" << residuals_data << "\""
-                 << " u (abs($1-$3)):(abs($2-$4)) w p pt 7 ps 0.17 notitle;\n"
-                 << "reset;\n"
-                 << "set output \"" << plot_name + ".vectors." << suffix << ".svg\";\n"
-                 << "set title 'Reprojection Residuals';\n"
-                 << "plot \"" << residuals_data << "\""
-                 << " u 1:2:($3-$1):($4-$2) w vectors notitle;\n"
-                 << "reset;\n"
-                 << "set output \"" << plot_name + ".vectors." << suffix << ".2.svg\";\n"
-                 << "set title 'Reprojection Residuals';\n"
-                 << "plot \"" << residuals_data << "\""
-                 << " u 3:4:($1-$3):($2-$4) w vectors notitle;\n"
-                 << "reset;\n"
-                 << "set key out horiz;\n"
-                 << "set output \"" << plot_name + ".images." << suffix << ".svg\";\n"
-                 << "set title 'Reprojection vs. original';\n"
-                 << "plot \"" << residuals_data << "\""
-                 << " u 1:2 w p pt 7 ps 0.17 title 'detected', \"" << plot_name + ".residuals." + suffix << ".data\" u 3:4 w p pt 7 ps 0.17 title 'reprojected';\n"
-                 << "set output \"" << plot_name + ".error-dist." << suffix << ".svg\";\n"
-                 << "set title 'CDF of the Reprojection Error';\n"
-                 << "set xlabel 'error';\n"
-                 << "set ylabel 'CDF';\n"
-                 << "plot " << plot.file(errors, plot_name + ".errors." + suffix + ".data") << " u 1:($0/" << errors.size()-1 << ") w l notitle;\n"
-                 << "set logscale x;\n"
-                 << "set output \"" << plot_name + ".error-dist-log." << suffix << ".svg\";\n"
-                 << "replot;\n"
-                 << "reset;\n"
-                 << "set output \"" << plot_name + ".error-hist." << suffix << ".svg\";\n"
-                 << "set title 'Reprojection Error Histogram';\n"
-                 << "set xlabel 'error';\n"
-                 << "set ylabel 'absolute frequency';\n"
-                 << "plot " << plot.file(error_hist.getAbsoluteHist(), error_hist_data)
-                 << " w boxes notitle;\n"
-                 << "set output \"" << plot_name + ".error-hist-log." << suffix << ".svg\";\n"
-                 << "set logscale xy;\n"
-                 << "plot \"" << error_hist_data << "\""
-                 << "w boxes notitle;\n";
 
-    plot << plot_command.str();
+    runningstats::HistConfig conf;
+    conf.setTitle("Reprojection Residuals")
+            .setXLabel("x-residual")
+            .setYLabel("y-residual");
+    std::pair<double, double> reprojection_residuals_bin = reprojection_residuals.FreedmanDiaconisBinSize();
+    reprojection_residuals.plotHist(residuals_name, reprojection_residuals_bin, conf);
+    reprojection_residuals.plotHist(residuals_name + "-log", reprojection_residuals_bin, conf.setLogCB());
 
-    std::ofstream out(plot_name + "." + suffix + ".gpl");
-    out << plot_command.str();
+    conf.setTitle("Reprojection Errors")
+            .setXLabel("error [px]")
+            .setYLabel("CDF");
+    error_stats.plotCDF(plot_name, conf);
 
+    conf.setTitle("Reprojection Errors Histogram")
+            .setXLabel("error [px]")
+            .setYLabel("estimated PD")
+            .setRelative();
+    error_stats.plotHist(plot_name, error_stats.FreedmanDiaconisBinSize(), conf);
 }
 
 void Calib::plotErrorsByMarker(
@@ -272,15 +242,17 @@ void Calib::plotResidualsByMarkerStats(
     out << plot_command.str();
 }
 
-void Calib::plotReprojectionErrors(std::string const& calibName, const string prefix, const string suffix) {
+void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, const string suffix) {
     MarkerMap residuals_by_marker;
     getCalib(calibName);
+    fs::create_directory("plots", ignore_error_code);
+    prefix = std::string("plots/") + prefix;
     runningstats::QuantileStats<float> res_x, res_y, res_all;
     runningstats::Stats2D<float> res_xy;
     std::multimap<double, std::string> error_overview;
     std::cout << "Plotting reprojection errors for calib " << calibName << ":" << std::endl
               << std::string(imagePoints.size(), '-') << std::endl;
-#pragma omp parallel for schedule(dynamic)
+//#pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imagePoints.size(); ++ii) {
         std::vector<float> local_res_x, local_res_y;
         plotReprojectionErrors(calibName, ii, residuals_by_marker, prefix, suffix, local_res_x, local_res_y);
@@ -312,17 +284,23 @@ void Calib::plotReprojectionErrors(std::string const& calibName, const string pr
         clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
     }
     std::string name_x = prefix + "all-x" + suffix;
+    std::string name_y = prefix + "all-y" + suffix;
+    std::string name_all = prefix + "all-xy" + suffix;
     runningstats::HistConfig conf;
     using runningstats::HistConfig;
     conf.setXLabel("Residual [px]")
             .setYLabel("Estimated probability density");
-    res_x.plotHist(name_x, res_x.FreedmanDiaconisBinSize(), conf.setTitle("x-component of residuals"));
-    res_y.plotHist(prefix + "all-y" + suffix, res_y.FreedmanDiaconisBinSize(), conf.setTitle("y-component of residuals"));
-    res_all.plotHist(prefix + "all-xy" + suffix, res_all.FreedmanDiaconisBinSize(), conf.setTitle("x- and y-residuals"));
+    res_x.plotHist(name_x, res_x.FreedmanDiaconisBinSize(), conf.setTitle("x-residuals"));
+    res_y.plotHist(name_y, res_y.FreedmanDiaconisBinSize(), conf.setTitle("y-residuals"));
+    res_all.plotHist(name_all, res_all.FreedmanDiaconisBinSize(), conf.setTitle("Residuals"));
+
+    res_x.plotCDF(name_x + "-cdf", conf.setTitle("x-residuals [px]").setXLabel("x-residual [px]").setYLabel("Estimated PDF"));
+    res_y.plotCDF(name_y + "-cdf", conf.setTitle("y-residuals [px]").setXLabel("y-residual [px]").setYLabel("Estimated PDF"));
+    res_all.plotCDF(name_all + "-cdf", conf.setTitle("Residuals"));
+
     std::pair<double, double> bins = res_xy.FreedmanDiaconisBinSize();
-    runningstats::Histogram2Dfixed hist = res_xy.getHistogram2Dfixed({bins.first/2, bins.second/2});
-    hist.plotHist(prefix + "hm" + suffix, conf.setXLabel("x").setYLabel("y").setTitle("Residuals Heatmap"));
-    hist.plotHist(prefix + "hmlog" + suffix, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Residuals Heatmap"));
+    res_xy.plotHist(prefix + "hm" + suffix, bins, conf.setXLabel("x").setYLabel("y").setTitle("Residuals heatmap"));
+    res_xy.plotHist(prefix + "hmlog" + suffix, bins, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Residuals heatmap"));
     //plotErrorsByMarker(residuals_by_marker);
     plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
 }
