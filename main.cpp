@@ -25,6 +25,37 @@ void trim(std::string &s) {
     }).base(), s.end());
 }
 
+template<class T>
+std::vector<T> commaSeparate(std::vector<std::string> const& args) {
+    std::vector<T> result;
+    for (std::string const& s : args) {
+        std::string current;
+        for (char c : s) {
+            if (c == ',' || c == ';') {
+                trim(current);
+                if (!current.empty()) {
+                    std::stringstream stream(current);
+                    T val;
+                    stream >> val;
+                    result.push_back(val);
+                    current = "";
+                }
+            }
+            else {
+                current += c;
+            }
+        }
+        trim(current);
+        if (!current.empty()) {
+            std::stringstream stream(current);
+            T val;
+            stream >> val;
+            result.push_back(val);
+        }
+    }
+    return result;
+}
+
 #define TIMELOG(descr) { \
     time_log << descr << ": " << t.print() << std::endl;\
     t.start();\
@@ -54,6 +85,7 @@ int main(int argc, char* argv[]) {
     std::string del = "";
     std::vector<int> valid_pages;
     std::vector<std::string> calibration_types;
+    std::vector<std::string> calibration_types_eval;
     std::vector<std::string> same_pos_suffixes;
     std::string cache_file;
     std::string cache_file_prefix;
@@ -118,6 +150,13 @@ int main(int argc, char* argv[]) {
                                               false, "Calibration type.");
         cmd.add(type_arg);
 
+        TCLAP::MultiArg<std::string> eval_arg("", "eval",
+                                              "Type of the calibration(s) to evaluate. "
+                                              "Possibilities in increasing order of computational complexity:"
+                                              "SimpleOpenCV, SimpleCeres, OpenCV, Ceres, Flexible, SemiFlexible ",
+                                              false, "Calibration types for evaluation.");
+        cmd.add(eval_arg);
+
         TCLAP::MultiArg<std::string> same_pos_arg("", "same",
                                                   "This option allows the user to verify if two shots show the same target position. "
                                                   "The option specifies a suffix for the full path of the shot. "
@@ -162,7 +201,7 @@ int main(int argc, char* argv[]) {
         cmd.add(textfile_arg);
 
 
-        TCLAP::MultiArg<int> valid_pages_arg("",
+        TCLAP::MultiArg<std::string> valid_pages_arg("",
                                              "valid",
                                              "Page number of a valid corner.",
                                              false,
@@ -189,8 +228,9 @@ int main(int argc, char* argv[]) {
         cache_file_prefix = cache_arg.getValue();
         cache_file = cache_file_prefix + ".yaml.gz";
         gnuplot = gnuplot_arg.getValue();
-        valid_pages = valid_pages_arg.getValue();
-        calibration_types = type_arg.getValue();
+        valid_pages = commaSeparate<int>(valid_pages_arg.getValue());
+        calibration_types = commaSeparate<std::string>(type_arg.getValue());
+        calibration_types_eval = commaSeparate<std::string>(eval_arg.getValue());
         same_pos_suffixes = same_pos_arg.getValue();
         max_outlier_percentage = max_outlier_arg.getValue();
         del = delete_arg.getValue();
@@ -367,17 +407,13 @@ int main(int argc, char* argv[]) {
         calib.exportPointClouds(calibration_type);
         TIMELOG("exportPointClouds");
 
-        if (calibration_type == calibration_types.back()) {
-            calib.plotResidualsIntoImages(calibration_type);
-            TIMELOG("plotResidualsIntoImages");
-        }
-
-        if (gnuplot) {
-            calib.plotReprojectionErrors(calibration_type, calibration_type);
-            TIMELOG("plotReprojectionErrors");
-        }
-
         clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
+    }
+
+
+    for (std::string const& calibration_type : calibration_types_eval) {
+        calib.plotReprojectionErrors(calibration_type, calibration_type);
+        TIMELOG(std::string("plotReprojectionErrors for ") + calibration_type);
     }
 
     if (!same_pos_suffixes.empty()) {
