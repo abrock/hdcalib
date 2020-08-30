@@ -74,7 +74,6 @@ void Calib::plotReprojectionErrors(
 
 #pragma omp critical
     {
-        prepareCalibration();
         getReprojections(calib, image_index, markers, reprojections);
 
         for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
@@ -118,8 +117,6 @@ void Calib::plotReprojectionErrors(
 
     } // #pragma omp critical (plotReprojectionErrors)
     std::string const residuals_name = plot_name + ".residuals." + suffix;
-    std::string const residuals_data = residuals_name + ".data";
-    std::string const error_hist_data = plot_name + ".errors-hist." + suffix + ".data";
 
     runningstats::HistConfig conf;
     conf.setTitle("Reprojection Residuals")
@@ -247,8 +244,8 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
     getCalib(calibName);
     fs::create_directory("plots", ignore_error_code);
     prefix = std::string("plots/") + prefix;
-    runningstats::QuantileStats<float> res_x, res_y, res_all;
-    runningstats::Stats2D<float> res_xy;
+    runningstats::QuantileStats<float> res_x, res_y, res_all, errors_x, errors_y, errors_all;
+    runningstats::Stats2D<float> res_xy, errors_xy;
     std::multimap<double, std::string> error_overview;
     if ("OpenCV" == calibName || "SimpleOpenCV" == calibName) {
         prepareOpenCVCalibration();
@@ -279,6 +276,12 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
 
                 res_y.push_unsafe(local_res_y[ii]);
                 res_all.push_unsafe(local_res_y[ii]);
+
+                errors_x.push_unsafe(std::abs(local_res_x[ii]));
+                errors_y.push_unsafe(std::abs(local_res_y[ii]));
+                errors_all.push_unsafe(std::abs(local_res_x[ii]));
+                errors_all.push_unsafe(std::abs(local_res_y[ii]));
+                errors_xy.push_unsafe(std::abs(local_res_x[ii]), std::abs(local_res_y[ii]));
             }
             error_overview.insert({error_lengths.getMedian(), imageFiles[ii]});
         }
@@ -289,26 +292,46 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
     for (auto const& it : error_overview) {
         clog::L(__func__, 2) << it.first << "\t" << it.second << std::endl;
     }
-    std::string name_x = prefix + "all-x" + suffix;
-    std::string name_y = prefix + "all-y" + suffix;
-    std::string name_all = prefix + "all-xy" + suffix;
-    runningstats::HistConfig conf;
-    using runningstats::HistConfig;
-    conf.setXLabel("Residual [px]")
-            .setYLabel("Estimated probability density");
-    res_x.plotHist(name_x, res_x.FreedmanDiaconisBinSize(), conf.setTitle("x-residuals"));
-    res_y.plotHist(name_y, res_y.FreedmanDiaconisBinSize(), conf.setTitle("y-residuals"));
-    res_all.plotHist(name_all, res_all.FreedmanDiaconisBinSize(), conf.setTitle("Residuals"));
+    { // Plot all the residuals
+        std::string name_x = prefix + "all-x" + suffix;
+        std::string name_y = prefix + "all-y" + suffix;
+        std::string name_all = prefix + "all-xy" + suffix;
+        runningstats::HistConfig conf;
+        conf.setXLabel("Residual [px]")
+                .setYLabel("Estimated probability density");
+        res_x.plotHist(name_x, res_x.FreedmanDiaconisBinSize(), conf.setTitle("x-residuals"));
+        res_y.plotHist(name_y, res_y.FreedmanDiaconisBinSize(), conf.setTitle("y-residuals"));
+        res_all.plotHist(name_all, res_all.FreedmanDiaconisBinSize(), conf.setTitle("Residuals"));
 
-    res_x.plotCDF(name_x + "-cdf", conf.setTitle("x-residuals [px]").setXLabel("x-residual [px]").setYLabel("Estimated PDF"));
-    res_y.plotCDF(name_y + "-cdf", conf.setTitle("y-residuals [px]").setXLabel("y-residual [px]").setYLabel("Estimated PDF"));
-    res_all.plotCDF(name_all + "-cdf", conf.setTitle("Residuals"));
+        res_x.plotCDF(name_x + "-cdf", conf.setTitle("x-residuals [px]").setXLabel("x-residual [px]").setYLabel("Estimated PDF"));
+        res_y.plotCDF(name_y + "-cdf", conf.setTitle("y-residuals [px]").setXLabel("y-residual [px]").setYLabel("Estimated PDF"));
+        res_all.plotCDF(name_all + "-cdf", conf.setTitle("Residuals"));
 
-    std::pair<double, double> bins = res_xy.FreedmanDiaconisBinSize();
-    res_xy.plotHist(prefix + "hm" + suffix, bins, conf.setXLabel("x").setYLabel("y").setTitle("Residuals heatmap"));
-    res_xy.plotHist(prefix + "hmlog" + suffix, bins, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Residuals heatmap"));
-    //plotErrorsByMarker(residuals_by_marker);
-    plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
+        std::pair<double, double> bins = res_xy.FreedmanDiaconisBinSize();
+        res_xy.plotHist(prefix + "hm" + suffix, bins, conf.setXLabel("x").setYLabel("y").setTitle("Residuals heatmap"));
+        res_xy.plotHist(prefix + "hmlog" + suffix, bins, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Residuals heatmap"));
+        plotResidualsByMarkerStats(residuals_by_marker, prefix, suffix);
+    }
+    { // Plot all the errors
+        std::string name_x = prefix + "-errors-all-x" + suffix;
+        std::string name_y = prefix + "-errors-all-y" + suffix;
+        std::string name_all = prefix + "-errors-all-xy" + suffix;
+        runningstats::HistConfig conf;
+        conf.setXLabel("Error [px]")
+                .setYLabel("Estimated probability density");
+        errors_x.plotHist(name_x, errors_x.FreedmanDiaconisBinSize(), conf.setTitle("x-errors"));
+        errors_y.plotHist(name_y, errors_y.FreedmanDiaconisBinSize(), conf.setTitle("y-errors"));
+        errors_all.plotHist(name_all, errors_all.FreedmanDiaconisBinSize(), conf.setTitle("Errors [px]"));
+
+        errors_x.plotCDF(name_x + "-cdf", conf.setTitle("x-errors [px]").setXLabel("x-error [px]").setYLabel("Estimated PDF"));
+        errors_y.plotCDF(name_y + "-cdf", conf.setTitle("y-errors [px]").setXLabel("y-error [px]").setYLabel("Estimated PDF"));
+        errors_all.plotCDF(name_all + "-cdf", conf.setTitle("Errors [px]"));
+
+        std::pair<double, double> bins = errors_xy.FreedmanDiaconisBinSize();
+        errors_xy.plotHist(prefix + "hm" + suffix, bins, conf.setXLabel("x").setYLabel("y").setTitle("Errors heatmap"));
+        errors_xy.plotHist(prefix + "hmlog" + suffix, bins, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Errors heatmap"));
+        //plotErrorsByMarker(residuals_by_marker);
+    }
 }
 
 void Calib::printHist(std::ostream& out, runningstats::Histogram const& h, double const threshold) {
