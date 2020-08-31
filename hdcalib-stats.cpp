@@ -118,6 +118,7 @@ void Calib::plotReprojectionErrors(
     std::string const residuals_name = plot_name + ".residuals." + suffix;
 
     runningstats::HistConfig conf;
+    conf.setMinMaxX(-3,3);
     conf.setTitle("Reprojection Residuals")
             .setXLabel("x-residual")
             .setYLabel("y-residual");
