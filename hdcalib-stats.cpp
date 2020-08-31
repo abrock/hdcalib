@@ -244,7 +244,7 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
     getCalib(calibName);
     fs::create_directory("plots", ignore_error_code);
     prefix = std::string("plots/") + prefix;
-    runningstats::QuantileStats<float> res_x, res_y, res_all, errors_x, errors_y, errors_all;
+    runningstats::QuantileStats<float> res_x, res_y, res_all, errors_x, errors_y, errors_all, error_lengths;
     runningstats::Stats2D<float> res_xy, errors_xy;
     std::multimap<double, std::string> error_overview;
     if ("OpenCV" == calibName || "SimpleOpenCV" == calibName) {
@@ -262,9 +262,10 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
 #pragma omp critical
         {
             assert(local_res_x.size() == local_res_y.size());
-            runningstats::QuantileStats<float> error_lengths;
+            runningstats::QuantileStats<float> local_error_lengths;
             for (size_t ii = 0; ii < local_res_x.size(); ++ii) {
                 double const length = std::sqrt(local_res_x[ii] * local_res_x[ii] + local_res_y[ii] * local_res_y[ii]);
+                local_error_lengths.push_unsafe(length);
                 error_lengths.push_unsafe(length);
                 res_x.push_unsafe(local_res_x[ii]);
                 res_all.push_unsafe(local_res_x[ii]);
@@ -280,7 +281,7 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
                 errors_all.push_unsafe(std::abs(local_res_y[ii]));
                 errors_xy.push_unsafe(std::abs(local_res_x[ii]), std::abs(local_res_y[ii]));
             }
-            error_overview.insert({error_lengths.getMedian(), imageFiles[ii]});
+            error_overview.insert({local_error_lengths.getMedian(), imageFiles[ii]});
         }
         std::cout << "." << std::flush;
     }
@@ -326,14 +327,17 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
         errors_y.plotHist(name_error_y, errors_y.FreedmanDiaconisBinSize(), conf.setTitle("y-errors"));
         errors_all.plotHist(name_error_all, errors_all.FreedmanDiaconisBinSize(), conf.setTitle("Errors [px]"));
 
-        errors_x.plotCDF(name_error_x + "-cdf", conf.setTitle("x-errors [px]").setXLabel("x-error [px]").setYLabel("Estimated PDF"));
-        errors_y.plotCDF(name_error_y + "-cdf", conf.setTitle("y-errors [px]").setXLabel("y-error [px]").setYLabel("Estimated PDF"));
+        errors_x.plotCDF(name_error_x + "-cdf", conf.setTitle("x-errors [px]").setXLabel("x-error [px]").setYLabel("Estimated CDF"));
+        errors_y.plotCDF(name_error_y + "-cdf", conf.setTitle("y-errors [px]").setXLabel("y-error [px]").setYLabel("Estimated CDF"));
         errors_all.plotCDF(name_error_all + "-cdf", conf.setTitle("Errors [px]"));
+
+        error_lengths.plotCDF(name_error_all + "-cdf", conf.setTitle("Errors [px]"));
 
         std::pair<double, double> bins_errors = errors_xy.FreedmanDiaconisBinSize();
         conf.setIgnoreAmount(0.001);
-        errors_xy.plotHist(prefix + "hm" + suffix, bins_errors, conf.setXLabel("x").setYLabel("y").setTitle("Errors heatmap"));
-        errors_xy.plotHist(prefix + "hmlog" + suffix, bins_errors, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Errors heatmap"));
+        errors_xy.plotHist(prefix + "-errors-hm" + suffix, bins_errors, conf.setXLabel("x").setYLabel("y").setTitle("Errors heatmap"));
+        errors_xy.plotHist(prefix + "-errors-hmlog" + suffix, bins_errors, conf.setXLabel("x").setYLabel("y").setLogCB().setTitle("Errors heatmap"));
+        error_lengths.plotCDF(prefix + "-error-lengths" + suffix, conf.setXLabel("error length [px]").setYLabel("Estimated CDF").setTitle("Error length"));
         //plotErrorsByMarker(residuals_by_marker);
     }
     clog::L("plotReprojectionErrors", 2) << "Time for global plots: " << t.print();
