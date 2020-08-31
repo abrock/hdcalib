@@ -62,8 +62,6 @@ void Calib::plotReprojectionErrors(
 
     std::vector<double> errors;
 
-    runningstats::Histogram error_hist(.1);
-
     runningstats::RunningCovariance proj_x, proj_y;
 
     runningstats::QuantileStats<double> error_stats;
@@ -96,7 +94,6 @@ void Calib::plotReprojectionErrors(
             residuals_by_marker[id].push_back(std::make_pair(marker, reprojection));
             errors.push_back(error);
             error_stats.push_unsafe(error);
-            error_hist.push_unsafe(error);
         }
 
         /*
