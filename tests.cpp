@@ -135,6 +135,37 @@ bool point2i_eq(cv::Point2i const& a, cv::Point2i const& b) {
     return ::testing::AssertionSuccess();
 }
 
+TEST(CornerStore, hasID) {
+    hdcalib::CornerStore store;
+
+    hdmarker::Corner a;
+    a.id = {0,0};
+    a.page = 0;
+    a.level = 0;
+
+    hdmarker::Corner b;
+    b.id = {0,0};
+    b.page = 0;
+    b.level = 1;
+
+    store.add({a});
+
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_TRUE(store.hasID(b));
+
+    EXPECT_TRUE(store.hasIDLevel(a, a.level));
+    EXPECT_FALSE(store.hasIDLevel(b, b.level));
+
+    store.add({b});
+
+    EXPECT_TRUE(store.hasID(a));
+    EXPECT_TRUE(store.hasID(b));
+
+    EXPECT_TRUE(store.hasIDLevel(a, a.level));
+    EXPECT_TRUE(store.hasIDLevel(b, b.level));
+
+}
+
 TEST(CornerStore, Adaptors) {
     hdcalib::CornerStore store;
     hdcalib::CornerIndexAdaptor idx_adapt(store);
