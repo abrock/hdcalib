@@ -553,6 +553,13 @@ public:
     cv::Mat getRVec(std::string const& filename) const;
 
     bool is_valid = false;
+
+    /**
+     * @brief name Name of the calibration result, e.g. "SimpleOpenCV", "OpenCV", "Ceres", "Flexible", "SimpleCeres"
+     */
+    std::string name;
+
+    void scaleResult(double const ratio);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);

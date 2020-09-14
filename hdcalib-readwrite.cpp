@@ -343,7 +343,8 @@ void Calib::write(FileStorage &fs) const {
        << "recursionDepth" << recursionDepth
        << "effort" << effort
        << "demosaic" << demosaic
-       << "libraw" << libraw;
+       << "libraw" << libraw
+       << "markerSize" << markerSize;
 
     fs << "calibrations" << "{";
     for (auto const& it : calibrations) {
@@ -378,6 +379,7 @@ void Calib::read(const FileNode &node) {
     node["effort"] >> effort;
     node["demosaic"] >> demosaic;
     node["libraw"] >> libraw;
+    node["markerSize"] >> markerSize;
     setRecursionDepth(recursionDepth);
 
     FileNode n = node["validPages"]; // Read string sequence - Get node
@@ -444,6 +446,15 @@ Mat CalibResult::getRVec(const string &filename) const {
         }
     }
     throw std::runtime_error(std::string("CalibResult does not contain the requested file ") + filename);
+}
+
+void CalibResult::scaleResult(const double ratio) {
+    for (cv::Mat& m : tvecs) {
+        m *= ratio;
+    }
+    for (std::pair<const cv::Point3i, cv::Point3f> & it : objectPointCorrections) {
+        it.second *= ratio;
+    }
 }
 
 Mat CalibResult::getTVec(const string &filename) const {

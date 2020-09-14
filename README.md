@@ -20,4 +20,5 @@ libpstreams-dev
 libraw-dev
 libtclap-dev
 libunistring-dev
+libxxhash-dev
 

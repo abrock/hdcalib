@@ -32,8 +32,6 @@ include_directories("/usr/local/include/hdmarker")
 find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 
-find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
-
 find_package(RunningStats REQUIRED)
 include_directories(${RUNNINGSTATS_INCLUDE_DIRS})
 

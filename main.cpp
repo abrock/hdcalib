@@ -92,6 +92,7 @@ int main(int argc, char* argv[]) {
     double outlier_threshold = -1;
     double max_outlier_percentage = 105;
     double cauchy_param = 1;
+    double marker_size = 1;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -279,7 +280,7 @@ int main(int argc, char* argv[]) {
 
         calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
-        calib.setMarkerSize(marker_size_arg.getValue());
+        marker_size = marker_size_arg.getValue();
         calib.setCauchyParam(cauchy_param);
         calib.setRecursionDepth(recursion_depth);
         calib.setMaxOutlierPercentage(max_outlier_percentage);
@@ -306,6 +307,9 @@ int main(int argc, char* argv[]) {
             cv::FileStorage fs(cache_file, cv::FileStorage::READ);
             cv::FileNode n = fs["calibration"];
             n >> calib;
+            if (marker_size > 0) {
+                calib.setMarkerSize(marker_size);
+            }
             has_cached_calib = true;
             fs.release();
             calib.purgeInvalidPages();

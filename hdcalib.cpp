@@ -709,7 +709,14 @@ Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
 }
 
 void Calib::setMarkerSize(double const size) {
-    markerSize = size;
+    if (size != markerSize) {
+        double const ratio = size/markerSize;
+        clog::L("Calib::setMarkerSize", 2) << "Setting new marker size, scaling translation vectors, ratio: " << ratio;
+        for (std::pair<const std::string, CalibResult> & it : calibrations) {
+            it.second.scaleResult(ratio);
+        }
+        markerSize = size;
+    }
 }
 
 CornerStore Calib::get(const string filename) const {
