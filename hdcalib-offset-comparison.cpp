@@ -12,6 +12,35 @@
 
 namespace fs = boost::filesystem;
 
+class CornerCache {
+public:
+    static CornerCache& getInstance() {
+        static CornerCache instance;
+        return instance;
+    }
+
+    hdcalib::CornerStore & operator[](std::string const& filename) {
+        std::lock_guard<std::mutex> guard(access_mutex);
+        std::map<std::string, hdcalib::CornerStore>::iterator it = data.find(filename);
+        if (it != data.end()) {
+            return it->second;
+        }
+        hdcalib::Calib c;
+        data[filename] = c.getSubMarkers(filename);
+        return data[filename];
+    }
+
+private:
+    std::mutex access_mutex;
+    CornerCache() {}
+    CornerCache(CornerCache const&) = delete;
+    void operator=(CornerCache const&) = delete;
+
+    std::map<std::string, hdcalib::CornerStore> data;
+};
+
+boost::system::error_code ignore_error_code;
+
 void trim(std::string &s) {
     s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
         return !std::isspace(ch);
@@ -137,15 +166,18 @@ void analyzeOffsets(
 
 void analyzeFileList(std::vector<std::string> const& files, int const recursion) {
     if (files.size() < 2) {
-        std::cout << "Number of files in given directory is smaller than two." << std::endl;
+        std::cout << "Number of files given is smaller than two." << std::endl;
         return;
     }
-    hdcalib::CornerStore first_corners(hdcalib::Calib::readCorners(files.front()));
+    hdcalib::Calib calib;
+    calib.setRecursionDepth(recursion);
+    CornerCache & cache = CornerCache::getInstance();
+    hdcalib::CornerStore & first_corners = cache[files.front()];
     runningstats::Stats2D<float> stat_2d, stat_2d_color[3][4];
 #pragma omp parallel for
     for (size_t ii = 1; ii < files.size(); ++ii) {
         runningstats::Stats2D<float> local_stat_2d, local_stat_2d_color[3][4];
-        hdcalib::CornerStore cmp_corners(hdcalib::Calib::readCorners(files[ii]));
+        hdcalib::CornerStore &  cmp_corners = cache[files[ii]];
         analyzeOffsets(first_corners, cmp_corners, files[ii], recursion, local_stat_2d, local_stat_2d_color);
     }
 }
@@ -157,8 +189,6 @@ int main(int argc, char ** argv) {
     ParallelTime t, total_time;
     std::stringstream time_log;
 
-    std::vector<std::string> input_dirs;
-
     std::vector<std::vector<std::string> > files;
 
     int recursion = 0;
@@ -168,9 +198,9 @@ int main(int argc, char ** argv) {
 
         TCLAP::MultiArg<std::string> files_arg("f",
                                                      "file",
-                                                     "Text file containing images. The first image is the reference and is compared to all other images.",
+                                                     "Text file containing image filenames. The first image is the reference and is compared to all other images.",
                                                      false,
-                                                     "directory");
+                                                     "text file containing image filenames");
         cmd.add(files_arg);
 
         TCLAP::ValueArg<int> recursive_depth_arg("r", "recursion",
@@ -182,13 +212,6 @@ int main(int argc, char ** argv) {
         cmd.parse(argc, argv);
 
         recursion = recursive_depth_arg.getValue();
-
-        if (input_dirs.empty()) {
-            std::cerr << "Fatal error: No input directories specified." << std::endl;
-            cmd.getOutput()->usage(cmd);
-
-            return EXIT_FAILURE;
-        }
 
         for (std::string const& src : files_arg.getValue()) {
             std::ifstream in(src);
@@ -204,9 +227,6 @@ int main(int argc, char ** argv) {
                 files.push_back(local_files);
             }
         }
-
-        std::cout << "Parameters: " << std::endl
-                  << "Number of input directories: " << input_dirs.size() << std::endl;
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
@@ -217,8 +237,12 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
-    for (auto const& dir : files) {
-        analyzeFileList(dir, recursion);
+    fs::create_directories("plots", ignore_error_code);
+    fs::current_path("./plots", ignore_error_code);
+    std::cout << fs::current_path() << std::endl;
+
+    for (auto const& filename : files) {
+        analyzeFileList(filename, recursion);
     }
 
 
