@@ -63,15 +63,89 @@ bool stringEndsWith(std::string const& str, std::string const& search) {
     return str.substr(str.size() - search.size()) == search;
 }
 
+void plotOffsets(
+        std::set<std::string> & suffixes,
+        runningstats::Stats2D<float> &local_stat_2d,
+        runningstats::Stats2D<float> local_stat_2d_color[3][4],
+        std::string const& result_prefix
+        ) {
+
+    runningstats::HistConfig conf2d;
+    conf2d.setMinMaxX(-2,2)
+            .setMinMaxY(-2,2)
+            .setXLabel("x offset [px]")
+            .setYLabel("y offset [px]")
+            .addVerticalLine(0, "white")
+            .addHorizontalLine(0, "white")
+            .setFixedRatio();
+
+    runningstats::HistConfig conf1d;
+    conf1d.setMinMaxX(-2,2)
+            .setMinMaxY(-2,2)
+            .addVerticalLine(0, "black");
+
+    std::string suffix;
+#pragma omp parallel for
+    for (size_t color_index = 0; color_index < 3; ++color_index) {
+#pragma omp parallel for
+        for (size_t level = 0; level < 4; ++level) {
+            runningstats::Stats2D<float> & stats = local_stat_2d_color[color_index][level];
+            if (stats.empty()) {
+                continue;
+            }
+            size_t const color = (level == 0 ? color_index + 2 : color_index);
+            suffix = "-offset2d-c" + std::to_string(color) + "-l" + std::to_string(level);
+            stats.saveSummary(result_prefix + suffix + ".summary");
+            suffixes.insert(suffix);
+            stats.plotHist(result_prefix + suffix,
+                           stats.FreedmanDiaconisBinSize(),
+                           conf2d);
+            suffix = "-offset2d-log-c" + std::to_string(color) + "-l" + std::to_string(level);
+            suffixes.insert(suffix);
+            stats.plotHist(result_prefix + suffix,
+                           stats.FreedmanDiaconisBinSize(),
+                           conf2d.clone()
+                           .setLogCB());
+            for (std::string const axis : {"x", "y"}) {
+                runningstats::QuantileStats<float> axis_stats = stats.get(axis);
+                suffix = "-offset-" + axis + "-c" + std::to_string(color) + "-l" + std::to_string(level);
+                suffixes.insert(suffix);
+                axis_stats.plotHistAndCDF(result_prefix + suffix,
+                                          axis_stats.FreedmanDiaconisBinSize(),
+                                          conf1d.clone()
+                                          .setDataLabel(axis + " offset [px]"));
+            }
+        }
+    }
+
+    suffix = "-offset2d";
+    suffixes.insert(suffix);
+    suffix = "-offset2d-log";
+    suffixes.insert(suffix);
+
+#pragma omp parallel sections
+    {
+#pragma omp section
+    local_stat_2d.plotHist(result_prefix + suffix,
+                     local_stat_2d.FreedmanDiaconisBinSize(),
+                     conf2d);
+#pragma omp section
+    local_stat_2d.plotHist(result_prefix + suffix,
+                     local_stat_2d.FreedmanDiaconisBinSize(),
+                     conf2d.clone()
+                     .setLogCB());
+    }
+}
+
 void analyzeOffsets(
         hdcalib::CornerStore const& a,
         hdcalib::CornerStore const& b,
+        std::set<std::string> & suffixes,
         std::string const& result_prefix,
         int const recursion,
         runningstats::Stats2D<float> &local_stat_2d,
         runningstats::Stats2D<float> local_stat_2d_color[3][4]
 ) {
-    std::set<std::string> suffixes;
     for (size_t ii = 0; ii < a.size(); ++ii) {
         hdmarker::Corner const& _a = a.get(ii);
         hdmarker::Corner _b;
@@ -100,71 +174,16 @@ void analyzeOffsets(
             local_stat_2d_color[color_index][_a.level].push_unsafe(val);
         }
     }
-    runningstats::HistConfig conf2d;
-    conf2d.setMinMaxX(-2,2)
-            .setMinMaxY(-2,2)
-            .setXLabel("x offset [px]")
-            .setYLabel("y offset [px]")
-            .addVerticalLine(0, "white")
-            .addHorizontalLine(0, "white");
 
-    runningstats::HistConfig conf1d;
-    conf1d.setMinMaxX(-2,2)
-            .setMinMaxY(-2,2)
-            .addVerticalLine(0, "black");
-
-    std::string suffix;
-    for (size_t color_index = 0; color_index < 3; ++color_index) {
-        for (size_t level = 0; level < 4; ++level) {
-            runningstats::Stats2D<float> & stats = local_stat_2d_color[color_index][level];
-            if (stats.empty()) {
-                continue;
-            }
-            size_t const color = (level == 0 ? color_index + 2 : color_index);
-            suffix = "-offset2d-c" + std::to_string(color) + "-l" + std::to_string(level);
-            suffixes.insert(suffix);
-            stats.plotHist(result_prefix + suffix,
-                           stats.FreedmanDiaconisBinSize(),
-                           conf2d);
-            suffix = "-offset2d-log-c" + std::to_string(color) + "-l" + std::to_string(level);
-            suffixes.insert(suffix);
-            stats.plotHist(result_prefix + suffix,
-                           stats.FreedmanDiaconisBinSize(),
-                           conf2d.clone()
-                           .setLogCB());
-            for (std::string const axis : {"x", "y"}) {
-                runningstats::QuantileStats<float> axis_stats = stats.get(axis);
-                suffix = "-offset-" + axis + "-c" + std::to_string(color) + "-l" + std::to_string(level);
-                suffixes.insert(suffix);
-                axis_stats.plotHistAndCDF(result_prefix + suffix,
-                                          axis_stats.FreedmanDiaconisBinSize(),
-                                          conf1d.clone()
-                                          .setDataLabel(axis + " offset [px]"));
-            }
-        }
-    }
-
-    suffix = "-offset2d";
-    suffixes.insert(suffix);
-    local_stat_2d.plotHist(result_prefix + suffix,
-                     local_stat_2d.FreedmanDiaconisBinSize(),
-                     conf2d);
-    suffix = "-offset2d-log";
-    suffixes.insert(suffix);
-    local_stat_2d.plotHist(result_prefix + suffix,
-                     local_stat_2d.FreedmanDiaconisBinSize(),
-                     conf2d.clone()
-                     .setLogCB());
-
-#pragma omp single
-    for (std::string const& suffix : suffixes) {
-        std::string const dirname = "suffix-" + suffix;
-        std::cout << "mkdir \"" << dirname << "\"" << std::endl;
-        std::cout << "for i in *" << suffix << "*; do ln -s $(pwd)/$i \"" << dirname << "\"/$i; done " << std::endl;
-    }
+    plotOffsets(
+                suffixes,
+                local_stat_2d,
+                local_stat_2d_color,
+                result_prefix
+                );
 }
 
-void analyzeFileList(std::vector<std::string> const& files, int const recursion) {
+void analyzeFileList(std::vector<std::string> const& files, std::string const& prefix, int const recursion) {
     if (files.size() < 2) {
         std::cout << "Number of files given is smaller than two." << std::endl;
         return;
@@ -174,11 +193,40 @@ void analyzeFileList(std::vector<std::string> const& files, int const recursion)
     CornerCache & cache = CornerCache::getInstance();
     hdcalib::CornerStore & first_corners = cache[files.front()];
     runningstats::Stats2D<float> stat_2d, stat_2d_color[3][4];
+    std::set<std::string> suffixes;
+    runningstats::Ellipses ellipses;
+
 #pragma omp parallel for
     for (size_t ii = 1; ii < files.size(); ++ii) {
         runningstats::Stats2D<float> local_stat_2d, local_stat_2d_color[3][4];
         hdcalib::CornerStore &  cmp_corners = cache[files[ii]];
-        analyzeOffsets(first_corners, cmp_corners, files[ii], recursion, local_stat_2d, local_stat_2d_color);
+        analyzeOffsets(first_corners, cmp_corners, suffixes, prefix + files[ii], recursion, local_stat_2d, local_stat_2d_color);
+        stat_2d.push(local_stat_2d);
+        local_stat_2d.getQuantileEllipse(ellipses, .5);
+        for (size_t ii = 0; ii < 3; ++ii) {
+            for (size_t jj = 0; jj < 4; ++jj) {
+                stat_2d_color[ii][jj].push(local_stat_2d_color[ii][jj]);
+            }
+        }
+    }
+
+    plotOffsets(
+            suffixes,
+            stat_2d,
+            stat_2d_color,
+            prefix + "all"
+            );
+
+    ellipses.plot(prefix + "all-ellipses", runningstats::HistConfig()
+                  .setTitle("50%-ellipses of the offsets of all tested images relative to the first.")
+                  .setXLabel("x offset [px]")
+                  .setYLabel("y offset [px]")
+                  .setFixedRatio());
+
+    for (std::string const& suffix : suffixes) {
+        std::string const dirname = "suffix-" + suffix;
+        std::cout << "mkdir \"" << dirname << "\"" << std::endl;
+        std::cout << "for i in *" << suffix << "*; do ln -s $(pwd)/$i \"" << dirname << "\"/$i; done " << std::endl;
     }
 }
 
@@ -189,7 +237,7 @@ int main(int argc, char ** argv) {
     ParallelTime t, total_time;
     std::stringstream time_log;
 
-    std::vector<std::vector<std::string> > files;
+    std::map<std::string, std::vector<std::string> > files;
 
     int recursion = 0;
 
@@ -224,7 +272,7 @@ int main(int argc, char ** argv) {
                 }
             }
             if (local_files.size() > 1) {
-                files.push_back(local_files);
+                files[src] = local_files;
             }
         }
     }
@@ -238,11 +286,11 @@ int main(int argc, char ** argv) {
     }
 
     fs::create_directories("plots", ignore_error_code);
-    fs::current_path("./plots", ignore_error_code);
+    //fs::current_path("./plots", ignore_error_code);
     std::cout << fs::current_path() << std::endl;
 
-    for (auto const& filename : files) {
-        analyzeFileList(filename, recursion);
+    for (auto const& it : files) {
+        analyzeFileList(it.second, "plots/" + it.first, recursion);
     }
 
 
