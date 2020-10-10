@@ -24,6 +24,37 @@ void trim(std::string &s) {
     }).base(), s.end());
 }
 
+template<class T>
+std::vector<T> commaSeparate(std::vector<std::string> const& args) {
+    std::vector<T> result;
+    for (std::string const& s : args) {
+        std::string current;
+        for (char c : s) {
+            if (c == ',' || c == ';') {
+                trim(current);
+                if (!current.empty()) {
+                    std::stringstream stream(current);
+                    T val;
+                    stream >> val;
+                    result.push_back(val);
+                    current = "";
+                }
+            }
+            else {
+                current += c;
+            }
+        }
+        trim(current);
+        if (!current.empty()) {
+            std::stringstream stream(current);
+            T val;
+            stream >> val;
+            result.push_back(val);
+        }
+    }
+    return result;
+}
+
 int main(int argc, char* argv[]) {
     clog::Logger::getInstance().addListener(std::cout);
 
@@ -79,7 +110,7 @@ int main(int argc, char* argv[]) {
                                                   "Text file with a list of input images.");
         cmd.add(textfile_arg);
 
-        TCLAP::MultiArg<int> valid_pages("",
+        TCLAP::MultiArg<std::string> valid_pages("",
                                                   "valid",
                                                   "Page number of a valid corner.",
                                                   false,
@@ -124,7 +155,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (!valid_pages.getValue().empty()) {
-            calib.setValidPages(valid_pages.getValue());
+            calib.setValidPages(commaSeparate<int>(valid_pages.getValue()));
             std::cout << "Valid pages: ";
             for (auto page : valid_pages.getValue()) {
                 std::cout << page << ", ";

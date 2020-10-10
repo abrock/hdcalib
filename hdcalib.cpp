@@ -822,7 +822,7 @@ vector<Corner> Calib::getMainMarkers(const std::string input_file,
     }
     result = filter_duplicate_markers(result);
 
-    Corner::writeGzipFile(cv_gz_cache_file, result);
+    Corner::writeGzipFile(hdm_gz_cache_file, result);
 
     return result;
 }
@@ -907,7 +907,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
         }
     }
 
-    Corner::writeFile(hdm_gz_cache_file, result);
+    Corner::writeGzipFile(hdm_gz_cache_file, result);
 
     return result;
 }
