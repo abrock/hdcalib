@@ -84,17 +84,19 @@ void plotOffsets(
             .setMinMaxY(-2,2)
             .addVerticalLine(0, "black");
 
-    std::string suffix;
+    runningstats::Stats2D<float> stat_2d_level[4];
+
 #pragma omp parallel for
     for (size_t color_index = 0; color_index < 3; ++color_index) {
 #pragma omp parallel for
         for (size_t level = 0; level < 4; ++level) {
             runningstats::Stats2D<float> & stats = local_stat_2d_color[color_index][level];
+            stat_2d_level[level].push(stats);
             if (stats.empty()) {
                 continue;
             }
             size_t const color = (level == 0 ? color_index + 2 : color_index);
-            suffix = "-offset2d-c" + std::to_string(color) + "-l" + std::to_string(level);
+            std::string suffix = "-offset2d-c" + std::to_string(color) + "-l" + std::to_string(level);
             stats.saveSummary(result_prefix + suffix + ".summary");
             suffixes.insert(suffix);
             stats.plotHist(result_prefix + suffix,
@@ -118,10 +120,44 @@ void plotOffsets(
         }
     }
 
-    suffix = "-offset2d";
+#pragma omp parallel for
+    for (size_t level = 0; level < 4; ++level) {
+        runningstats::Stats2D<float> & stats = stat_2d_level[level];
+        if (stats.empty()) {
+            continue;
+        }
+        std::string suffix = "-offset2d-l" + std::to_string(level);
+        stats.saveSummary(result_prefix + suffix + ".summary");
+        suffixes.insert(suffix);
+        stats.plotHist(result_prefix + suffix,
+                       stats.FreedmanDiaconisBinSize(),
+                       conf2d);
+        suffix = "-offset2d-log-l" + std::to_string(level);
+        suffixes.insert(suffix);
+        stats.plotHist(result_prefix + suffix,
+                       stats.FreedmanDiaconisBinSize(),
+                       conf2d.clone()
+                       .setLogCB());
+        for (std::string const axis : {"x", "y"}) {
+            runningstats::QuantileStats<float> axis_stats = stats.get(axis);
+            suffix = "-offset-" + axis + "-l" + std::to_string(level);
+            suffixes.insert(suffix);
+            axis_stats.plotHistAndCDF(result_prefix + suffix,
+                                      axis_stats.FreedmanDiaconisBinSize(),
+                                      conf1d.clone()
+                                      .setDataLabel(axis + " offset [px]"));
+        }
+    }
+
+
+    std::string suffix = "-offset2d";
     suffixes.insert(suffix);
     suffix = "-offset2d-log";
     suffixes.insert(suffix);
+    for (std::string const axis : {"x", "y"}) {
+        suffix = "-offset-" + axis + "-all";
+        suffixes.insert(suffix);
+    }
 
 #pragma omp parallel sections
     {
@@ -134,6 +170,18 @@ void plotOffsets(
                      local_stat_2d.FreedmanDiaconisBinSize(),
                      conf2d.clone()
                      .setLogCB());
+#pragma omp section
+    {
+        for (std::string const axis : {"x", "y"}) {
+            runningstats::QuantileStats<float> axis_stats = local_stat_2d.get(axis);
+            suffix = "-offset-" + axis + "-all";
+            suffixes.insert(suffix);
+            axis_stats.plotHistAndCDF(result_prefix + suffix,
+                                      axis_stats.FreedmanDiaconisBinSize(),
+                                      conf1d.clone()
+                                      .setDataLabel(axis + " offset [px]"));
+        }
+    }
     }
 }
 
