@@ -647,15 +647,20 @@ void Calib::refineRecursiveByPage(Mat &img,
     }
     out.clear();
     double _markerSize = markerSize;
+    clog::L(__func__, 2) << "Input page distribution: " << std::endl;
+    printCornerStats(in);
+    hdmarker::Marker::init();
     for (const auto& it : pages) {
         _markerSize = markerSize;
         std::vector<hdmarker::Corner> _out;
-        hdmarker::refine_recursive(img, it.second, _out, recursion_depth, &_markerSize);
+        std::vector<cv::Rect> limits = {{0, 0, 31, 31}};
+        hdmarker::refine_recursive(img, in, _out, recursion_depth, &_markerSize, nullptr, nullptr, it.first, limits);
         out.insert(out.end(), _out.begin(), _out.end());
         clog::L(__func__, 2) << "Refining page " << it.first
                              << ", recursion depth " << recursion_depth
                              << " got " << _out.size() << " new submarkers, current total: "
-                             << out.size() << std::endl;
+                             << out.size();
+        printCornerStats(_out);
     }
     markerSize = _markerSize;
 }

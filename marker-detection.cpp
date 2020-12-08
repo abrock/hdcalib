@@ -57,6 +57,7 @@ std::vector<T> commaSeparate(std::vector<std::string> const& args) {
 
 int main(int argc, char* argv[]) {
     clog::Logger::getInstance().addListener(std::cout);
+    hdmarker::Marker::init();
 
     hdcalib::Calib calib;
     std::vector<std::string> input_files;

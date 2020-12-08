@@ -804,10 +804,11 @@ vector<Corner> Calib::getMainMarkers(const std::string input_file,
         return result;
     }
 
-    cv::Mat img_scaled = getImageScaled(input_file);
+    cv::Mat img_raw = convert16_8(getImageRaw(input_file));
+    cv::imwrite("debug.png", img_raw);
 
     Marker::init();
-    detect(img_scaled, result, use_rgb, 0, 10, effort);
+    detect(img_raw, result, use_rgb, 0, 10, effort);
     std::map<int, int> counter;
     for (auto const& it : result) {
         counter[it.page]++;
@@ -830,12 +831,23 @@ vector<Corner> Calib::getMainMarkers(const std::string input_file,
 cv::Mat Calib::getImageScaled(std::string const& input_file) {
     cv::Mat img = readImage(input_file, demosaic, libraw, useOnlyGreen);
     if (img.empty()) {
-        clog::L("getCorners", 1) << "Input file empty, aborting." << std::endl;
+        clog::L("Calib::getImageScaled", 1) << "Input file empty, aborting." << std::endl;
         return {};
     }
     setImageSize(img);
 
     return scaleImage(img);
+}
+
+cv::Mat Calib::getImageRaw(std::string const& input_file) {
+    cv::Mat img = readImage(input_file, demosaic, libraw, useOnlyGreen);
+    if (img.empty()) {
+        clog::L("Calib::getImageRaw", 1) << "Input file empty, aborting." << std::endl;
+        return {};
+    }
+    setImageSize(img);
+
+    return img;
 }
 
 vector<Corner> Calib::getSubMarkers(const std::string input_file,
@@ -883,7 +895,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
 
     std::vector<Corner> main_markers = getMainMarkers(input_file, effort, demosaic, raw);
 
-    cv::Mat img = getImageScaled(input_file);
+    cv::Mat img = convert16_8(getImageRaw(input_file));
 
     double msize = 1.0;
     refineRecursiveByPage(img, main_markers, result, recursionDepth, msize);
@@ -920,15 +932,43 @@ cv::Mat Calib::scaleImage(cv::Mat const& img) {
     if (img_scaled.depth() == CV_16U) {
         img_scaled *= std::floor(65535.0 / max);
         img_scaled.convertTo(img_scaled, CV_8UC1, 1.0 / 256.0);
+        return img_scaled;
     }
     else if (img_scaled.depth() == CV_8U) {
         img_scaled *= std::floor(255.0 / max);
+        return img_scaled;
     }
     if (img_scaled.channels() == 1 && (img_scaled.depth() == CV_16U || img_scaled.depth() == CV_16S)) {
         clog::L(__func__, 0) << "Input image is 1 channel, 16 bit, converting for painting to 8 bit." << std::endl;
         img_scaled.convertTo(img_scaled, CV_8UC1, 1.0 / 256.0);
     }
     return img_scaled;
+}
+
+cv::Mat Calib::convert16_8(cv::Mat const& img) {
+    cv::Mat result = img.clone();
+    if (result.depth() == CV_16U) {
+        result.convertTo(result, CV_8UC1, 1.0 / 256.0);
+    }
+    return result;
+}
+
+void Calib::printCornerStats(std::vector<Corner> const& vec) {
+    std::map<std::string, size_t> stats;
+    std::map<int, size_t> stats_page;
+    for (Corner const& c : vec) {
+        std::string key = std::to_string(c.layer) + "/" + std::to_string(c.color);
+        stats[key]++;
+        stats_page[c.page]++;
+    }
+    std::cout << "Stats for layer/color combinations:" << std::endl;
+    for (auto const& it : stats) {
+        std::cout << it.first << ": " << it.second << std::endl;
+    }
+    std::cout << "Count by page:" << std::endl;
+    for (auto const& it : stats_page) {
+        std::cout << it.first << ": " << it.second << std::endl;
+    }
 }
 
 vector<Corner> Calib::getCorners(const std::string input_file,
@@ -952,12 +992,19 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             imageSize = read_raw_imagesize(input_file);
         }
         else {
-            img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
+            img = getImageRaw(input_file);
             setImageSize(img);
         }
         resolutionKnown = true;
     }
     cv::Mat img_scaled;
+
+    if (recursionDepth > 0) {
+        printCornerStats(submarkers);
+    }
+    else {
+        printCornerStats(corners);
+    }
 
     if (plotMarkers) {
         img_scaled = getImageScaled(input_file);
@@ -1077,7 +1124,7 @@ Mat Calib::readImage(std::string const& input_file,
         cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
     }
     else {
-        img = cv::imread(input_file);
+        img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
         //clog::L(__func__, 2) << "Input file " << input_file << " image size: " << img.size() << std::endl;
     }
     if (useOnlyGreen) {

@@ -1287,6 +1287,9 @@ public:
     vector<Corner> getMainMarkers(const std::string input_file, const float effort, const bool demosaic, const bool raw);
     cv::Mat getImageScaled(const string &input_file);
     static cv::Mat scaleImage(const cv::Mat &img);
+    static void printCornerStats(const std::vector<Corner> &vec);
+    cv::Mat getImageRaw(const std::string &input_file);
+    cv::Mat convert16_8(const cv::Mat &img);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
