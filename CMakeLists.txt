@@ -168,3 +168,13 @@ target_link_libraries(hdcalib-overexposed
       ${OpenCV_LIBS}
       ${RUNNINGSTATS_LIBRARIES}
     )
+
+add_executable(hdcalib-check-corner-cache check-corner-cache.cpp)
+
+target_link_libraries(hdcalib-check-corner-cache
+      ${OpenCV_LIBS}
+      hdmarker
+      ${Boost_FILESYSTEM_LIBRARY}
+      ${Boost_SYSTEM_LIBRARY}
+      ${Boost_IOSTREAMS_LIBRARY}
+    )
