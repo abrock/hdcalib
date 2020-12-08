@@ -475,7 +475,7 @@ bool CornerStore::hasIDLevel(const Corner &ref, Corner &found, int8_t level) con
     }
     for (size_t ii = 0; ii < resultSet.size(); ++ii) {
         found = hdmarker::Corner(corners[res_index[ii]]);
-        if (found.id == ref.id && found.page == ref.page && found.level == level) {
+        if (found.id == ref.id && found.page == ref.page && found.layer == level) {
             return true;
         }
     }

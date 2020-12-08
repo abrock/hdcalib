@@ -141,28 +141,28 @@ TEST(CornerStore, hasID) {
     hdmarker::Corner a;
     a.id = {0,0};
     a.page = 0;
-    a.level = 0;
+    a.layer = 0;
 
     hdmarker::Corner b;
     b.id = {0,0};
     b.page = 0;
-    b.level = 1;
+    b.layer = 1;
 
     store.add({a});
 
     EXPECT_TRUE(store.hasID(a));
     EXPECT_TRUE(store.hasID(b));
 
-    EXPECT_TRUE(store.hasIDLevel(a, a.level));
-    EXPECT_FALSE(store.hasIDLevel(b, b.level));
+    EXPECT_TRUE(store.hasIDLevel(a, a.layer));
+    EXPECT_FALSE(store.hasIDLevel(b, b.layer));
 
     store.add({b});
 
     EXPECT_TRUE(store.hasID(a));
     EXPECT_TRUE(store.hasID(b));
 
-    EXPECT_TRUE(store.hasIDLevel(a, a.level));
-    EXPECT_TRUE(store.hasIDLevel(b, b.level));
+    EXPECT_TRUE(store.hasIDLevel(a, a.layer));
+    EXPECT_TRUE(store.hasIDLevel(b, b.layer));
 
 }
 
@@ -346,7 +346,7 @@ TEST(CornerStore, hasIDLevel) {
     a.pc[2] = cv::Point2f(9,10);
     a.page = 11;
     a.size = 12;
-    a.level = 0;
+    a.layer = 0;
 
     EXPECT_FALSE(store.hasIDLevel(a, 0));
     EXPECT_FALSE(store.hasIDLevel(b, 0));
@@ -365,7 +365,7 @@ TEST(CornerStore, hasIDLevel) {
     b.pc[2] = cv::Point2f(21,22);
     b.page = 23;
     b.size = 24;
-    b.level = 1;
+    b.layer = 1;
 
     std::vector<hdmarker::Corner> search_res = store.findByID(a);
     search_res = store.findByID(b);
@@ -1525,16 +1525,16 @@ TEST(CornerColor, mainMarkers) {
 TEST(CornerColor, cachedSubmarkers) {
     std::vector<hdmarker::Corner> const corners = hdcalib::Calib::readCorners("submarkers.yaml.gz");
     for (auto const& it : corners) {
-        if (0 == it.level || 2 == it.level) {
+        if (0 == it.layer || 2 == it.layer) {
             EXPECT_EQ(it.color, CornerColor::getColor(it, 2));
         }
-        if (1 == it.level) {
+        if (1 == it.layer) {
             EXPECT_EQ(it.color, CornerColor::getColor(it.id/5, it.page, 1));
         }
         EXPECT_TRUE(it.color >= 0);
         EXPECT_TRUE(it.color <= 3);
-        EXPECT_TRUE(it.level >= 0);
-        EXPECT_TRUE(it.level <= 2);
+        EXPECT_TRUE(it.layer >= 0);
+        EXPECT_TRUE(it.layer <= 2);
     }
     std::cout << "Corner cache file has " << corners.size() << " corners." << std::endl;
 }

@@ -197,14 +197,14 @@ void analyzeOffsets(
     for (size_t ii = 0; ii < a.size(); ++ii) {
         hdmarker::Corner const& _a = a.get(ii);
         hdmarker::Corner _b;
-        if (b.hasIDLevel(_a, _b, _a.level)) {
+        if (b.hasIDLevel(_a, _b, _a.layer)) {
             size_t const color = CornerColor::getColor(_a, recursion);
             if (color > 3) {
                 throw std::runtime_error("Color value unexpectedly >3, aborting.");
             }
             std::pair<double, double> const val(_b.p.x - _a.p.x, _b.p.y - _a.p.y);
             local_stat_2d.push_unsafe(val);
-            if (_a.level == 0) { // main marker
+            if (_a.layer == 0) { // main marker
                 if (color < 2) {
                     throw std::runtime_error("Error: Main marker with color < 2");
                 }
@@ -217,9 +217,9 @@ void analyzeOffsets(
                     throw std::runtime_error("Error: Submarker with color > 1");
                 }
             }
-            size_t const color_index = (_a.level == 0 ? color-2 : color);
-            local_stat_2d_color[2][_a.level].push_unsafe(val);
-            local_stat_2d_color[color_index][_a.level].push_unsafe(val);
+            size_t const color_index = (_a.layer == 0 ? color-2 : color);
+            local_stat_2d_color[2][_a.layer].push_unsafe(val);
+            local_stat_2d_color[color_index][_a.layer].push_unsafe(val);
         }
     }
 
