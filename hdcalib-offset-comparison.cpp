@@ -67,8 +67,8 @@ void plotOffsets(
         std::set<std::string> & suffixes,
         runningstats::Stats2D<float> &local_stat_2d,
         runningstats::Stats2D<float> local_stat_2d_color[3][4],
-        std::string const& result_prefix
-        ) {
+std::string const& result_prefix
+) {
 
     runningstats::HistConfig conf2d;
     conf2d.setMinMaxX(-2,2)
@@ -162,26 +162,26 @@ void plotOffsets(
 #pragma omp parallel sections
     {
 #pragma omp section
-    local_stat_2d.plotHist(result_prefix + suffix,
-                     local_stat_2d.FreedmanDiaconisBinSize(),
-                     conf2d);
+        local_stat_2d.plotHist(result_prefix + suffix,
+                               local_stat_2d.FreedmanDiaconisBinSize(),
+                               conf2d);
 #pragma omp section
-    local_stat_2d.plotHist(result_prefix + suffix,
-                     local_stat_2d.FreedmanDiaconisBinSize(),
-                     conf2d.clone()
-                     .setLogCB());
+        local_stat_2d.plotHist(result_prefix + suffix,
+                               local_stat_2d.FreedmanDiaconisBinSize(),
+                               conf2d.clone()
+                               .setLogCB());
 #pragma omp section
-    {
-        for (std::string const axis : {"x", "y"}) {
-            runningstats::QuantileStats<float> axis_stats = local_stat_2d.get(axis);
-            suffix = "-offset-" + axis + "-all";
-            suffixes.insert(suffix);
-            axis_stats.plotHistAndCDF(result_prefix + suffix,
-                                      axis_stats.FreedmanDiaconisBinSize(),
-                                      conf1d.clone()
-                                      .setDataLabel(axis + " offset [px]"));
+        {
+            for (std::string const axis : {"x", "y"}) {
+                runningstats::QuantileStats<float> axis_stats = local_stat_2d.get(axis);
+                suffix = "-offset-" + axis + "-all";
+                suffixes.insert(suffix);
+                axis_stats.plotHistAndCDF(result_prefix + suffix,
+                                          axis_stats.FreedmanDiaconisBinSize(),
+                                          conf1d.clone()
+                                          .setDataLabel(axis + " offset [px]"));
+            }
         }
-    }
     }
 }
 
@@ -192,7 +192,9 @@ void analyzeOffsets(
         std::string const& result_prefix,
         int const recursion,
         runningstats::Stats2D<float> &local_stat_2d,
-        runningstats::Stats2D<float> local_stat_2d_color[3][4]
+        runningstats::Stats2D<float> local_stat_2d_color[3][4],
+std::vector<cv::Point2d> & src,
+std::vector<cv::Point2d> & dst
 ) {
     for (size_t ii = 0; ii < a.size(); ++ii) {
         hdmarker::Corner const& _a = a.get(ii);
@@ -220,6 +222,8 @@ void analyzeOffsets(
             size_t const color_index = (_a.layer == 0 ? color-2 : color);
             local_stat_2d_color[2][_a.layer].push_unsafe(val);
             local_stat_2d_color[color_index][_a.layer].push_unsafe(val);
+            src.push_back(_a.p);
+            dst.push_back(_b.p);
         }
     }
 
@@ -244,11 +248,13 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
     std::set<std::string> suffixes;
     runningstats::Ellipses ellipses;
 
+    std::vector<hdcalib::Similarity2D> fits(files.size());
 #pragma omp parallel for
     for (size_t ii = 1; ii < files.size(); ++ii) {
         runningstats::Stats2D<float> local_stat_2d, local_stat_2d_color[3][4];
         hdcalib::CornerStore &  cmp_corners = cache[files[ii]];
-        analyzeOffsets(first_corners, cmp_corners, suffixes, prefix + files[ii], recursion, local_stat_2d, local_stat_2d_color);
+        std::vector<cv::Point2d> src, dst;
+        analyzeOffsets(first_corners, cmp_corners, suffixes, prefix + files[ii], recursion, local_stat_2d, local_stat_2d_color, src, dst);
         stat_2d.push(local_stat_2d);
         local_stat_2d.getQuantileEllipse(ellipses, .5);
         for (size_t ii = 0; ii < 3; ++ii) {
@@ -256,14 +262,18 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
                 stat_2d_color[ii][jj].push(local_stat_2d_color[ii][jj]);
             }
         }
+        hdcalib::Similarity2D & fit = fits[ii];
+        fit.src = src;
+        fit.dst = dst;
+        fit.runFit();
     }
 
     plotOffsets(
-            suffixes,
-            stat_2d,
-            stat_2d_color,
-            prefix + "all"
-            );
+                suffixes,
+                stat_2d,
+                stat_2d_color,
+                prefix + "all"
+                );
 
     ellipses.plot(prefix + "all-ellipses", runningstats::HistConfig()
                   .setTitle("50%-ellipses of the offsets of all tested images relative to the first.")
@@ -293,10 +303,10 @@ int main(int argc, char ** argv) {
         TCLAP::CmdLine cmd("hdcalib tool for analyzing offsets of detected markers between images", ' ', "0.1");
 
         TCLAP::MultiArg<std::string> files_arg("f",
-                                                     "file",
-                                                     "Text file containing image filenames. The first image is the reference and is compared to all other images.",
-                                                     false,
-                                                     "text file containing image filenames");
+                                               "file",
+                                               "Text file containing image filenames. The first image is the reference and is compared to all other images.",
+                                               false,
+                                               "text file containing image filenames");
         cmd.add(files_arg);
 
         TCLAP::ValueArg<int> recursive_depth_arg("r", "recursion",
@@ -333,12 +343,13 @@ int main(int argc, char ** argv) {
         return 0;
     }
 
-    fs::create_directories("plots", ignore_error_code);
     //fs::current_path("./plots", ignore_error_code);
     std::cout << fs::current_path() << std::endl;
 
     for (auto const& it : files) {
-        analyzeFileList(it.second, "plots/" + it.first, recursion);
+        std::string plots_name = "plots-" + it.first;
+        fs::create_directories(plots_name, ignore_error_code);
+        analyzeFileList(it.second, plots_name, recursion);
     }
 
 

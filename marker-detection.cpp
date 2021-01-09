@@ -206,5 +206,7 @@ int main(int argc, char* argv[]) {
 #endif
     }
 
+    hdmarker::RejectionLog::print();
+
     return EXIT_SUCCESS;
 }

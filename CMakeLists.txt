@@ -57,6 +57,10 @@ target_link_libraries(hdcalib-analyze-grid
 add_library(griddescription griddescription.cpp)
 
 add_library(hdcalib-fit-grid fitgrid-lib.cpp)
+add_library(similarity2d similarity2d.cpp)
+target_link_libraries(similarity2d
+    ${CATLOGGER_LIBRARIES}
+    )
 
 target_link_libraries(hdcalib
   cornerstore
@@ -78,6 +82,7 @@ target_link_libraries(hdcalib
   ${RUNNINGSTATS_LIBRARIES}
   ${CATLOGGER_LIBRARIES}
   raw
+  similarity2d
 )
 
 add_executable(hdcalib-tool "main.cpp")
@@ -110,6 +115,20 @@ add_executable(hdcalib-analyze-detection-rates analyze-detection-rates.cpp)
 
 add_executable(raw2png raw2png.cpp)
 
+add_executable(test-similarity2d test-similarity2d.cpp)
+
+add_executable(hdcalib-2dgauss 2dgauss.cpp)
+
+target_link_libraries(hdcalib-2dgauss
+    ${OpenCV_LIBS}
+    ${CERES_LIBRARIES}
+#    ${Boost_FILESYSTEM_LIBRARY}
+#    ${Boost_SYSTEM_LIBRARY}
+#    ${Boost_IOSTREAMS_LIBRARY}
+    ${RUNNINGSTATS_LIBRARIES}
+#    ${CATLOGGER_LIBRARIES}
+    )
+
 foreach(program
         hdcalib-tool
         extract-green
@@ -124,6 +143,7 @@ foreach(program
         hdcalib-rectify-tool
         hdcalib-yaml2bin
         raw2png
+        test-similarity2d
     )
     target_link_libraries(${program} hdcalib)
 endforeach()
@@ -143,7 +163,7 @@ endforeach()
 find_package(GTest REQUIRED)
 add_executable(tests tests.cpp)
 
-foreach(program tests hdcalib-test-submarker-detection)
+foreach(program tests hdcalib-test-submarker-detection test-similarity2d)
   target_link_libraries(${program}
     hdcalib
     ${GTEST_BOTH_LIBRARIES}
@@ -177,4 +197,18 @@ target_link_libraries(hdcalib-check-corner-cache
       ${Boost_FILESYSTEM_LIBRARY}
       ${Boost_SYSTEM_LIBRARY}
       ${Boost_IOSTREAMS_LIBRARY}
+    )
+
+add_executable(marker-fit-experiment marker-fit-experiment.cpp)
+
+target_link_libraries(marker-fit-experiment
+    ${OpenCV_LIBS}
+    ${RUNNINGSTATS_LIBRARIES}
+    ${CERES_LIBRARIES}
+    hdmarker
+    )
+
+add_executable(hdcalib-analyze-video analyze-video.cpp)
+target_link_libraries(hdcalib-analyze-video
+    ${OpenCV_LIBS}
     )

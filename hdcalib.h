@@ -394,7 +394,7 @@ class ProjectionFunctorRot4 {
 
 public:
     ProjectionFunctorRot4(std::vector<cv::Point2f> const& _markers,
-                      std::vector<cv::Point3f> const& _points);
+                          std::vector<cv::Point3f> const& _points);
     /*
     1, // focal length x
     1, // focal length y
@@ -631,9 +631,9 @@ class Calib {
     double aspectRatio;
 
     void getReprojections(CalibResult &calib,
-            const size_t ii,
-            std::vector<cv::Point2d> & markers,
-            std::vector<cv::Point2d> & reprojections);
+                          const size_t ii,
+                          std::vector<cv::Point2d> & markers,
+                          std::vector<cv::Point2d> & reprojections);
 
     bool verbose = true;
     bool verbose2 = false;
@@ -937,9 +937,9 @@ public:
      * @param outliers vector of detected outliers
      */
     void findOutliers(const string &calib_name,
-            double const threshold,
-            size_t const ii,
-            std::vector<Corner> &outliers);
+                      double const threshold,
+                      size_t const ii,
+                      std::vector<Corner> &outliers);
 
     template<class F, class T>
     static void project(
@@ -1155,14 +1155,14 @@ public:
    * @return
    */
     vector<Corner> getCorners(const std::string input_file,
-            const float effort,
-            const bool demosaic,
-            const bool raw);
+                              const float effort,
+                              const bool demosaic,
+                              const bool raw);
 
     static cv::Mat readImage(std::string const& input_file,
-                      bool const demosaic,
-                      bool const raw,
-                      bool const useOnlyGreen);
+                             bool const demosaic,
+                             bool const raw,
+                             bool const useOnlyGreen);
 
     cv::Size read_raw_imagesize(const string &filename);
 
@@ -1196,11 +1196,11 @@ public:
                        std::vector<std::string> const& images);
 
     void getGridVectors(CalibResult &calib,
-            size_t const rows,
-            size_t const cols,
-            std::vector<std::string> const& images,
-            cv::Vec3d & row_vec,
-            cv::Vec3d & col_vec);
+                        size_t const rows,
+                        size_t const cols,
+                        std::vector<std::string> const& images,
+                        cv::Vec3d & row_vec,
+                        cv::Vec3d & col_vec);
 
     void printHist(std::ostream &out, const runningstats::Histogram &h, const double threshold = 0);
     void getGridVectors2(CalibResult &calib, const size_t rows, const size_t cols, const std::vector<string> &images, Vec3d &row_vec, Vec3d &col_vec);
@@ -1257,7 +1257,7 @@ public:
             const char *log_name,
             const std::map<std::string, std::vector<RectifyCost *> > &cost_functions,
             double rot_vec[3],
-            bool plot);
+    bool plot);
 
     /**
      * @brief readCorners reads hdmarker::Corner objects from a cache file.
@@ -1265,8 +1265,8 @@ public:
      * @return
      */
     static std::vector<hdmarker::Corner> readCorners(const std::string &input_file,
-                                              int & width,
-                                              int & height);
+                                                     int & width,
+                                                     int & height);
 
     /**
      * @brief readCorners reads hdmarker::Corner objects from a cache file.
@@ -1290,6 +1290,7 @@ public:
     static void printCornerStats(const std::vector<Corner> &vec);
     cv::Mat getImageRaw(const std::string &input_file);
     cv::Mat convert16_8(const cv::Mat &img);
+
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1307,6 +1308,57 @@ private:
     void ignore_unused(T&) {}
 };
 
+
+class Similarity2D {
+public:
+    std::vector<Point2d> src;
+    std::vector<Point2d> dst;
+
+    std::vector<Point2d> src_transformed;
+
+    double t_x = 0;
+    double t_y = 0;
+    double angle = 0;
+    double scale = 0;
+
+    double cauchy_param = -1;
+
+    double ceres_tolerance = 1e-12;
+
+    struct Similarity2DCost {
+        cv::Point2d src, dst;
+    public:
+        Similarity2DCost(cv::Point2d const _src, cv::Point2d const _dst);
+
+        template<class T>
+        bool operator ()(
+                T const * const angle,
+                T const * const scale,
+                T const * const t_x,
+                T const * const t_y,
+                T *residuals
+                ) const;
+
+        template<class T>
+        static void transform(T const& angle, T const& scale, T const& t_x, T const& t_y, cv::Point2d const& src, T & dst_x, T& dst_y);
+        static cv::Point2d transform(double const angle, double const scale, double const t_x, double const t_y,
+                                     cv::Point2d const src);
+    };
+
+    cv::Point2d transform(cv::Point2d const src);
+
+
+    Similarity2D(std::vector<cv::Point2d> const& _src = std::vector<cv::Point2d>(),
+                 std::vector<cv::Point2d> const& _dst = std::vector<cv::Point2d>());
+
+    /**
+ * @brief fit2Dsimilarity Fit a 2d similarity transform mapping a given set of 2D-2D correspondences
+ * dst ~= rotate (scale * src) + (x,y)
+ */
+    void runFit();
+
+};
+
 struct FitGrid {
     double scale = 1;
 
@@ -1321,6 +1373,10 @@ public:
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);
 void read(const cv::FileNode& node, Calib& x, const Calib& default_value = Calib());
+
+std::string type2str(int type);
+
+
 
 }
 

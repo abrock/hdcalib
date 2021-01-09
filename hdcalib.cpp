@@ -841,7 +841,8 @@ cv::Mat Calib::getImageScaled(std::string const& input_file) {
 
 cv::Mat Calib::getImageRaw(std::string const& input_file) {
     cv::Mat img = readImage(input_file, demosaic, libraw, useOnlyGreen);
-    if (img.empty()) {
+    clog::L(__PRETTY_FUNCTION__, 2) << "Read file " << input_file << ", got type " << type2str(img.type());
+            if (img.empty()) {
         clog::L("Calib::getImageRaw", 1) << "Input file empty, aborting." << std::endl;
         return {};
     }
@@ -947,7 +948,30 @@ cv::Mat Calib::scaleImage(cv::Mat const& img) {
 
 cv::Mat Calib::convert16_8(cv::Mat const& img) {
     cv::Mat result = img.clone();
-    if (result.depth() == CV_16U) {
+    if (result.depth() == 2) {
+        double min = 0;
+        double max = 0;
+        cv::minMaxIdx(img, &min, &max);
+        clog::L("Calib::convert16_8", 2) << "Min/max value " << min << " / " << max;
+        int const under_exposure_factor = std::floor(64*256 / max);
+        int factor = 1;
+        while (2*factor <= under_exposure_factor) {
+            factor *= 2;
+        }
+        factor = under_exposure_factor;
+        if (factor > 1) {
+            clog::L("Calib::convert16_8", 2) << "Up-scaling by factor " << factor;
+            //result *= factor;
+        }
+        int downscale_factor = 1;
+        cv::minMaxIdx(img, &min, &max);
+        while (max / downscale_factor > 100*256) {
+            downscale_factor++;
+        }
+        if (downscale_factor > 1) {
+            clog::L("Calib::convert16_8", 2) << "Down-scaling by factor " << downscale_factor;
+            //result /= downscale_factor;
+        }
         result.convertTo(result, CV_8UC1, 1.0 / 256.0);
     }
     return result;
@@ -1124,7 +1148,7 @@ Mat Calib::readImage(std::string const& input_file,
         cvtColor(img, img, COLOR_BayerBG2BGR); // RG BG GB GR
     }
     else {
-        img = cv::imread(input_file, cv::IMREAD_GRAYSCALE);
+        img = cv::imread(input_file, cv::IMREAD_UNCHANGED);
         //clog::L(__func__, 2) << "Input file " << input_file << " image size: " << img.size() << std::endl;
     }
     if (useOnlyGreen) {
@@ -1439,6 +1463,27 @@ bool Calib::validPixel(const Point &p, const Size &image_size) {
 
 template bool Calib::validPixel(const cv::Point2f&, const cv::Size&);
 
+string type2str(int type) {
+std::string r;
 
+uchar depth = type & CV_MAT_DEPTH_MASK;
+uchar chans = 1 + (type >> CV_CN_SHIFT);
+
+switch ( depth ) {
+case CV_8U:  r = "8U"; break;
+case CV_8S:  r = "8S"; break;
+case CV_16U: r = "16U"; break;
+case CV_16S: r = "16S"; break;
+case CV_32S: r = "32S"; break;
+case CV_32F: r = "32F"; break;
+case CV_64F: r = "64F"; break;
+default:     r = "User"; break;
+}
+
+r += "C";
+r += (chans+'0');
+
+return r;
+}
 
 } // namespace hdcalib
