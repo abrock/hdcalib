@@ -212,3 +212,9 @@ add_executable(hdcalib-analyze-video analyze-video.cpp)
 target_link_libraries(hdcalib-analyze-video
     ${OpenCV_LIBS}
     )
+
+add_executable(hdcalib-image-series-noise image-series-noise.cpp)
+target_link_libraries(hdcalib-image-series-noise
+    ${OpenCV_LIBS}
+    ${RUNNINGSTATS_LIBRARIES}
+    )

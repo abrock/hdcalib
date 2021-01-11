@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <boost/filesystem.hpp>
+#include <boost/rational.hpp>
 
 namespace fs = boost::filesystem;
 
@@ -9,6 +10,7 @@ namespace fs = boost::filesystem;
 
 #include <ceres/ceres.h>
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "gnuplot-iostream.h"
 
@@ -90,12 +92,123 @@ public:
 
     void runFitImg(cv::Mat_<float> const& img) {
         ceres::Problem problem;
-        for (int x = -radius; x <= radius; ++x) {
-            for (int y = -radius; y <= radius; ++y) {
-                float const val = img(y+radius, x+radius);
-                problem.AddResidualBlock(GenGauss2dPlaneDirectError::Create(val, x, y, radius, radius, 0, 0, 1), nullptr, params.data());
+        radius = double(img.rows-1)/2;
+        double max_img = 0;
+        sigma = radius/2;
+        success = true;
+        runningstats::QuantileStats<float> src_stats;
+        for (int xx = 0; xx <= img.rows; ++xx) {
+            for (int yy = 0; yy <= img.cols; ++yy) {
+                double const val = img(yy, xx);
+                max_img = std::max(max_img, val);
+                src_stats.push_unsafe(val);
+                problem.AddResidualBlock(GenGauss2dPlaneDirectError::Create(val, double(xx) - radius, double(yy) - radius, 2*radius, 2*radius, 0, 0, 1), nullptr, params.data());
             }
         }
+        scale = max_img;
+        params = {0,0,
+                  scale,sigma,0,0,0,0,0,0};
+
+        ceres::Solver::Options options;
+        double const tolerance = 1e-12;
+        options.function_tolerance = tolerance;
+        options.parameter_tolerance = tolerance;
+        options.gradient_tolerance = tolerance;
+        options.minimizer_progress_to_stdout = verbose;
+        options.max_num_iterations = 1'000;
+        options.logging_type = ceres::LoggingType::PER_MINIMIZER_ITERATION;
+        options.linear_solver_type = ceres::DENSE_QR;
+        //options.preconditioner_type = ceres::IDENTITY;
+
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+
+        if (verbose) {
+            std::cout << summary.FullReport() << std::endl;
+            std::cout << summary.BriefReport() << std::endl;
+            std::cout << "Fit vs. GT parameters:" << std::endl;
+            for (size_t ii = 0; ii < 10; ++ii) {
+                std::cout << "#" << ii << ":\t" << params[ii] << "\t" << gt_params[ii] << std::endl;
+            }
+            std::cout << "Max image value: " << max_img << std::endl;
+        }
+        double sigma_y = abs(params[3])*(1.25+0.75*sin(params[7]));
+
+        double contrast = abs(params[2]-params[4])*exp(-(0.25/(2.0*params[3]*params[3])+0.25/(2.0*params[3]*params[3])));
+        contrast = std::min(255.0, contrast);
+
+        runningstats::QuantileStats<float> signal_stats, noise_stats;
+        /*
+        for (GenGauss2dPlaneDirectError const& functor : functors) {
+            double const signal = functor.evaluateModel(params.data());
+            signal_stats.push_unsafe(signal);
+            double const noise = functor.val_ - signal;
+            noise_stats.push_unsafe(noise);
+        }
+        // */
+        cv::Mat_<uint8_t> fit_img(img.size(), uint8_t(0));
+        for (int xx = 0; xx <= img.rows; ++xx) {
+            for (int yy = 0; yy <= img.cols; ++yy) {
+                double const val = img(yy, xx);
+                GenGauss2dPlaneDirectError model(val, double(xx) - radius, double(yy) - radius, 2*radius, 2*radius, 0, 0, 1);
+                double const signal = model.evaluateModel(params.data());
+                signal_stats.push_unsafe(signal);
+                double const noise = val - signal;
+                noise_stats.push_unsafe(noise);
+                fit_img(yy,xx) = cv::saturate_cast<uint8_t>(signal);
+            }
+        }
+        if (!img_prefix.empty()) {
+            cv::imwrite(img_prefix + "src.png", img);
+            cv::imwrite(img_prefix + "fit.png", fit_img);
+        }
+
+        cv::Point2f size(radius, radius);
+        double scale_f =
+                (std::max(abs(params[3]),sigma_y) / size.x - min_sigma*0.5)
+                /contrast
+                *(1.0+tilt_max_rms_penalty*(abs(params[5])+abs(params[6]))/fit_gauss_max_tilt);
+
+        rms = sqrt(summary.final_cost/problem.NumResiduals())*scale_f;
+        snr = signal_stats.getAccurateVariance() / noise_stats.getAccurateVariance();
+        fit_x = std::sin(params[0])*(double(radius)*subfit_max_range);
+        fit_y = std::sin(params[1])*(double(radius)*subfit_max_range);
+
+
+        diff_x = fit_x - gt_x;
+        diff_y = fit_y - gt_y;
+        error_length = std::sqrt(diff_x*diff_x + diff_y*diff_y);
+
+        for (double val : {
+             fit_x, fit_y, gt_x, gt_y, diff_x, diff_y, error_length, rms, snr, scale_f,
+             params[0],
+             params[1],
+             params[2],
+             params[3],
+             params[4],
+             params[5],
+             params[6],
+             params[7],
+             params[8],
+    }) {
+            success &= std::isfinite(val);
+        }
+
+        success &= rms > 0;
+        success &= rms < 100;
+        success &= snr > 0;
+
+
+        if (verbose) {
+            std::cout << "RMS: " << rms << std::endl;
+            std::cout << "SNR: " << snr << std::endl;
+            std::cout << "Signal: " << signal_stats.print() << std::endl;
+            std::cout << "Noise: " << noise_stats.print() << std::endl;
+            std::cout << "Src stats: " << src_stats.print() << std::endl;
+            std::cout << "Fit x, y: " << fit_x << ", " << fit_y << std::endl;
+            std::cout << "Localisation error: " << error_length << std::endl;
+        }
+
     }
 
     void runFit() {
@@ -200,6 +313,7 @@ public:
         }
 
         success &= rms > 0;
+        success &= rms < 100;
         success &= snr > 0;
 
 
@@ -428,31 +542,141 @@ void dot_size_vs_noise() {
     }
     std::cout << std::endl;
 }
+#include <boost/integer/common_factor.hpp>
+cv::Mat_<float> renderSquare(int radius, double point_scale = 1) {
+    int target_width = 2*radius+1;
+    int intermediate_width = boost::integer::lcm(target_width, 5*7*9);
+    double scale = intermediate_width / target_width;
+    double square_size = (double(radius)/2) * scale * point_scale;
+    square_size = std::round((square_size-1)/2)*2+1;
+    cv::Mat_<float> result(intermediate_width, intermediate_width, float(0));
+    int const left = (intermediate_width/2) - int(square_size)/2;
+    cv::Rect dot(left, left, square_size, square_size);
+    cv::rectangle(result, dot, cv::Scalar(255), cv::FILLED);
+    double const blur_sigma = scale/5;
+    cv::GaussianBlur(result, result, cv::Size(), blur_sigma, blur_sigma);
+    cv::resize(result, result, cv::Size(target_width, target_width), 0, 0, cv::INTER_AREA);
+    return result;
+}
+
+void addNoise(cv::Mat_<float>& img, double stddev) {
+    static randutils::mt19937_rng rng;
+    for (float& val : img) {
+        val += rng.variate<double, std::normal_distribution>(0, stddev);
+    }
+}
+
+void single_square() {
+    cv::Mat_<float> img = renderSquare(3, 1);
+    cv::Mat_<float> rand(img.size(), float(0));
+    addNoise(img, 3);
+    double min = 0;
+    double max = 0;
+    cv::minMaxIdx(img, &min, &max);
+    std::cout << "Min/max: " << min << " / " << max << std::endl;
+    FitExperiment f;
+    f.verbose = true;
+    f.img_prefix = "2dgauss_";
+    f.runFitImg(img);
+    std::cout << "Success: " << f.success << std::endl;
+}
+
+void squares(int radius = 2) {
+    std::cout << "square_size_vs_noise" << std::endl;
+    double const dotsize_step = 0.05;
+    double const noise_step = 1;
+    std::string const width = std::to_string(2*radius+1);
+    runningstats::Image2D<runningstats::QuantileStats<float> >
+            rms(dotsize_step, noise_step),
+            snr(dotsize_step, noise_step),
+            error(dotsize_step, noise_step);
+
+    runningstats::Stats2D<double> rms_vs_error, snr_vs_error;
+    runningstats::QuantileStats<float> x_res, y_res;
+
+    for (size_t kk = 0; kk < 100000; ++kk) {
+        size_t n = 0;
+        for (size_t jj = 0; jj < 5; ++jj) {
+            for (double dot_size = 1; dot_size <= 1.66; dot_size += dotsize_step) {
+                for (double src_noise = 1; src_noise <= 15; src_noise += noise_step) {
+                    FitExperiment f;
+                    f.verbose = false;
+                    cv::Mat_<float> img = renderSquare(radius, dot_size);
+                    img *= 100.0/255.0;
+                    addNoise(img, src_noise);
+                    f.runFitImg(img);
+                    if (f.success) {
+                        rms[dot_size][src_noise].push_unsafe(f.rms);
+                        snr[dot_size][src_noise].push_unsafe(f.snr);
+                        error[dot_size][src_noise].push_unsafe(f.error_length);
+                        rms_vs_error.push_unsafe(f.rms, f.error_length);
+                        snr_vs_error.push_unsafe(f.snr, f.error_length);
+                        x_res.push_unsafe(f.diff_x);
+                        y_res.push_unsafe(f.diff_y);
+                    }
+                    n = std::numeric_limits<size_t>::max();
+                    n = std::min(n, rms[dot_size][src_noise].getCount());
+                    n = std::min(n, snr[dot_size][src_noise].getCount());
+                    n = std::min(n, error[dot_size][src_noise].getCount());
+                }
+            }
+        }
+        std::cout << "Plotting..." << std::flush;
+        {
+            runningstats::HistConfig conf;
+            conf
+                    .setXLabel("Square scale factor")
+                    .setYLabel("Noise std. dev.")
+                    .setTitle(std::to_string(n))
+                    .extractTrimmedMean();
+            rms.plot("squaresize-" + width + "-noise-rms", conf);
+            snr.plot("squaresize-" + width + "-noise-snr", conf);
+            error.plot("squaresize-" + width + "-noise-error", conf);
+        }
+        {
+            runningstats::HistConfig conf;
+            conf.setYLabel("error").setTitle(std::to_string(n));
+            rms_vs_error.plotHist("squaresize-" + width + "-noise-rms-vs-error", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
+            snr_vs_error.plotHist("squaresize-" + width + "-noise-snr-vs-error", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
+            conf.setLogCB();
+            rms_vs_error.plotHist("squaresize-" + width + "-noise-rms-vs-error-log", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
+            snr_vs_error.plotHist("squaresize-" + width + "-noise-snr-vs-error-log", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
+        }
+        {
+            std::cout << "x residuals: " << x_res.print() << std::endl;
+            std::cout << "y residuals: " << y_res.print() << std::endl;
+        }
+        std::cout << "done." << std::endl;
+    }
+    std::cout << std::endl;
+}
 
 
 int main(int argc, char ** argv) {
 
-    FitExperiment f;
-    f.verbose = true;
-    f.scale = 250;
-    f.sigma = 1;
-    f.noise_sigma = f.scale/20;
-    f.radius = 4;
-    f.img_prefix = "2dgauss_";
-    f.runFit();
 
-    for (double sigma = 1; sigma <= 3; sigma += .25) {
-        FitExperiment f;
-        f.verbose = false;
-        f.scale = 250;
-        f.sigma = sigma;
-        f.noise_sigma = f.scale/20;
-        f.radius = 6;
-        f.img_prefix = "2dgauss_" + std::to_string(sigma) + "_";
-        f.runFit();
-    }
 
     if (argc < 2) {
+        FitExperiment f;
+        f.verbose = true;
+        f.scale = 250;
+        f.sigma = 1;
+        f.noise_sigma = f.scale/20;
+        f.radius = 4;
+        f.img_prefix = "2dgauss_";
+        f.runFit();
+
+        for (double sigma = 1; sigma <= 3; sigma += .25) {
+            FitExperiment f;
+            f.verbose = false;
+            f.scale = 250;
+            f.sigma = sigma;
+            f.noise_sigma = f.scale/20;
+            f.radius = 6;
+            f.img_prefix = "2dgauss_" + std::to_string(sigma) + "_";
+            f.runFit();
+        }
+
         return EXIT_SUCCESS;
     }
     std::string const action = argv[1];
@@ -466,5 +690,12 @@ int main(int argc, char ** argv) {
     }
     if ("dotsize-vs-noise" == action) {
         dot_size_vs_noise();
+    }
+    if ("squares" == action) {
+        single_square();
+        squares();
+    }
+    if ("single-square" == action) {
+        single_square();
     }
 }
