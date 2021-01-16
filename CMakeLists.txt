@@ -206,6 +206,7 @@ target_link_libraries(marker-fit-experiment
     ${RUNNINGSTATS_LIBRARIES}
     ${CERES_LIBRARIES}
     hdmarker
+    ParallelTime
     )
 
 add_executable(hdcalib-analyze-video analyze-video.cpp)
