@@ -272,7 +272,7 @@ public:
             noise_stats.push_unsafe(noise);
         }
         // */
-        cv::Mat_<uint8_t> fit_img(img.size(), uint8_t(0));
+        cv::Mat_<uint8_t> fit_img(img.size(), uint8_t(0)), residuals_img(img.size(), uint8_t(0));
         for (int yy = 0; yy < img.rows; ++yy) {
             for (int xx = 0; xx < img.cols; ++xx) {
                 double const val = img(yy, xx);
@@ -283,6 +283,7 @@ public:
                 double const signal = model.evaluateModel(params.data());
                 signal_stats.push_unsafe(signal);
                 double const noise = val - signal;
+                residuals_img(yy,xx) = cv::saturate_cast<uint8_t>(std::abs(noise*1.7));
                 noise_stats.push_unsafe(noise);
                 fit_img(yy,xx) = cv::saturate_cast<uint8_t>(signal);
             }
@@ -290,6 +291,7 @@ public:
         if (!img_prefix.empty()) {
             cv::imwrite(img_prefix + "src.png", cv::Mat_<uint8_t>(img));
             cv::imwrite(img_prefix + "fit.png", cv::Mat_<uint8_t>(fit_img));
+            cv::imwrite(img_prefix + "res.png", cv::Mat_<uint8_t>(residuals_img));
         }
 
         cv::Point2f size(radius, radius);
@@ -703,10 +705,11 @@ void addNoise(cv::Mat_<float>& img) {
     }
 }
 
-void single_square() {
+void single_square(int radius, double scale) {
+    std::string const prefix = "2dgauss_" + std::to_string(radius) + "_" + std::to_string(int(std::round(scale))) + "_";
     {
         std::cout << "Single square" << std::endl;
-        cv::Mat_<float> img = renderSquare(7, 160, false)*255;
+        cv::Mat_<float> img = renderSquare(radius, scale, false)*255;
         std::cout << "Rendering done: " << img.size() << std::endl;
         addNoise(img);
         double min = 0;
@@ -715,13 +718,13 @@ void single_square() {
         std::cout << "Min/max: " << min << " / " << max << std::endl;
         FitExperiment f;
         f.verbose = true;
-        f.img_prefix = "2dgauss_";
+        f.img_prefix = prefix + "black_";
         f.runFitImg(img);
         std::cout << "Success: " << f.success << std::endl;
     }
     {
         std::cout << "Single inverted square" << std::endl;
-        cv::Mat_<float> img = renderSquare(7, 160, true)*255;
+        cv::Mat_<float> img = renderSquare(radius, scale, true)*255;
         std::cout << "Rendering done: " << img.size() << std::endl;
         addNoise(img);
         double min = 0;
@@ -730,17 +733,19 @@ void single_square() {
         std::cout << "Min/max: " << min << " / " << max << std::endl;
         FitExperiment f;
         f.verbose = true;
-        f.img_prefix = "2dgauss_inverted_";
+        f.img_prefix = prefix + "white_";
         f.runFitImg(img);
         std::cout << "Success: " << f.success << std::endl;
     }
 }
 
-void squares(int radius = 2) {
+void squares(int const radius = 2, bool const noise_only = false) {
     std::cout << "square_size_vs_noise" << std::endl;
     double const dotsize_step = 7;
     double const underexposure_step = .25;
     std::string const width = std::to_string(2*radius+1);
+    std::string const prefix = noise_only ? "noise-squaresize-" + width : "squaresize-" + width;
+
     rs::Image2D<rs::QuantileStats<float> >
             rms(dotsize_step, underexposure_step),
             snr(dotsize_step, underexposure_step),
@@ -768,7 +773,9 @@ void squares(int radius = 2) {
                     for (bool invert : {true, false}) {
                         FitExperiment f;
                         f.verbose = false;
-                        cv::Mat_<float> img = renderSquare(radius, dot_size, invert);
+                        cv::Mat_<float> img = noise_only ?
+                                    cv::Mat_<float>(2*radius+1, 2*radius+1, float(invert ? 1.0 : 1.0/6.0))
+                                  : renderSquare(radius, dot_size, invert);
                         img *= 4095.0 * std::pow(2.0, -1.0/2.0) * std::pow(2.0, -underexposure);
                         addNoise(img);
                         img *= 255.0 / 4095.0;
@@ -779,7 +786,7 @@ void squares(int radius = 2) {
                             rms[dot_size][underexposure].push_unsafe(f.rms);
                             snr[dot_size][underexposure].push_unsafe(f.snr);
                             error[dot_size][underexposure].push_unsafe(f.error_length);
-                            snr_times_sigma[dot_size][underexposure].push_unsafe(f.snr * f.getFitSigma());
+                            snr_times_sigma[dot_size][underexposure].push_unsafe(f.snr * std::sqrt(f.getFitSigma()));
                             combined_stats.push_unsafe(dot_size,underexposure,
                                                        {
                                                            f.rms, // 3
@@ -816,27 +823,28 @@ void squares(int radius = 2) {
         ParallelTime plottime;
         std::cout << "Plotting..." << std::endl;
         {
-            fail_by_exposure.plotHist("squaresize-" + width + "-failcount-by-underexposure");
+            fail_by_exposure.plotHist(prefix + "-failcount-by-underexposure");
 
-            std::ofstream out("squaresize-" + width + "-combined.data");
+            std::ofstream out(prefix + "-combined.data");
             combined_stats.data2file(out, rs::HistConfig().extractTrimmedMean(.5));
         }
+#if 0
         {
             rs::HistConfig conf;
             conf
                     .setYLabel("Localization Error [px]")
                     .extractMeanAndStddev()
                     .setTitle("");
-            snr_vs_error_1d.plot("squaresize-" + width + "-snr-vs-error", conf);
-            rms_vs_error_1d.plot("squaresize-" + width + "-rms-vs-error", conf);
+            snr_vs_error_1d.plot(prefix + "-snr-vs-error", conf);
+            rms_vs_error_1d.plot(prefix + "-rms-vs-error", conf);
 
             conf.extractMedianAndIQR();
-            snr_vs_error_1d.plot("squaresize-" + width + "-snr-vs-error-median", conf);
-            rms_vs_error_1d.plot("squaresize-" + width + "-rms-vs-error-median", conf);
+            snr_vs_error_1d.plot(prefix + "-snr-vs-error-median", conf);
+            rms_vs_error_1d.plot(prefix + "-rms-vs-error-median", conf);
 
             conf.extractQuantile(.9);
-            snr_vs_error_1d.plot("squaresize-" + width + "-snr-vs-error-quantile-.9", conf);
-            rms_vs_error_1d.plot("squaresize-" + width + "-rms-vs-error-quantile-.9", conf);
+            snr_vs_error_1d.plot(prefix + "-snr-vs-error-quantile-.9", conf);
+            rms_vs_error_1d.plot(prefix + "-rms-vs-error-quantile-.9", conf);
         }
         {
             rs::HistConfig conf;
@@ -844,13 +852,23 @@ void squares(int radius = 2) {
                     .setYLabel("Localization Residual [px]")
                     .extractMeanAndStddev()
                     .setTitle("");
-            snr_vs_error_1d_res.plot("squaresize-" + width + "-snr-vs-res", conf);
-            rms_vs_error_1d_res.plot("squaresize-" + width + "-rms-vs-res", conf);
+            snr_vs_error_1d_res.plot(prefix + "-snr-vs-res", conf);
+            rms_vs_error_1d_res.plot(prefix + "-rms-vs-res", conf);
 
             conf.extractMedianAndIQR();
-            snr_vs_error_1d_res.plot("squaresize-" + width + "-snr-vs-res-median", conf);
-            rms_vs_error_1d_res.plot("squaresize-" + width + "-rms-vs-res-median", conf);
+            snr_vs_error_1d_res.plot(prefix + "-snr-vs-res-median", conf);
+            rms_vs_error_1d_res.plot(prefix + "-rms-vs-res-median", conf);
         }
+        {
+            rs::HistConfig conf;
+            conf.setYLabel("error").setTitle(std::to_string(n));
+            rms_vs_error.plotHist(prefix + "-noise-rms-vs-error", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
+            snr_vs_error.plotHist(prefix + "-noise-snr-vs-error", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
+            conf.setLogCB();
+            rms_vs_error.plotHist(prefix + "-noise-rms-vs-error-log", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
+            snr_vs_error.plotHist(prefix + "-noise-snr-vs-error-log", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
+        }
+#endif
         {
             rs::HistConfig conf;
             conf
@@ -858,19 +876,10 @@ void squares(int radius = 2) {
                     .setYLabel("Underexposure [stops]")
                     .setTitle(std::to_string(n))
                     .extractTrimmedMean();
-            rms.plot("squaresize-" + width + "-noise-rms", conf);
-            snr.plot("squaresize-" + width + "-noise-snr", conf);
-            error.plot("squaresize-" + width + "-noise-error", conf);
-            snr_times_sigma.plot("squaresize-" + width + "-noise-snr_sigma", conf);
-        }
-        {
-            rs::HistConfig conf;
-            conf.setYLabel("error").setTitle(std::to_string(n));
-            rms_vs_error.plotHist("squaresize-" + width + "-noise-rms-vs-error", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
-            snr_vs_error.plotHist("squaresize-" + width + "-noise-snr-vs-error", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
-            conf.setLogCB();
-            rms_vs_error.plotHist("squaresize-" + width + "-noise-rms-vs-error-log", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
-            snr_vs_error.plotHist("squaresize-" + width + "-noise-snr-vs-error-log", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
+            rms.plot(prefix + "-noise-rms", conf);
+            snr.plot(prefix + "-noise-snr", conf);
+            error.plot(prefix + "-noise-error", conf);
+            snr_times_sigma.plot(prefix + "-noise-snr_sigma", conf);
         }
         {
             std::cout << "x residuals: " << x_res.print() << std::endl;
@@ -878,143 +887,13 @@ void squares(int radius = 2) {
         }
         std::cout << "Success stats: " << success_count.print() << std::endl;
         std::cout << "Total count: " << total_count << std::endl;
+        std::cout << "Per-pixel count: " << n << std::endl;
         std::cout << "Runtime: " << runtime.print() << std::endl
                   << "Plot time: " << plottime.print() << std::endl;
         std::cout << std::endl << std::endl;
     }
     std::cout << std::endl;
 }
-
-void noise_squares(int radius = 2) {
-    std::cout << "square_size_vs_noise" << std::endl;
-    double const dotsize_step = 7;
-    double const underexposure_step = .25;
-    std::string const width = std::to_string(2*radius+1);
-    rs::Image2D<rs::QuantileStats<float> >
-            rms(dotsize_step, underexposure_step),
-            snr(dotsize_step, underexposure_step),
-            snr_times_sigma(dotsize_step, underexposure_step),
-            error(dotsize_step, underexposure_step);
-
-    rs::Stats2D<double> rms_vs_error, snr_vs_error;
-    rs::QuantileStats<float> x_res, y_res;
-
-    rs::Image1D<rs::QuantileStats<float> > snr_vs_error_1d(1), rms_vs_error_1d(.05);
-    rs::Image1D<rs::QuantileStats<float> > snr_vs_error_1d_res(1), rms_vs_error_1d_res(.05);
-    rs::BinaryStats success_count;
-
-    rs::Histogram fail_by_exposure(underexposure_step);
-
-    size_t total_count = 0;
-    for (size_t kk = 0; kk < 100000; ++kk) {
-        size_t n = 0;
-        for (size_t jj = 0; jj < 50; ++jj) {
-            for (double dot_size = 100; dot_size <= 170; dot_size += dotsize_step) {
-                for (double underexposure = 0; underexposure <= 5; underexposure += underexposure_step) {
-                    FitExperiment f;
-                    f.verbose = false;
-                    cv::Mat_<float> img(2*radius+2, 2*radius+1, 1.0/6);
-                    img *= 4095.0 * std::pow(2.0, -1.0/2.0) * std::pow(2.0, -underexposure);
-                    addNoise(img);
-                    img *= 255.0 / 4095.0;
-                    f.runFitImg(img);
-                    success_count.push(f.success);
-                    if (f.success) {
-                        total_count++;
-                        rms[dot_size][underexposure].push_unsafe(f.rms);
-                        snr[dot_size][underexposure].push_unsafe(f.snr);
-                        error[dot_size][underexposure].push_unsafe(f.error_length);
-                        snr_times_sigma[dot_size][underexposure].push_unsafe(f.snr * f.getFitSigma());
-                        rms_vs_error.push_unsafe(f.rms, f.error_length);
-                        snr_vs_error.push_unsafe(f.snr, f.error_length);
-                        x_res.push_unsafe(f.diff_x);
-                        y_res.push_unsafe(f.diff_y);
-                        snr_vs_error_1d[f.snr].push_unsafe(f.error_length);
-                        rms_vs_error_1d[f.rms].push_unsafe(f.error_length);
-
-                        snr_vs_error_1d_res[f.snr].push_unsafe(f.diff_x);
-                        snr_vs_error_1d_res[f.snr].push_unsafe(f.diff_y);
-                        rms_vs_error_1d_res[f.rms].push_unsafe(f.diff_x);
-                        rms_vs_error_1d_res[f.rms].push_unsafe(f.diff_y);
-                    }
-                    else {
-                        fail_by_exposure.push_unsafe(underexposure);
-                    }
-                    n = std::numeric_limits<size_t>::max();
-                    n = std::min(n, rms[dot_size][underexposure].getCount());
-                    n = std::min(n, snr[dot_size][underexposure].getCount());
-                    n = std::min(n, error[dot_size][underexposure].getCount());
-
-                }
-            }
-        }
-        std::cout << "Plotting..." << std::endl;
-        {
-            fail_by_exposure.plotHist("noise-squaresize-" + width + "-failcount-by-underexposure");
-        }
-        {
-            rs::HistConfig conf;
-            conf
-                    .setYLabel("Localization Error [px]")
-                    .extractMeanAndStddev()
-                    .setTitle("");
-            snr_vs_error_1d.plot("noise-squaresize-" + width + "-snr-vs-error", conf);
-            rms_vs_error_1d.plot("noise-squaresize-" + width + "-rms-vs-error", conf);
-
-            conf.extractMedianAndIQR();
-            snr_vs_error_1d.plot("noise-squaresize-" + width + "-snr-vs-error-median", conf);
-            rms_vs_error_1d.plot("noise-squaresize-" + width + "-rms-vs-error-median", conf);
-
-            conf.extractQuantile(.9);
-            snr_vs_error_1d.plot("noise-squaresize-" + width + "-snr-vs-error-quantile-.9", conf);
-            rms_vs_error_1d.plot("noise-squaresize-" + width + "-rms-vs-error-quantile-.9", conf);
-        }
-        {
-            rs::HistConfig conf;
-            conf
-                    .setYLabel("Localization Residual [px]")
-                    .extractMeanAndStddev()
-                    .setTitle("");
-            snr_vs_error_1d_res.plot("noise-squaresize-" + width + "-snr-vs-res", conf);
-            rms_vs_error_1d_res.plot("noise-squaresize-" + width + "-rms-vs-res", conf);
-
-            conf.extractMedianAndIQR();
-            snr_vs_error_1d_res.plot("noise-squaresize-" + width + "-snr-vs-res-median", conf);
-            rms_vs_error_1d_res.plot("noise-squaresize-" + width + "-rms-vs-res-median", conf);
-        }
-        {
-            rs::HistConfig conf;
-            conf
-                    .setXLabel("Square width [\\\\%]")
-                    .setYLabel("Underexposure [stops]")
-                    .setTitle(std::to_string(n))
-                    .extractTrimmedMean();
-            rms.plot("noise-squaresize-" + width + "-noise-rms", conf);
-            snr.plot("noise-squaresize-" + width + "-noise-snr", conf);
-            error.plot("noise-squaresize-" + width + "-noise-error", conf);
-            snr_times_sigma.plot("noise-squaresize-" + width + "-noise-snr_sigma", conf);
-        }
-        {
-            rs::HistConfig conf;
-            conf.setYLabel("error").setTitle(std::to_string(n));
-            rms_vs_error.plotHist("noise-squaresize-" + width + "-noise-rms-vs-error", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
-            snr_vs_error.plotHist("noise-squaresize-" + width + "-noise-snr-vs-error", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
-            conf.setLogCB();
-            rms_vs_error.plotHist("noise-squaresize-" + width + "-noise-rms-vs-error-log", rms_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("RMS"));
-            snr_vs_error.plotHist("noise-squaresize-" + width + "-noise-snr-vs-error-log", snr_vs_error.FreedmanDiaconisBinSize(), conf.setXLabel("SNR"));
-        }
-        {
-            std::cout << "x residuals: " << x_res.print() << std::endl;
-            std::cout << "y residuals: " << y_res.print() << std::endl;
-        }
-        std::cout << "Success stats: " << success_count.print() << std::endl;
-        std::cout << "Total count: " << total_count << std::endl;
-        std::cout << std::endl << std::endl;
-    }
-    std::cout << std::endl;
-}
-
-
 
 int main(int argc, char ** argv) {
 
@@ -1061,14 +940,16 @@ int main(int argc, char ** argv) {
         dot_size_vs_noise();
     }
     if ("squares" == action) {
-        single_square();
         squares(scale);
     }
     if ("noise-squares" == action) {
-        single_square();
-        noise_squares(scale);
+        squares(scale, true);
     }
     if ("single-square" == action) {
-        single_square();
+        for (size_t radius = 2; radius <= 5; ++radius) {
+            for (double scale = 100; scale <= 160; scale += 30) {
+                single_square(radius, scale);
+            }
+        }
     }
 }
