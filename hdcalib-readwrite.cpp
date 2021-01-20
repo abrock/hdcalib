@@ -305,6 +305,79 @@ void Calib::paintSubmarkers(std::vector<Corner> const& submarkers, cv::Mat& imag
     }
 }
 
+void Calib::paintSubmarkersRMS_SNR(
+        const string &prefix,
+        const std::vector<Corner> &submarkers,
+        cv::Size const size,
+        const int paint_size_factor) const {
+    size_t paint_counter = 0;
+    cv::Mat_<float> rms(size, float(0)), snr(size, float(0));
+    cv::Mat_<uint8_t> valid_mask = cv::imread("valid-mask.png", cv::IMREAD_GRAYSCALE);
+    runningstats::QuantileStats<float> valid_snr, valid_rms, invalid_snr, invalid_rms;
+    for(size_t ii = 0; ii < submarkers.size(); ++ii) {
+        Corner const& c = submarkers[ii];
+
+        // Ignore markers outside the image (may occur in simulation)
+        if (c.p.x < 0 || c.p.y < 0 || c.p.x * paint_size_factor + 1 > rms.cols || c.p.y * paint_size_factor + 1 > rms.rows) {
+            continue;
+        }
+
+        cv::Point2i pt(std::round(c.p.x), std::round(c.p.y));
+
+        if (c.rms > 0) {
+            circle(rms, paint_size_factor*c.p, 2, Scalar(c.rms, c.rms, c.rms, c.rms), cv::FILLED, cv::LINE_AA);
+            if (valid_mask.size() == size) {
+                if (valid_mask(pt) > 127) {
+                    valid_rms.push_unsafe(c.rms);
+                }
+                else {
+                    invalid_rms.push_unsafe(c.rms);
+                }
+            }
+        }
+        if (c.snr > 0) {
+            circle(snr, paint_size_factor*c.p, 2, Scalar(c.snr, c.snr, c.snr, c.snr), cv::FILLED, cv::LINE_AA);
+            if (valid_mask.size() == size) {
+                if (valid_mask(pt) > 127) {
+                    valid_snr.push_unsafe(c.snr);
+                }
+                else {
+                    invalid_snr.push_unsafe(c.snr);
+                }
+            }
+        }
+    }
+    clog::L(__func__, 2) << "Saving RMS and SNR images";
+    cv::imwrite(prefix + "-sub-snr.tif", snr);
+    cv::imwrite(prefix + "-sub-rms.tif", rms);
+    if (valid_mask.size() == size) {
+        runningstats::HistConfig conf;
+        conf.setDataLabel("RMSE");
+        conf.setMinMaxX(0, 10);
+        valid_rms.plotHistAndCDF(prefix + "-rms-valid", -1, conf);
+        invalid_rms.plotHistAndCDF(prefix + "-rms-invalid", -1, conf);
+
+        conf.setDataLabel("SNR");
+        conf.setMinMaxX(0, 35);
+        valid_snr.plotHistAndCDF(prefix + "-snr-valid", -1, conf);
+        invalid_snr.plotHistAndCDF(prefix + "-snr-invalid", -1, conf);
+
+        /*
+        conf.setLogX().setLogY();
+
+        conf.setDataLabel("RMSE");
+        conf.setMinMaxX(0, 10);
+        valid_rms.plotHistAndCDF(prefix + "-log-valid-rms", -1, conf);
+        invalid_rms.plotHistAndCDF(prefix + "-log-invalid-rms", -1, conf);
+
+        conf.setDataLabel("SNR");
+        conf.setMinMaxX(0, 35);
+        valid_snr.plotHistAndCDF(prefix + "-log-valid-snr", -1, conf);
+        invalid_snr.plotHistAndCDF(prefix + "-log-invalid-snr", -1, conf);
+        */
+    }
+}
+
 void Calib::initializeCameraMatrix(const double focal_length,
                                    const double cx,
                                    const double cy) {

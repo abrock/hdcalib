@@ -1207,6 +1207,17 @@ public:
     void getIndividualRectificationRotation(CalibResult &calib, const size_t rows, const size_t cols, const std::vector<std::string> &images, cv::Vec3d &rect_rot);
     void paintSubmarkers(const std::vector<Corner> &submarkers, cv::Mat &image, int const paint_size_factor) const;
 
+    /**
+     * @brief paintSubmarkersRMS_SNR plots float-images of RMS and SNR.
+     * @param prefix
+     * @param submarkers
+     */
+    void paintSubmarkersRMS_SNR(
+            const std::string& prefix,
+            const std::vector<Corner>& submarkers,
+            const Size size,
+            const int paint_size_factor) const;
+
     void initializeCameraMatrix(double const focal_length, double const cx, double const cy);
     void initialzeDistortionCoefficients();
 

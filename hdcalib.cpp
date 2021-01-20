@@ -1075,6 +1075,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
         cv::Mat_<uint8_t> main_markers_area = getMainMarkersArea(submarkers);
         if (plotMarkers) {
             cv::Mat paint2 = paint.clone();
+            paintSubmarkersRMS_SNR(input_file, submarkers, main_markers_area.size(), 1);
             for (hdmarker::Corner const& c : submarkers) {
                 circle(paint2, c.p, 3, Scalar(0,0,255,0), -1, LINE_AA);
             }
@@ -1097,6 +1098,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
             }
             cv::resize(paint_submarkers, paint_submarkers, cv::Size(), paint_size_factor, paint_size_factor, cv::INTER_NEAREST);
             paintSubmarkers(submarkers, paint_submarkers, paint_size_factor);
+            paintSubmarkersRMS_SNR(input_file, submarkers, paint_submarkers.size(), paint_size_factor);
             imwrite(input_file + "-sub.png", paint_submarkers);
         }
         for(size_t ii = 0; ii < corners.size(); ++ii) {
