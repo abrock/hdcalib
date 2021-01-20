@@ -896,7 +896,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
 
     std::vector<Corner> main_markers = getMainMarkers(input_file, effort, demosaic, raw);
 
-    cv::Mat img = convert16_8(getImageRaw(input_file));
+    cv::Mat img = getImageRaw(input_file);
 
     double msize = 1.0;
     refineRecursiveByPage(img, main_markers, result, recursionDepth, msize);

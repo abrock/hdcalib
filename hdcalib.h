@@ -1159,7 +1159,7 @@ public:
                               const bool demosaic,
                               const bool raw);
 
-    static cv::Mat readImage(std::string const& input_file,
+    static Mat readImage(std::string const& input_file,
                              bool const demosaic,
                              bool const raw,
                              bool const useOnlyGreen);
