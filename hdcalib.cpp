@@ -961,7 +961,7 @@ cv::Mat Calib::convert16_8(cv::Mat const& img) {
         factor = under_exposure_factor;
         if (factor > 1) {
             clog::L("Calib::convert16_8", 2) << "Up-scaling by factor " << factor;
-            //result *= factor;
+            result *= factor;
         }
         int downscale_factor = 1;
         cv::minMaxIdx(img, &min, &max);
@@ -969,7 +969,7 @@ cv::Mat Calib::convert16_8(cv::Mat const& img) {
             downscale_factor++;
         }
         if (downscale_factor > 1) {
-            clog::L("Calib::convert16_8", 2) << "Down-scaling by factor " << downscale_factor;
+            //clog::L("Calib::convert16_8", 2) << "Down-scaling by factor " << downscale_factor;
             //result /= downscale_factor;
         }
         result.convertTo(result, CV_8UC1, 1.0 / 256.0);

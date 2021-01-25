@@ -724,9 +724,6 @@ void Calib::refineRecursiveByPage(Mat &img,
     printCornerStats(in);
     hdmarker::Marker::init();
     cv::Mat_<float> clone(img.clone());
-    double maxval = 0;
-    cv::minMaxIdx(clone, nullptr, &maxval);
-    clone *= 32.0/maxval;
     for (const auto& it : pages) {
         _markerSize = markerSize;
         std::vector<hdmarker::Corner> _out;
