@@ -335,8 +335,8 @@ void Calib::paintSubmarkersRMS_SNR(
                 }
             }
         }
-        if (c.snr > 0) {
-            circle(snr, paint_size_factor*c.p, 2, Scalar(c.snr, c.snr, c.snr, c.snr), cv::FILLED, cv::LINE_AA);
+        if (c.snr > 10) {
+            circle(snr, paint_size_factor*c.p, 2, Scalar(c.snr, c.snr, c.snr, c.snr)/10, cv::FILLED, cv::LINE_AA);
             if (valid_mask.size() == size) {
                 if (valid_mask(pt) > 127) {
                     valid_snr.push_unsafe(c.snr);
