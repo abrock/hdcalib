@@ -1337,6 +1337,11 @@ Point3i Calib::getSimpleId(const Corner &marker) {
     return cv::Point3i(marker.id.x, marker.id.y, marker.page);
 }
 
+uint64_t Calib::getIdHash(const Corner &marker) {
+    return marker.layer + (marker.id.x << 4) + (marker.id.y << (4+16)) + (marker.page << (4+16+16));
+    //            ^^^^ <4bit        ^^^ < 16 bit          ^^^ < 16 bit           ^^^^ < 10 bit
+}
+
 void Calib::findOutliers(
         std::string const& calib_name,
         const double threshold,

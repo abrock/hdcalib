@@ -930,6 +930,8 @@ public:
      */
     static cv::Point3i getSimpleId(hdmarker::Corner const & marker);
 
+    static uint64_t getIdHash(hdmarker::Corner const& marker);
+
     /**
      * @brief findOutliers finds outliers of the detected markers with a reprojection error above some threshold in one of the images.
      * @param threshold error threshold in px.
