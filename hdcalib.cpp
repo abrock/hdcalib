@@ -152,7 +152,7 @@ char Calib::color(const int ii, const int jj) {
 }
 
 Calib::Calib() {
-    clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
+    //clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
 
 void Calib::save(const string &filename) {
@@ -1338,7 +1338,10 @@ Point3i Calib::getSimpleId(const Corner &marker) {
 }
 
 uint64_t Calib::getIdHash(const Corner &marker) {
-    return marker.layer + (marker.id.x << 4) + (marker.id.y << (4+16)) + (marker.page << (4+16+16));
+    return uint64_t(marker.layer)
+            + (uint64_t(marker.id.x) << 4)
+            + (uint64_t(marker.id.y) << (4+16))
+            + (uint64_t(marker.page) << (4+16+16));
     //            ^^^^ <4bit        ^^^ < 16 bit          ^^^ < 16 bit           ^^^^ < 10 bit
 }
 
