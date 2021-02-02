@@ -28,11 +28,11 @@ public:
         return instance;
     }
 
-    hdcalib::CornerStore & operator[](std::string const& filename) {
+    std::vector<hdm::Corner> & operator[](std::string const& filename) {
         {
             std::lock_guard<std::mutex> guard(access_mutex);
             std::lock_guard<std::mutex> guard2(access_mutex_by_file[filename]);
-            std::map<std::string, hdcalib::CornerStore>::iterator it = data.find(filename);
+            std::map<std::string, std::vector<hdm::Corner> >::iterator it = data.find(filename);
             if (it != data.end()) {
                 return it->second;
             }
@@ -42,10 +42,10 @@ public:
         hdcalib::Calib c;
         ParallelTime t;
         std::vector<hdm::Corner> corners = c.getSubMarkers(filename);
-        std::cout << "Reading " << filename << ": " << t.print() << std::endl;
+        //std::cout << "Reading " << filename << ": " << t.print() << std::endl;
         t.start();
         data[filename] = corners;
-        std::cout << "Creating CornerStore for " << filename << ": " << t.print() << std::endl;
+        //std::cout << "Creating CornerStore for " << filename << ": " << t.print() << std::endl;
         return data[filename];
     }
 
@@ -56,7 +56,7 @@ private:
     CornerCache(CornerCache const&) = delete;
     void operator=(CornerCache const&) = delete;
 
-    std::map<std::string, hdcalib::CornerStore> data;
+    std::map<std::string, std::vector<hdm::Corner>> data;
 };
 
 boost::system::error_code ignore_error_code;
@@ -263,7 +263,7 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
     hdcalib::Calib calib;
     calib.setRecursionDepth(recursion);
     CornerCache & cache = CornerCache::getInstance();
-    hdcalib::CornerStore & first_corners = cache[files.front()];
+    std::vector<hdm::Corner> & first_corners = cache[files.front()];
     rs::Stats2D<float> stat_2d, stat_2d_color[3][4];
     std::set<std::string> suffixes;
     rs::Ellipses ellipses;
@@ -272,7 +272,7 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
 #pragma omp parallel for
     for (size_t ii = 1; ii < files.size(); ++ii) {
         rs::Stats2D<float> local_stat_2d, local_stat_2d_color[3][4];
-        hdcalib::CornerStore &  cmp_corners = cache[files[ii]];
+        std::vector<hdm::Corner> &  cmp_corners = cache[files[ii]];
         std::vector<cv::Point2d> src, dst;
         analyzeOffsets(first_corners, cmp_corners, suffixes, prefix + files[ii], recursion, local_stat_2d, local_stat_2d_color, src, dst);
         stat_2d.push(local_stat_2d);
@@ -337,10 +337,12 @@ public:
     }
 
     void plot(std::string const& prefix) {
+        /*
         if (invalid_data.size() > 0) {
             removeUncertain(invalid_data);
             plot(invalid_data, prefix + "invalid");
         }
+        */
         removeUncertain(valid_data);
         plot(valid_data, prefix + "valid");
     }
@@ -353,7 +355,16 @@ public:
 
     bool validRMS(hdm::Corner const& c) {
         int32_t fails = hdm::Corner::unsetFail(c.fails, hdm::Corner::Fail::rms);
-        return c.rms > 0 && c.snr > 0 && (fails == 0);
+        return
+                std::isfinite(c.rms)
+                && c.rms > 0
+                && std::isfinite(c.snr)
+                && c.snr > 0
+                && std::isfinite(c.max_px)
+                && c.max_px > 0
+                && c.rms < 100'000 && c.snr < 1'000
+                && (fails == 0)
+                && c.layer == 2;
     }
 
     void removeUncertain(std::unordered_map<size_t, std::vector<hdm::Corner> > & data) {
@@ -362,7 +373,7 @@ public:
             sizes.push_unsafe(it.second.size());
         }
         for (auto & it : data) {
-            if (it.second.size() < sizes.getMedian()/4) {
+            if (it.second.size() < sizes.getMedian()/2) {
                 it.second.clear();
             }
         }
@@ -375,102 +386,166 @@ public:
                 layer_color;
 
         std::unordered_map<int, rs::QuantileStats<float> > errors_by_color;
-        rs::QuantileStats<float> errors_total;
+        rs::QuantileStats<float> errors_total, rms_total, snr_total;
 
         rs::QuantileStats<float> id_counts;
 
-        rs::ThresholdErrorMean<float> rms_vs_error, snr_sigma_vs_error;
+        rs::ThresholdErrorMean<float> rms_vs_error, snr_sigma_vs_error, normalized_rms_vs_error, max_px_vs_error;
+
+        rs::QuantileStats<float> orig_errors;
 
         ParallelTime t;
         rs::BinaryStats ignored;
         for (auto const& it : data) {
+            if (it.second.empty()) {
+                continue;
+            }
             cv::Point2f median = getMedian(it.second);
             id_counts.push_unsafe(it.second.size());
             for (hdm::Corner const& c : it.second) {
-                if (!validRMS(c)) {
+                cv::Point2f diff = median - c.p;
+                double length = std::sqrt(diff.dot(diff));
+                if (!validRMS(c) || length > 10) {
                     ignored.pushTrue(1);
                     continue;
                 }
                 ignored.pushFalse(1);
-                cv::Point2f diff = median - c.p;
-                double length = log10(0.001 + std::min<double>(10.0, std::sqrt(diff.dot(diff))));
-                double const rms = log10(0.001 + std::min<double>(c.rms, 2.0));
-                double const snr = std::min<double>(c.rms, 50.0);
+                orig_errors.push_unsafe(length);
+                length = log10(0.001 + std::min<double>(10.0, length));
+
+                double const rms = log10(0.001 + std::min<double>(c.rms, 1000.0));
+                double const snr = std::min<double>(c.rms, 1000.0);
                 double const snr_sigma = std::min<double>(std::abs(c.snr * c.getSigma()), 50.0);
                 layer["RMS"][c.layer].push_unsafe(rms, length);
                 layer["SNR"][c.layer].push_unsafe(snr, length);
                 layer["SNR x Sigma"][c.layer].push_unsafe(snr_sigma, length);
+                layer["Max-px"][c.layer].push_unsafe(log2(c.max_px), length);
+                layer["RMS-norm"][c.layer].push_unsafe(c.rms / c.max_px, length);
 
                 layer_color["RMS"][c.layer][c.color].push_unsafe(rms, length);
                 layer_color["SNR"][c.layer][c.color].push_unsafe(snr, length);
                 layer_color["SNR x Sigma"][c.layer][c.color].push_unsafe(snr_sigma, length);
+                layer_color["Max-px"][c.layer][c.color].push_unsafe(log2(c.max_px), length);
+                layer_color["RMS-norm"][c.layer][c.color].push_unsafe(c.rms / c.max_px, length);
 
-                rms_vs_error.push_unsafe(rms, length);
-                snr_sigma_vs_error.push_unsafe(1.0/(1+snr_sigma), length);
+                rms_vs_error.push_unsafe(c.rms, length);
+                normalized_rms_vs_error.push_unsafe(c.rms / c.max_px, length);
+                snr_sigma_vs_error.push_unsafe(1.0/(1+c.snr), length);
+                max_px_vs_error.push_unsafe(1.0/(1+c.max_px), length);
 
                 errors_by_color[c.color].push_unsafe(length);
                 errors_total.push_unsafe(length);
+                rms_total.push_unsafe(c.rms);
+                snr_total.push_unsafe(c.snr);
             }
         }
         std::cout << "Filling Stats2D for " << prefix << ": " << t.print() << std::endl;
         std::cout << "Ignored: " << ignored.print() << std::endl;
+        std::cout << "Error trimmed mean: " << errors_total.getTrimmedMean(.5) << std::endl;
+        std::cout << "Error stats: " << errors_total.print() << std::endl;
+        orig_errors.saveSummary(prefix + "-orig-error-summary");
+
         t.start();
 
 #pragma omp parallel sections
         {
 #pragma omp section
-            rms_vs_error.save(prefix + "-rms-vs-error.bin");
+            {
+                rms_vs_error.save(prefix + "-rms-vs-error.bin");
+                rms_vs_error.plot(prefix + "-rms-vs-error", rs::HistConfig().setMaxPlotPts(200));
+            }
 #pragma omp section
-            snr_sigma_vs_error.save(prefix + "-snr_sigma-vs-error.bin");
+            {
+                normalized_rms_vs_error.save(prefix + "-normalized_rms-vs-error.bin");
+                normalized_rms_vs_error.plot(prefix + "-normalized_rms-vs-error", rs::HistConfig().setMaxPlotPts(200));
+            }
 #pragma omp section
-            rms_vs_error.plot(prefix + "-rms-vs-error", rs::HistConfig().setMaxPlotPts(10000));
+            {
+                snr_sigma_vs_error.save(prefix + "-snr_sigma-vs-error.bin");
+                snr_sigma_vs_error.plot(prefix + "-snr_sigma-vs-error", rs::HistConfig().setMaxPlotPts(200));
+            }
 #pragma omp section
-            snr_sigma_vs_error.plot(prefix + "-snr_sigma-vs-error", rs::HistConfig().setMaxPlotPts(10000));
+            {
+                max_px_vs_error.save(prefix + "-max_px-vs-error.bin");
+                max_px_vs_error.plot(prefix + "-max_px-vs-error", rs::HistConfig().setMaxPlotPts(200));
+            }
 #pragma omp section
             id_counts.plotHistAndCDF(prefix + "-id-counts", 1,
                                      rs::HistConfig().setDataLabel("# samples"));
 #pragma omp section
             errors_by_color[0].plotHistAndCDF(prefix + "-errors-c0", -1, rs::HistConfig()
-                                              .setMaxBins(1000, 1000).setMaxPlotPts(1000).setDataLabel("Error"));
+                                              .setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("Error"));
+#pragma omp section
+            errors_by_color[0].plotHistAndCDF(prefix + "-errors-c0-absolute", -1, rs::HistConfig()
+                                              .setAbsolute().setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("Error"));
 #pragma omp section
             errors_by_color[1].plotHistAndCDF(prefix + "-errors-c1", -1, rs::HistConfig()
-                                              .setMaxBins(1000, 1000).setMaxPlotPts(1000).setDataLabel("Error"));
+                                              .setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("Error"));
 #pragma omp section
-            errors_total.plotHistAndCDF(prefix + "-errors-total", -1, rs::HistConfig()
-                                        .setMaxBins(1000, 1000).setMaxPlotPts(1000).setDataLabel("Error"));
+            errors_by_color[1].plotHistAndCDF(prefix + "-errors-c1-absolute", -1, rs::HistConfig()
+                                              .setAbsolute().setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("Error"));
+#pragma omp section
+            errors_total.plotHistAndCDF(prefix + "-total-errors", -1, rs::HistConfig()
+                                        .setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("Error"));
+#pragma omp section
+            errors_total.plotHistAndCDF(prefix + "-total-errors-absolute", -1, rs::HistConfig()
+                                        .setAbsolute().setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("Error"));
+#pragma omp section
+            rms_total.plotHistAndCDF(prefix + "-total-rms", -1, rs::HistConfig()
+                                     .setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("RMS"));
+#pragma omp section
+            snr_total.plotHistAndCDF(prefix + "-total-snr", -1, rs::HistConfig()
+                                     .setMaxBins(200, 200).setMaxPlotPts(200).setDataLabel("SNR"));
         }
 
         rs::HistConfig conf;
         conf
                 .setMaxBins(50,50)
-                .setIgnoreAmount(1e-4);
+                .setIgnoreAmount(1e-4)
+                .setExtractors({
+                                   {rs::HistConfig::Extract::Median, 0.5},
+                                   {rs::HistConfig::Extract::Quantile, 0.25},
+                                   {rs::HistConfig::Extract::Quantile, 0.75},
+                                   {rs::HistConfig::Extract::Quantile, 0.95},
+                                   {rs::HistConfig::Extract::Quantile, 0.05},
+                                   {rs::HistConfig::Extract::Quantile, 0.9},
+                                   {rs::HistConfig::Extract::Quantile, 0.1},
+                               });
 
         for (auto const& it : layer) {
             std::string const& type = it.first;
             for (auto const& it2 : it.second) {
                 std::string const layer = "-l" + std::to_string(it2.first);
-                conf.setXLabel(type).setYLabel("Error");
+                conf
+                        .setXLabel(type)
+                        .setYLabel("Error");
+
+                std::pair<double, double> bin_size = it2.second.FreedmanDiaconisBinSize();
+                if (type == "RMS-norm") {
+                    bin_size = {0.05, 0.1};
+                }
+
 #pragma omp parallel sections
                 {
 #pragma omp section
                     it2.second.plotHist(prefix + layer + "-" + type + "-linear",
-                                        it2.second.FreedmanDiaconisBinSize(),
+                                        bin_size,
                                         conf);
 #pragma omp section
-                    it2.second.get1().plotHist(prefix + layer + "-" + type + "-hist",
-                                               -1,
-                                               conf.clone().setDataLabel(type));
+                    it2.second.get1().plotHistAndCDF(prefix + layer + "-" + type + "-hist",
+                                                     -1,
+                                                     conf.clone().setDataLabel(type));
 #pragma omp section
                     it2.second.plotHist(prefix + layer + "-" + type + "-linear-norm",
-                                        it2.second.FreedmanDiaconisBinSize(),
+                                        bin_size,
                                         conf.clone().setNormalizeX());
 #pragma omp section
                     it2.second.plotHist(prefix + layer + "-" + type + "-log",
-                                        it2.second.FreedmanDiaconisBinSize(),
+                                        bin_size,
                                         conf.clone().setLogCB());
 #pragma omp section
                     it2.second.plotHist(prefix + layer + "-" + type + "-log-norm",
-                                        it2.second.FreedmanDiaconisBinSize(),
+                                        bin_size,
                                         conf.clone().setLogCB().setNormalizeX());
                 }
             }
@@ -482,28 +557,34 @@ public:
                 std::string const layer = "-l" + std::to_string(it2.first);
                 for (auto const& it3 : it2.second) {
                     std::string const color = "-c" + std::to_string(it3.first);
-                    conf.setXLabel(type).setYLabel("Error");
+                    conf
+                            .setXLabel(type)
+                            .setYLabel("Error");
+                    std::pair<double, double> bin_size = it3.second.FreedmanDiaconisBinSize();
+                    if (type == "RMS-norm") {
+                        bin_size = {0.05, 0.1};
+                    }
 #pragma omp parallel sections
                     {
 #pragma omp section
                         it3.second.plotHist(prefix + layer + color + "-" + type + "-linear",
-                                            it3.second.FreedmanDiaconisBinSize(),
+                                            bin_size,
                                             conf);
 #pragma omp section
-                        it3.second.get1().plotHist(prefix + layer + color + "-" + type + "-hist",
-                                                   -1,
-                                                   conf.clone().setDataLabel(type));
+                        it3.second.get1().plotHistAndCDF(prefix + layer + color + "-" + type + "-hist",
+                                                         -1,
+                                                         conf.clone().setDataLabel(type));
 #pragma omp section
                         it3.second.plotHist(prefix + layer + color + "-" + type + "-linear-norm",
-                                            it3.second.FreedmanDiaconisBinSize(),
+                                            bin_size,
                                             conf.clone().setNormalizeX());
 #pragma omp section
                         it3.second.plotHist(prefix + layer + color + "-" + type + "-log",
-                                            it3.second.FreedmanDiaconisBinSize(),
+                                            bin_size,
                                             conf.clone().setLogCB());
 #pragma omp section
                         it3.second.plotHist(prefix + layer + color + "-" + type + "-log-norm",
-                                            it3.second.FreedmanDiaconisBinSize(),
+                                            bin_size,
                                             conf.clone().setLogCB().setNormalizeX());
                     }
                 }
@@ -524,7 +605,7 @@ public:
         return 1;
     }
 
-    void addList(std::vector<std::string> const& files) {
+    void addList(std::string const & name, std::vector<std::string> const& files) {
         ParallelTime t;
 #pragma omp parallel for
         for (size_t ii = 0; ii < files.size(); ++ii) {
@@ -533,24 +614,47 @@ public:
         std::cout << "Reading " << files.size() << " files: " << t.print() << std::endl;
         t.start();
         std::vector<size_t> file_counts(files.size());
+        rs::RunningStats file_count_stats, orig_count_stats;
+        std::map<int, rs::RunningStats> file_count_by_color_stats;
+        std::map<int, hdm::MultiRejectionLog> rejection_logs;
         for (size_t ii = 0; ii < files.size(); ++ii) {
-            double factor = getFactor(files[ii]);
-            for (hdm::Corner c : CornerCache::getInstance()[files[ii]].getCorners()) {
+            //double factor = getFactor(files[ii]);
+            std::map<int, size_t> file_count_by_color;
+            for (hdm::Corner c : CornerCache::getInstance()[files[ii]]) {
                 //c.rms *= factor;
-                if (valid_mask.empty() || valid_mask(c.p) > 127) {
-                    valid_data[Calib::getIdHash(c)].push_back(c);
-                }
-                else {
-                    invalid_data[Calib::getIdHash(c)].push_back(c);
-                }
                 if (RMS_Eval::validRMS(c)) {
+                    if (valid_mask.empty() || valid_mask(c.p) > 127) {
+                        valid_data[Calib::getIdHash(c)].push_back(c);
+                    }
+                    else {
+                        invalid_data[Calib::getIdHash(c)].push_back(c);
+                    }
                     file_counts[ii]++;
+                    file_count_by_color[c.color]++;
+                }
+                if (2 == c.layer) {
+                    rejection_logs[c.color].push(c);
                 }
             }
-            std::cout << "File count for " << files[ii] << ": " << file_counts[ii] << std::endl;
+            //std::cout << "File count for " << files[ii] << ": " << file_counts[ii] << std::endl;
+            file_count_stats.push_unsafe(file_counts[ii]);
+            for (auto const& it : file_count_by_color) {
+                file_count_by_color_stats[it.first].push_unsafe(it.second);
+            }
+            orig_count_stats.push_unsafe(CornerCache::getInstance()[files[ii]].size());
         }
         std::cout << "Putting into multimap: " << t.print() << std::endl;
-        t.start();
+        std::cout << "File counts for " << name << std::endl;
+        std::cout << "File counts orig: " << orig_count_stats.print() << std::endl;
+        std::cout << "File counts: " << file_count_stats.print() << std::endl;
+        for (auto const& it : file_count_by_color_stats) {
+            std::cout << "File counts color " << it.first << ": " << it.second.print() << std::endl;
+        }
+        for (auto & it : rejection_logs) {
+            std::cout << "Rejection for color " << it.first << ": " << std::endl;
+            it.second.print(std::cout);
+            std::cout << std::endl;
+        }
     }
 };
 
@@ -609,6 +713,9 @@ int main(int argc, char ** argv) {
 
         if (mask_arg.isSet()) {
             mask = cv::imread(mask_arg.getValue(), cv::IMREAD_GRAYSCALE);
+            if (mask.empty()) {
+                throw std::runtime_error("Failed to read mask image");
+            }
         }
 
         for (std::string const& src : files_arg.getValue()) {
@@ -639,18 +746,24 @@ int main(int argc, char ** argv) {
     std::cout << fs::current_path() << std::endl;
 
     if (rms_eval) {
+        t.start();
         for (auto const& it : files) {
+            ParallelTime local_t;
+            std::cout << "Reading files " << it.first << std::endl;
             RMS_Eval eval;
             eval.valid_mask = mask;
             std::string plots_name = "plots-" + it.first;
             fs::create_directories(plots_name, ignore_error_code);
-            eval.addList(it.second);
+            eval.addList(it.first, it.second);
             eval.plot(plots_name + "/");
+            std::cout << "Time: " << local_t.print() << std::endl;
         }
+        std::cout << "Total RMS eval time: " << t.print() << std::endl;
         return EXIT_SUCCESS;
     }
 
     for (auto const& it : files) {
+        std::cout << "Reading files " << it.first << std::endl;
         std::string plots_name = "plots-" + it.first;
         fs::create_directories(plots_name, ignore_error_code);
         analyzeFileList(it.second, plots_name, recursion);
