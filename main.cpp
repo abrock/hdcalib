@@ -93,6 +93,7 @@ int main(int argc, char* argv[]) {
     double max_outlier_percentage = 105;
     double cauchy_param = 1;
     double marker_size = 1;
+    double min_snr = 5;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -138,6 +139,11 @@ int main(int argc, char* argv[]) {
                                                ".yaml.gz will be appended.",
                                                false, "", "Calibration cache.");
         cmd.add(cache_arg);
+
+        TCLAP::ValueArg<double> min_snr_arg("", "min-snr",
+                                               "Minimum SNR (x sigma) for a marker to be used.",
+                                               false, 5, "Minimum SNR value.");
+        cmd.add(min_snr_arg);
 
         TCLAP::ValueArg<std::string> delete_arg("", "delete",
                                                 "Specify a calibration result to delete from the cached calibration. ",
@@ -237,6 +243,7 @@ int main(int argc, char* argv[]) {
         del = delete_arg.getValue();
         outlier_threshold = outlier_threshold_arg.getValue();
         cauchy_param = cauchy_param_arg.getValue();
+        min_snr = min_snr_arg.getValue();
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -272,8 +279,10 @@ int main(int argc, char* argv[]) {
                             << "plot markers: " << (plot_markers ? "true" : "false") << std::endl
                             << "only green channel: " << (only_green ? "true" : "false") << std::endl
                             << "Gnuplot: " << (gnuplot ? "true" : "false") << std::endl
-                            << "Valid pages: " << str_pages.str() << std::endl;
+                            << "Valid pages: " << str_pages.str() << std::endl
+                            << "Min SNR*sigma: " << min_snr;
         calib.setValidPages(valid_pages);
+        calib.setMinSNR(min_snr);
 
         calib.setCeresTolerance(ceres_tolerance_arg.getValue());
 
@@ -284,6 +293,7 @@ int main(int argc, char* argv[]) {
         calib.setCauchyParam(cauchy_param);
         calib.setRecursionDepth(recursion_depth);
         calib.setMaxOutlierPercentage(max_outlier_percentage);
+        calib.setUseRaw(libraw);
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;

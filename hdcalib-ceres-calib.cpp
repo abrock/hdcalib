@@ -445,7 +445,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
     options.num_threads = int(threads);
     options.linear_solver_type = ceres::SPARSE_SCHUR;
     options.max_num_iterations = 150;
-    options.minimizer_progress_to_stdout = true;
+    options.minimizer_progress_to_stdout = verbose;
     options.function_tolerance = ceres_tolerance;
     options.gradient_tolerance = ceres_tolerance;
     options.parameter_tolerance = ceres_tolerance;

@@ -1,3 +1,6 @@
+#undef NDEBUG
+#include <assert.h>   // reinclude the header to update the definition of assert()
+
 #include "hdcalib.h"
 
 #include <ceres/ceres.h>
@@ -6,9 +9,6 @@
 #include <runningstats/runningstats.h>
 #include <catlogger/catlogger.h>
 #include "gnuplot-iostream.h"
-
-#undef NDEBUG
-#include <assert.h>   // reinclude the header to update the definition of assert()
 
 namespace  {
 template<class T>
@@ -159,6 +159,14 @@ void Calib::save(const string &filename) {
     cv::FileStorage fs(filename, cv::FileStorage::WRITE);
     fs << "calibration" << *this;
     fs.release();}
+
+void Calib::setMinSNR(const double val) {
+    min_snr = val;
+}
+
+void Calib::setUseRaw(const bool val) {
+    use_raw = val;
+}
 
 std::vector<string> Calib::getImageNames() const {
     std::vector<std::string> result;
@@ -620,6 +628,76 @@ void Calib::scaleCornerIds(std::vector<Corner> &corners, int factor) {
     }
 }
 
+void Calib::swapPointsForRO(std::vector<cv::Point2f>& img,
+                            std::vector<cv::Point3f>& obj,
+                            std::vector<size_t>& ref) {
+    if (img.size() < 2) {
+        throw std::runtime_error("Image points vector empty or too small in Calib::swapPointsForRO");
+    }
+    if (img.size() != obj.size() || img.size() != ref.size()) {
+        throw std::runtime_error("Vector sizes don't match in Calib::swapPointsForRO");
+    }
+    randutils::mt19937_rng rng;
+    size_t const size = img.size();
+    size_t tl_index = rng.variate<size_t, std::uniform_int_distribution>(0, size-1);
+    size_t tr_index = rng.variate<size_t, std::uniform_int_distribution>(0, size-1);
+    size_t br_index = rng.variate<size_t, std::uniform_int_distribution>(0, size-1);
+    cv::Point3f tl(obj[tl_index]), tr(obj[tr_index]), br(obj[br_index]);
+    for (size_t ii = 0; ii < size; ++ii) {
+        cv::Point3f &o = obj[ii];
+        if (o.x <= tl.x && o.y >= tl.y) {
+            tl = o;
+            tl_index = ii;
+        }
+        if (o.x >= tr.x && o.y >= tr.y) {
+            tr = o;
+            tr_index = ii;
+        }
+        if (o.x >= br.x && o.y <= br.y) {
+            br = o;
+            br_index = ii;
+        }
+    }
+    if (tl_index == tr_index) {
+        throw std::runtime_error("Top left index matches top right index in Calib::swapPointsForRO");
+    }
+    if (tl_index == br_index) {
+        throw std::runtime_error("Top left index matches bottom right index in Calib::swapPointsForRO");
+    }
+    if (tr_index == br_index) {
+        throw std::runtime_error("Top right index matches bottom right index in Calib::swapPointsForRO");
+    }
+    cv::Point2f tl_img = img[tl_index], tr_img = img[tr_index], br_img = img[br_index];
+    std::swap(img[0], img[tl_index]);
+    std::swap(obj[0], obj[tl_index]);
+    std::swap(ref[0], ref[tl_index]);
+
+    std::swap(img[1], img[tr_index]);
+    std::swap(obj[1], obj[tr_index]);
+    std::swap(ref[1], ref[tr_index]);
+
+    std::swap(img.back(), img[br_index]);
+    std::swap(obj.back(), obj[br_index]);
+    std::swap(ref.back(), ref[br_index]);
+
+    img[0] = tl_img;
+    obj[0] = tl;
+    ref[0] = tl_index;
+
+    img[1] = tr_img;
+    obj[1] = tr;
+    ref[1] = tr_index;
+
+    img.back() = br_img;
+    obj.back() = br;
+    ref.back() = br_index;
+
+    clog::L(__PRETTY_FUNCTION__, 2) << "Distances: "
+                                    << "tl-tr: " << cv::norm(tl - tr)
+                                    << ", tl-br: " << cv::norm(tl - br)
+                                    << ", tr-br: " << cv::norm(tr-br);
+}
+
 void Calib::prepareOpenCVCalibration() {
     if (preparedOpenCVCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size()) {
         return;
@@ -629,15 +707,70 @@ void Calib::prepareOpenCVCalibration() {
 
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
+    reduced_marker_references = std::vector<std::vector<cv::Scalar_<int> > >(data.size());
     imageFiles.resize(data.size());
 
     size_t ii = 0;
     for (std::pair<const std::string, CornerStore> const& it : data) {
-        it.second.getMajorPoints(imagePoints[ii], objectPoints[ii], *this);
+        it.second.getMajorPoints(imagePoints[ii], objectPoints[ii], reduced_marker_references[ii], *this);
         imageFiles[ii] = it.first;
         ++ii;
     }
 }
+
+void Calib::prepareOpenCVROCalibration() {
+    if (preparedOpenCVCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size()) {
+        return;
+    }
+    preparedOpenCVCalib = true;
+    preparedCalib = false;
+
+    CornerStore intersection = data.begin()->second;
+    for (std::pair<const std::string, CornerStore> const& it : data) {
+        intersection.intersect(it.second);
+    }
+
+    imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
+    objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
+    reduced_marker_references = std::vector<std::vector<cv::Scalar_<int> > >(data.size());
+    imageFiles.resize(data.size());
+
+    size_t ii = 0;
+    for (std::pair<const std::string, CornerStore> const& it : data) {
+        CornerStore copy = it.second;
+        copy.intersect(intersection);
+        copy.getMajorPoints(imagePoints[ii], objectPoints[ii], reduced_marker_references[ii], *this);
+        imageFiles[ii] = it.first;
+        ++ii;
+    }
+
+    // Some sanity checks
+    for (size_t ii = 1; ii < reduced_marker_references.size(); ++ii) {
+        assert(reduced_marker_references[ii].size() == reduced_marker_references[0].size());
+        for (size_t jj = 0; jj < reduced_marker_references[0].size(); ++jj) {
+            assert(reduced_marker_references[ii][jj] == reduced_marker_references[0][jj]);
+        }
+    }
+
+    third_fixed_point_index = 1;
+    double best_val = 0;
+    for (size_t ii = 1; ii+1 < objectPoints[0].size(); ++ii) {
+        cv::Point3f const diff1 = objectPoints[0].front() - objectPoints[0][ii];
+        double const length1 = std::sqrt(diff1.dot(diff1));
+
+        cv::Point3f const diff2 = objectPoints[0].back() - objectPoints[0][ii];
+        double const length2 = std::sqrt(diff2.dot(diff2));
+
+        double const val = std::min(length1, length2);
+
+        if (val > best_val) {
+            best_val = val;
+            third_fixed_point_index = ii;
+        }
+    }
+}
+
+
 
 bool Calib::hasFile(const string filename) const {
     return data.end() != data.find(filename);
@@ -842,13 +975,27 @@ cv::Mat Calib::getImageScaled(std::string const& input_file) {
 cv::Mat Calib::getImageRaw(std::string const& input_file) {
     cv::Mat img = readImage(input_file, demosaic, libraw, useOnlyGreen);
     clog::L(__PRETTY_FUNCTION__, 2) << "Read file " << input_file << ", got type " << type2str(img.type());
-            if (img.empty()) {
+    if (img.empty()) {
         clog::L("Calib::getImageRaw", 1) << "Input file empty, aborting." << std::endl;
         return {};
     }
     setImageSize(img);
 
     return img;
+}
+
+vector<Corner> Calib::filterSNR(vector<Corner> const& in, double const threshold) {
+    if (threshold <= 0) {
+        return in;
+    }
+    std::vector<Corner> out;
+    out.reserve(in.size());
+    for (auto const& it : in) {
+        if (it.layer == 0 || std::abs(it.getSigma() * it.snr) > threshold) {
+            out.push_back(it);
+        }
+    }
+    return out;
 }
 
 vector<Corner> Calib::getSubMarkers(const std::string input_file,
@@ -868,7 +1015,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
         if (nullptr != is_clean) {
             *is_clean = true;
         }
-        return result;
+        return filterSNR(result, min_snr);
     }
     if (nullptr != is_clean) {
         *is_clean = false;
@@ -877,7 +1024,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
     std::string const hdm_gz_cache_file = input_file + "-submarkers.hdmarker.gz";
     if (fs::is_regular_file(hdm_gz_cache_file)) {
         Corner::readFile(hdm_gz_cache_file, result);
-        return result;
+        return filterSNR(result, min_snr);
     }
 
     std::string const cv_gz_cache_file = input_file + "-submarkers.yaml.gz";
@@ -891,7 +1038,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
             resolutionKnown = true;
         }
         Corner::writeGzipFile(hdm_gz_cache_file, result);
-        return result;
+        return filterSNR(result, min_snr);
     }
 
     std::vector<Corner> main_markers = getMainMarkers(input_file, effort, demosaic, raw);
@@ -922,7 +1069,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
 
     Corner::writeGzipFile(hdm_gz_cache_file, result);
 
-    return result;
+    return filterSNR(result, min_snr);
 }
 
 cv::Mat Calib::scaleImage(cv::Mat const& img) {
@@ -1185,17 +1332,41 @@ std::vector<Corner> filter_duplicate_markers(const std::vector<Corner> &in) {
     return result;
 }
 
-double Calib::openCVCalib(bool const simple) {
-    prepareOpenCVCalibration();
-
-    std::string const name = simple ? "SimpleOpenCV" : "OpenCV";
-    bool has_precalib = false;
-    if (simple) {
-        has_precalib = hasCalibName("SimpleOpenCV");
+double Calib::openCVCalib(bool const simple, bool const RO) {
+    if (RO) {
+        prepareOpenCVROCalibration();
     }
     else {
-        if (!hasCalibName("OpenCV") && hasCalibName("SimpleOpenCV")) {
-            calibrations["OpenCV"] = calibrations["SimpleOpenCV"];
+        prepareOpenCVCalibration();
+    }
+
+    if (imageSize.width <= 0 || imageSize.height <= 0) {
+        imageSize = readImage(imageFiles[0], use_raw, use_raw, useOnlyGreen).size();
+    }
+
+    std::string const name = std::string(simple ? "Simple" : "") + "OpenCV" + (RO ? "RO" : "");
+    bool has_precalib = false;
+    if (simple) {
+        if (RO) {
+            has_precalib = hasCalibName("SimpleOpenCVRO");
+        }
+        else {
+            has_precalib = hasCalibName("SimpleOpenCV");
+        }
+    }
+    else {
+        if (RO) {
+            if (!hasCalibName("OpenCVRO") && hasCalibName("SimpleOpenCVRO")) {
+                calibrations["OpenCVRO"] = calibrations["SimpleOpenCV"];
+            }
+            else if (!hasCalibName("OpenCVRO") && hasCalibName("SimpleOpenCV")) {
+                calibrations["OpenCVRO"] = calibrations["SimpleOpenCV"];
+            }
+        }
+        else {
+            if (!hasCalibName("OpenCV") && hasCalibName("SimpleOpenCV")) {
+                calibrations["OpenCV"] = calibrations["SimpleOpenCV"];
+            }
         }
     }
     CalibResult & res = calibrations[name];
@@ -1225,19 +1396,64 @@ double Calib::openCVCalib(bool const simple) {
     }
     clog::L(__func__, 1) << "Initial camera matrix: " << std::endl << res.cameraMatrix << std::endl;
 
-    double result_err = cv::calibrateCamera (
-                objectPoints,
-                imagePoints,
-                imageSize,
-                res.cameraMatrix,
-                res.distCoeffs,
-                res.rvecs,
-                res.tvecs,
-                res.stdDevIntrinsics,
-                res.stdDevExtrinsics,
-                res.perViewErrors,
-                flags
-                );
+    double result_err = -1;
+    if (RO) {
+        //swapPointsForRO(imagePoints[0], objectPoints[0], reduced_marker_references[0]);
+        std::vector<cv::Point3f> new_object_points;
+        assert(data.size() == imagePoints.size());
+        assert(objectPoints.size() == imagePoints.size());
+        assert(objectPoints.size() == reduced_marker_references.size());
+        result_err = cv::calibrateCameraRO (
+                    objectPoints,
+                    imagePoints,
+                    imageSize,
+                    third_fixed_point_index,
+                    res.cameraMatrix,
+                    res.distCoeffs,
+                    res.rvecs,
+                    res.tvecs,
+                    new_object_points,
+                    res.stdDevIntrinsics,
+                    res.stdDevExtrinsics,
+                    res.stdDevObjectPoints,
+                    res.perViewErrors,
+                    flags
+                    );
+        assert(objectPoints[0].size() == new_object_points.size());
+        assert(objectPoints[0].size() == reduced_marker_references[0].size());
+        for (size_t ii = 0; ii < objectPoints.size(); ++ii) {
+            assert(objectPoints[ii].size() == reduced_marker_references[0].size());
+            assert(objectPoints[0].size() == reduced_marker_references[0].size());
+        }
+        // Transfer the new object point locations to objectPointCorrections map.
+        for (size_t ii = 0; ii < new_object_points.size(); ++ii) {
+            hdmarker::Corner c;
+            bool const has_marker = data.begin()->second.hasIDLevel(reduced_marker_references[0][ii], c);
+            assert(has_marker);
+            cv::Point3f init_pt = getInitial3DCoord(c);
+            cv::Point3f init_compare_pt = objectPoints[0][ii];
+            assert(std::abs(init_pt.x - init_compare_pt.x) < 1e-4);
+            assert(std::abs(init_pt.y - init_compare_pt.y) < 1e-4);
+            assert(std::abs(init_pt.z - init_compare_pt.z) < 1e-4);
+            cv::Point3f correction = new_object_points[ii] - init_compare_pt;
+            res.objectPointCorrections[getSimpleId(c)] = correction;
+        }
+    }
+    else {
+        result_err = cv::calibrateCamera (
+                    objectPoints,
+                    imagePoints,
+                    imageSize,
+                    res.cameraMatrix,
+                    res.distCoeffs,
+                    res.rvecs,
+                    res.tvecs,
+                    res.stdDevIntrinsics,
+                    res.stdDevExtrinsics,
+                    res.perViewErrors,
+                    flags
+                    );
+    }
 
     clog::L(__func__, 1) << "RMSE: " << result_err << std::endl
                          << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl;
@@ -1295,10 +1511,16 @@ double Calib::openCVCalib(bool const simple) {
 
 double Calib::runCalib(const string name, const double outlier_threshold) {
     if ("OpenCV" == name) {
-        return openCVCalib(false);
+        return openCVCalib(false, false);
+    }
+    if ("OpenCVRO" == name) {
+        return openCVCalib(false, true);
     }
     if ("SimpleOpenCV" == name) {
-        return openCVCalib(true);
+        return openCVCalib(true, false);
+    }
+    if ("SimpleOpenCVRO" == name) {
+        return openCVCalib(true, true);
     }
     if ("SimpleCeres" == name) {
         return SimpleCeresCalib(outlier_threshold);
@@ -1335,6 +1557,10 @@ Point2f Calib::meanResidual(const std::vector<std::pair<Point2f, Point2f> > &dat
 
 Point3i Calib::getSimpleId(const Corner &marker) {
     return cv::Point3i(marker.id.x, marker.id.y, marker.page);
+}
+
+cv::Scalar_<int> Calib::getSimpleIdLayer(const Corner &marker) {
+    return {marker.id.x, marker.id.y, marker.page, marker.layer};
 }
 
 uint64_t Calib::getIdHash(const Corner &marker) {
@@ -1452,6 +1678,15 @@ bool cmpPoint3i::operator()(const cv::Point3i &a, const cv::Point3i &b) const {
     return a.x < b.x;
 }
 
+template<class T>
+bool cmpScalar::operator()(const cv::Scalar_<T> &a, const cv::Scalar_<T> b) const {
+    for (size_t ii = 0; ii < 3; ++ii) {
+        if (a[ii] != b[ii]) return a[ii] < b[ii];
+    }
+    return a[3] < b[3];
+}
+
+template bool cmpScalar::operator()(const cv::Scalar_<int> &a, const cv::Scalar_<int> b) const;
 
 template<class F, class T>
 void Calib::get3DPoint(const F p[], T result[], const T R[], const T t[]) {

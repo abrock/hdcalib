@@ -40,13 +40,25 @@ public:
         }
         std::lock_guard<std::mutex> guard(access_mutex_by_file[filename]);
         hdcalib::Calib c;
+        c.setMinSNR(snr_sigma_min);
         ParallelTime t;
-        std::vector<hdm::Corner> corners = c.getSubMarkers(filename);
+        std::vector<hdm::Corner> _corners = c.getSubMarkers(filename);
+        std::vector<hdm::Corner> corners;
+        corners.reserve(_corners.size());
+        for (hdm::Corner const& c : _corners) {
+            if (std::abs(c.snr * c.getSigma()) > snr_sigma_min) {
+                corners.push_back(c);
+            }
+        }
         //std::cout << "Reading " << filename << ": " << t.print() << std::endl;
         t.start();
         data[filename] = corners;
         //std::cout << "Creating CornerStore for " << filename << ": " << t.print() << std::endl;
         return data[filename];
+    }
+
+    static void setSNRSigmaMin(double const val) {
+        getInstance().snr_sigma_min = val;
     }
 
 private:
@@ -55,6 +67,8 @@ private:
     CornerCache() {}
     CornerCache(CornerCache const&) = delete;
     void operator=(CornerCache const&) = delete;
+
+    double snr_sigma_min = 0;
 
     std::map<std::string, std::vector<hdm::Corner>> data;
 };
@@ -247,12 +261,14 @@ std::vector<cv::Point2d> & dst
         }
     }
 
+    /*
     plotOffsets(
                 suffixes,
                 local_stat_2d,
                 local_stat_2d_color,
                 result_prefix
                 );
+                */
 }
 
 void analyzeFileList(std::vector<std::string> const& files, std::string const& prefix, int const recursion) {
@@ -269,6 +285,7 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
     rs::Ellipses ellipses;
 
     std::vector<hdcalib::Similarity2D> fits(files.size());
+    std::cout << std::string(files.size()-1, '-') << std::endl;
 #pragma omp parallel for
     for (size_t ii = 1; ii < files.size(); ++ii) {
         rs::Stats2D<float> local_stat_2d, local_stat_2d_color[3][4];
@@ -283,11 +300,61 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
             }
         }
         hdcalib::Similarity2D & fit = fits[ii];
+        fit.cauchy_param = 0.1;
         fit.src = src;
         fit.dst = dst;
+        fit.outlier_threshold = 10;
         fit.runFit();
+        fit.outlier_threshold = 1;
+        fit.runFit();
+        fit.outlier_threshold = .1;
+        fit.runFit();
+        std::cout << "+" << std::flush;
     }
 
+    std::vector<std::vector<double> > data;
+    for (size_t ii = 1; ii < files.size(); ++ii) {
+        auto const& f = fits[ii];
+        f.print(std::cout);
+        std::cout << std::endl;
+        data.push_back(
+                    {f.t_x, f.t_y, f.t_length, f.angle, f.scale, f.max_movement,
+                     f.max_scale_movement, f.max_rotate_movement, double(f.src.size()), double(f.ignored)}
+                    );
+    }
+
+    fs::create_directories(prefix, ignore_error_code);
+    std::string const name = prefix + "/2dsim";
+
+    gnuplotio::Gnuplot plt("tee " + name + ".gpl | gnuplot -persist");
+
+    plt << "set term svg enhanced background rgb 'white';\n"
+        << "set output '" << name + "-log.svg';\n"
+        << "set key out horiz;\n"
+        << "set y2tics;\n"
+        << "plot " << plt.file1d(data, name + ".data") << " u 0:3 w l title 't length',"
+        << "'' u 0:($4*180/pi) w l title 'angle [°]',"
+        << "'' u 0:($5-1) w l title 'scale-1',"
+        << "'' u 0:6 w l title 'max move',"
+        << "'' u 0:7 w l title 'max scale move',"
+        << "'' u 0:8 w l title 'max rot. move',"
+        << "'' u 0:($9-$10) axis x1y2 w l title '#pts'";
+
+    gnuplotio::Gnuplot plt_log("tee " + name + "-log.gpl | gnuplot -persist");
+
+    plt_log << "set term svg enhanced background rgb 'white';\n"
+            << "set output '" << name + ".svg';\n"
+            << "set key out horiz;\n"
+            << "set y2tics;\n"
+            << "set logscale y;\n"
+            << "plot " << plt.file1d(data, name + "-log.data") << " u 0:3 w l title 't length',"
+            << "'' u 0:($4*180/pi) axis x1y2 w l title 'angle [°]',"
+            << "'' u 0:($5-1) axis x1y2 w l title 'scale-1',"
+            << "'' u 0:6 w l title 'max move',"
+            << "'' u 0:7 w l title 'max scale move',"
+            << "'' u 0:8 w l title 'max rot. move',";
+
+    /*
     plotOffsets(
                 suffixes,
                 stat_2d,
@@ -306,6 +373,7 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
         std::cout << "mkdir \"" << dirname << "\"" << std::endl;
         std::cout << "for i in *" << suffix << "*; do ln -s $(pwd)/$i \"" << dirname << "\"/$i; done " << std::endl;
     }
+    */
 }
 
 using namespace hdcalib;
@@ -391,6 +459,11 @@ public:
         rs::QuantileStats<float> id_counts;
 
         rs::ThresholdErrorMean<float> rms_vs_error, snr_sigma_vs_error, normalized_rms_vs_error, max_px_vs_error;
+        std::map<int, rs::ThresholdErrorMean<float> >
+                rms_vs_error_color,
+                snr_sigma_vs_error_color,
+                normalized_rms_vs_error_color,
+                max_px_vs_error_color;
 
         rs::QuantileStats<float> orig_errors;
 
@@ -416,22 +489,28 @@ public:
                 double const rms = log10(0.001 + std::min<double>(c.rms, 1000.0));
                 double const snr = std::min<double>(c.rms, 1000.0);
                 double const snr_sigma = std::min<double>(std::abs(c.snr * c.getSigma()), 50.0);
+                double const normalized_rms = log10(1e-7 + std::abs(c.rms / c.max_px));
                 layer["RMS"][c.layer].push_unsafe(rms, length);
                 layer["SNR"][c.layer].push_unsafe(snr, length);
                 layer["SNR x Sigma"][c.layer].push_unsafe(snr_sigma, length);
                 layer["Max-px"][c.layer].push_unsafe(log2(c.max_px), length);
-                layer["RMS-norm"][c.layer].push_unsafe(c.rms / c.max_px, length);
+                layer["RMS-norm"][c.layer].push_unsafe(normalized_rms, length);
 
                 layer_color["RMS"][c.layer][c.color].push_unsafe(rms, length);
                 layer_color["SNR"][c.layer][c.color].push_unsafe(snr, length);
                 layer_color["SNR x Sigma"][c.layer][c.color].push_unsafe(snr_sigma, length);
                 layer_color["Max-px"][c.layer][c.color].push_unsafe(log2(c.max_px), length);
-                layer_color["RMS-norm"][c.layer][c.color].push_unsafe(c.rms / c.max_px, length);
+                layer_color["RMS-norm"][c.layer][c.color].push_unsafe(normalized_rms, length);
 
                 rms_vs_error.push_unsafe(c.rms, length);
-                normalized_rms_vs_error.push_unsafe(c.rms / c.max_px, length);
+                normalized_rms_vs_error.push_unsafe(normalized_rms, length);
                 snr_sigma_vs_error.push_unsafe(1.0/(1+c.snr), length);
                 max_px_vs_error.push_unsafe(1.0/(1+c.max_px), length);
+
+                rms_vs_error_color[c.color].push_unsafe(c.rms, length);
+                normalized_rms_vs_error_color[c.color].push_unsafe(normalized_rms, length);
+                snr_sigma_vs_error_color[c.color].push_unsafe(1.0/(1+c.snr), length);
+                max_px_vs_error_color[c.color].push_unsafe(1.0/(1+c.max_px), length);
 
                 errors_by_color[c.color].push_unsafe(length);
                 errors_total.push_unsafe(length);
@@ -446,6 +525,36 @@ public:
         orig_errors.saveSummary(prefix + "-orig-error-summary");
 
         t.start();
+
+        for (auto & it : rms_vs_error_color) {
+#pragma omp parallel sections
+            {
+#pragma omp section
+                {
+                    rms_vs_error_color[it.first].save(prefix + "-rms-vs-error-c" + std::to_string(it.first) + ".bin");
+                    rms_vs_error_color[it.first].plot(prefix + "-rms-vs-error-c" + std::to_string(it.first),
+                                                      rs::HistConfig().setMaxPlotPts(200));
+                }
+#pragma omp section
+                {
+                    normalized_rms_vs_error_color[it.first].save(prefix + "-normalized_rms-vs-error-c" + std::to_string(it.first) + ".bin");
+                    normalized_rms_vs_error_color[it.first].plot(prefix + "-normalized_rms-vs-error-c" + std::to_string(it.first),
+                                                                 rs::HistConfig().setMaxPlotPts(200));
+                }
+#pragma omp section
+                {
+                    snr_sigma_vs_error_color[it.first].save(prefix + "-snr_sigma-vs-error-c" + std::to_string(it.first) + ".bin");
+                    snr_sigma_vs_error_color[it.first].plot(prefix + "-snr_sigma-vs-error-c" + std::to_string(it.first),
+                                                            rs::HistConfig().setMaxPlotPts(200));
+                }
+#pragma omp section
+                {
+                    max_px_vs_error_color[it.first].save(prefix + "-max_px-vs-error-c" + std::to_string(it.first) + ".bin");
+                    max_px_vs_error_color[it.first].plot(prefix + "-max_px-vs-error-c" + std::to_string(it.first),
+                                                         rs::HistConfig().setMaxPlotPts(200));
+                }
+            }
+        }
 
 #pragma omp parallel sections
         {
@@ -521,7 +630,7 @@ public:
                         .setYLabel("Error");
 
                 std::pair<double, double> bin_size = it2.second.FreedmanDiaconisBinSize();
-                if (type == "RMS-norm") {
+                if (false && type == "RMS-norm") {
                     bin_size = {0.05, 0.1};
                 }
 
@@ -561,7 +670,7 @@ public:
                             .setXLabel(type)
                             .setYLabel("Error");
                     std::pair<double, double> bin_size = it3.second.FreedmanDiaconisBinSize();
-                    if (type == "RMS-norm") {
+                    if (false && type == "RMS-norm") {
                         bin_size = {0.05, 0.1};
                     }
 #pragma omp parallel sections
@@ -746,6 +855,7 @@ int main(int argc, char ** argv) {
     std::cout << fs::current_path() << std::endl;
 
     if (rms_eval) {
+        CornerCache::setSNRSigmaMin(-1);
         t.start();
         for (auto const& it : files) {
             ParallelTime local_t;
@@ -762,6 +872,7 @@ int main(int argc, char ** argv) {
         return EXIT_SUCCESS;
     }
 
+    CornerCache::setSNRSigmaMin(5.0);
     for (auto const& it : files) {
         std::cout << "Reading files " << it.first << std::endl;
         std::string plots_name = "plots-" + it.first;

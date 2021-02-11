@@ -40,22 +40,20 @@ void CornerStore::addConditional(const std::vector<Corner> &vec) {
     }
 }
 
-void CornerStore::getMajorPoints(
-        std::vector<Point2f> &imagePoints,
+void CornerStore::getMajorPoints(std::vector<Point2f> &imagePoints,
         std::vector<Point3f> &objectPoints,
+        std::vector<cv::Scalar_<int> > &marker_references,
         hdcalib::Calib const& calib) const {
     imagePoints.clear();
-    imagePoints.reserve(size());
-
     objectPoints.clear();
-    objectPoints.reserve(size());
+    marker_references.clear();
     for (size_t ii = 0; ii < size(); ++ii) {
         hdmarker::Corner const& c = get(ii);
         if (calib.isValidPage(c)
-                && 0 == (c.id.x % calib.getCornerIdFactor())
-                && 0 == (c.id.y % calib.getCornerIdFactor())) {
+                && 0 == c.layer) {
             imagePoints.push_back(get(ii).p);
             objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
+            marker_references.push_back(calib.getSimpleIdLayer(c));
         }
     }
 }
@@ -248,12 +246,17 @@ std::vector<Corner> CornerStore::getCorners() const {
 }
 
 std::vector<Corner> CornerStore::findByID(const Corner &ref, const size_t num_results) const {
-    std::vector<hdmarker::Corner> result;
+    cv::Point3i const simpleID = Calib::getSimpleId(ref);
+    return findByID(simpleID, num_results);
+}
+
+std::vector<Corner> CornerStore::findByID(const Point3i &ref, const size_t num_results) const {
     double query_pt[3] = {
-        static_cast<double>(ref.id.x),
-        static_cast<double>(ref.id.y),
-        static_cast<double>(ref.page)
+        static_cast<double>(ref.x),
+        static_cast<double>(ref.y),
+        static_cast<double>(ref.z)
     };
+    std::vector<hdmarker::Corner> result;
 
     // do a knn search
     std::unique_ptr<size_t[]> res_indices(new size_t[num_results]);
@@ -439,10 +442,14 @@ bool CornerStore::hasID(const Corner &ref) const {
 }
 
 bool CornerStore::hasID(const Corner &ref, Corner &result) const {
+    return hasID(Calib::getSimpleId(ref), result);
+}
+
+bool CornerStore::hasID(const Point3i &ref, Corner &found) const {
     double query_pt[3] = {
-        static_cast<double>(ref.id.x),
-        static_cast<double>(ref.id.y),
-        static_cast<double>(ref.page)
+        static_cast<double>(ref.x),
+        static_cast<double>(ref.y),
+        static_cast<double>(ref.z)
     };
     size_t res_index;
     double res_dist_sqr;
@@ -453,16 +460,27 @@ bool CornerStore::hasID(const Corner &ref, Corner &result) const {
     if (resultSet.size() < 1) {
         return false;
     }
-    result = hdmarker::Corner(corners[res_index]);
-    return result.id == ref.id && result.page == ref.page;
+    found = hdmarker::Corner(corners[res_index]);
+    return found.id.x == ref.x && found.id.y == ref.y && found.page == ref.z;
 }
 
-bool CornerStore::hasIDLevel(const Corner &ref, Corner &found, int8_t level) const
+bool CornerStore::hasIDLevel(const Corner &ref, Corner &found, int8_t level) const {
+    cv::Scalar_<int> id = Calib::getSimpleIdLayer(ref);
+    id[3] = level;
+    return hasIDLevel(id, found);
+}
+
+bool CornerStore::hasIDLevel(const Corner &ref, int8_t level) const {
+    hdmarker::Corner c;
+    return hasIDLevel(ref, c, level);
+}
+
+bool CornerStore::hasIDLevel(cv::Scalar_<int> const& id, Corner &found) const
 {
     double query_pt[3] = {
-        static_cast<double>(ref.id.x),
-        static_cast<double>(ref.id.y),
-        static_cast<double>(ref.page)
+        static_cast<double>(id[0]),
+        static_cast<double>(id[1]),
+        static_cast<double>(id[2])
     };
     size_t res_index[4] = {0,0,0,0};
     double res_dist_sqr[4];
@@ -475,16 +493,11 @@ bool CornerStore::hasIDLevel(const Corner &ref, Corner &found, int8_t level) con
     }
     for (size_t ii = 0; ii < resultSet.size(); ++ii) {
         found = hdmarker::Corner(corners[res_index[ii]]);
-        if (found.id == ref.id && found.page == ref.page && found.layer == level) {
+        if (found.id.x == id[0] && found.id.y == id[1] && found.page == id[2] && found.layer == id[3]) {
             return true;
         }
     }
     return false;
-}
-
-bool CornerStore::hasIDLevel(const Corner &ref, int8_t level) const {
-    hdmarker::Corner c;
-    return hasIDLevel(ref, c, level);
 }
 
 CornerIndexAdaptor::CornerIndexAdaptor(CornerStore &ref) : store(&ref){

@@ -31,6 +31,8 @@
 
 #include "griddescription.h"
 
+#include "randutils.hpp"
+
 namespace hdcalib {
 using namespace std;
 using namespace hdmarker;
@@ -215,6 +217,14 @@ public:
     std::vector<hdmarker::Corner> findByID(hdmarker::Corner const& ref, size_t const num_results = 1) const;
 
     /**
+     * @brief findByID does a nearest-neighbour search for the num_results closest hdmarker::Corner to a given marker. Distance is the L2 distance of the triples given by (id.x, id.y, page) of the corners.
+     * @param ref hdmarker::Corner we are searching.
+     * @param num_results maximum number of results we want. The result set might be smaller.
+     * @return A vector of results, ordered by distance to ref ascending.
+     */
+    std::vector<hdmarker::Corner> findByID(cv::Point3i const& ref, size_t const num_results = 1) const;
+
+    /**
      * @brief findByPos does a nearest-neighbour search for the num_results closest hdmarker::Corner to a given marker. Distance is the L2 distance of the pixel positions.
      * @param ref hdmarker::Corner we are searching.
      * @param num_results maximum number of results we want. The result set might be smaller.
@@ -267,6 +277,13 @@ public:
     bool hasID(hdmarker::Corner const& ref, hdmarker::Corner & found) const;
 
     /**
+     * @brief hasID checks if a given hdmarker::Corner (identified by id and page) exists in the CornerStore.
+     * @param ref corner we search.
+     * @return true if the corner exists.
+     */
+    bool hasID(cv::Point3i const& ref, hdmarker::Corner & found) const;
+
+    /**
      * @brief hasIDLevel checks if a given hdmarker::Corner (identified by id, page and level of recursion at which it was detected) exists in the CornerStore.
      * @param ref corner we search.
      * @param level recursion level we require.
@@ -281,6 +298,8 @@ public:
      * @return true if the corner exists.
      */
     bool hasIDLevel(hdmarker::Corner const& ref, int8_t level) const;
+
+    bool hasIDLevel(const cv::Scalar_<int> &id, Corner &found) const;
 
     /**
      * @brief size returns the number of elements currently stored.
@@ -318,10 +337,10 @@ public:
             std::vector<cv::Point3f> & objectPoints,
             hdcalib::Calib const& calib) const;
 
-    void getMajorPoints(
-            std::vector<Point2f> &imagePoints,
-            std::vector<Point3f> &objectPoints,
-            hdcalib::Calib const& calib) const;
+    void getMajorPoints(std::vector<Point2f> &imagePoints,
+                        std::vector<Point3f> &objectPoints,
+                        std::vector<cv::Scalar_<int> > &marker_references,
+                        hdcalib::Calib const& calib) const;
 
     void addConditional(const std::vector<Corner> &vec);
 };
@@ -455,6 +474,11 @@ struct cmpPoint3i {
     bool operator()(const cv::Point3i &a, const cv::Point3i &b) const;
 };
 
+struct cmpScalar {
+    template<class T>
+    bool operator()(const cv::Scalar_<T> &a, const cv::Scalar_<T> b) const;
+};
+
 class CalibResult {
 public:
     /**
@@ -473,14 +497,19 @@ public:
 
     /**
      * @brief distCoeffs distortion coefficients
+     * From the OpenCV documentation: Order of deviations values: \((f_x, f_y, c_x, c_y, k_1, k_2, p_1, p_2, k_3, k_4, k_5, k_6 , s_1, s_2, s_3, s_4, \tau_x, \tau_y)\) If one of parameters is not estimated, it's deviation is equals to zero.
      */
     cv::Mat_<double> distCoeffs;
 
     /**
-     * @brief stdDevIntrinsics standard deviations of the intrinsiv parameters.
-     * From the OpenCV documentation: Order of deviations values: \((f_x, f_y, c_x, c_y, k_1, k_2, p_1, p_2, k_3, k_4, k_5, k_6 , s_1, s_2, s_3, s_4, \tau_x, \tau_y)\) If one of parameters is not estimated, it's deviation is equals to zero.
+     * @brief stdDevIntrinsics standard deviations of the intrinsic parameters.
      */
     cv::Mat_<double> stdDevIntrinsics;
+
+    /**
+     * @brief stdDevIntrinsics standard deviations of the new object points estimated by calibrateCameraRO
+     */
+    cv::Mat_<double> stdDevObjectPoints;
 
     /**
      * @brief stdDevExtrinsics standard deviations of the extrinsic parameters (= position and rotation of the targets)
@@ -583,6 +612,13 @@ class Calib {
      */
     std::vector<std::vector<cv::Point3f> > objectPoints;
 
+    std::vector<std::vector<cv::Scalar_<int> > > reduced_marker_references;
+
+    /**
+     * @brief third_fixed_point_index is the index of the third point to be fixed in cv::calibrateCameraRO
+     */
+    size_t third_fixed_point_index = 0;
+
     /**
      * @brief openCVMaxPoints Maximum number of 2D markers per image in the OpenCV calibration.
      */
@@ -642,6 +678,8 @@ class Calib {
     int grid_height = 1;
 
     bool use_rgb = false;
+
+    bool use_raw = false;
 
     typedef std::map<std::string, CornerStore> Store_T;
     Store_T data;
@@ -728,12 +766,18 @@ class Calib {
     double effort = 0.5;
     double outlier_threshold = 5;
 
+    double min_snr = 5;
+
 public:
     Calib();
 
     unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
 
     void save(std::string const& filename);
+
+    void setMinSNR(double const val);
+
+    void setUseRaw(bool const val);
 
     /**
      * @brief getImageNames returns a (sorted) list of all filenames stored in the data map.
@@ -930,6 +974,14 @@ public:
      */
     static cv::Point3i getSimpleId(hdmarker::Corner const & marker);
 
+    /**
+     * @brief getSimpleId returns the "id" of the marker which consists of the marker's id value, page number and layer
+     * in one single cv::Scalar_<int> for easy usage in std::map etc.
+     * @param marker
+     * @return
+     */
+    static cv::Scalar_<int> getSimpleIdLayer(const Corner &marker);
+
     static uint64_t getIdHash(hdmarker::Corner const& marker);
 
     /**
@@ -1073,7 +1125,7 @@ public:
      * @param simple Set this to true if no distortion or central pixel should be estimated, just target positions and focal length.
      * @return
      */
-    double openCVCalib(const bool simple = false);
+    double openCVCalib(const bool simple = false, const bool RO = false);
 
     double runCalib(std::string const name, double const outlier_threshold = -1);
 
@@ -1162,9 +1214,9 @@ public:
                               const bool raw);
 
     static Mat readImage(std::string const& input_file,
-                             bool const demosaic,
-                             bool const raw,
-                             bool const useOnlyGreen);
+                         bool const demosaic,
+                         bool const raw,
+                         bool const useOnlyGreen);
 
     cv::Size read_raw_imagesize(const string &filename);
 
@@ -1304,6 +1356,27 @@ public:
     cv::Mat getImageRaw(const std::string &input_file);
     cv::Mat convert16_8(const cv::Mat &img);
 
+    /**
+     * @brief swapPointsForRO Changes the order of the points so obj[0] is the top left, obj[1] the top right and obj.back() the bottom right point.
+     * @param img Image points (2D coordinates of detected markers)
+     * @param obj Object points (Initial 3D coordinates of the target)
+     * @param ref Reference indices for finding the corresponding points in the CornerStore
+     */
+    static void swapPointsForRO(std::vector<cv::Point2f> &img, std::vector<cv::Point3f> &obj, std::vector<size_t> &ref);
+
+    /**
+     * @brief filterSNR Takes a vector of Corners and returns a vector of only those Corners
+     * where the SNR*sigma is above the threshold (and all the main markers).
+     * @param in
+     * @param threshold
+     * @return
+     */
+    vector<Corner> filterSNR(const vector<Corner> &in, const double threshold);
+
+    /**
+     * @brief prepareOpenCVROCalibration prepares calibration for calibrateCameraRO since this one requires all points to be visible in all images.
+     */
+    void prepareOpenCVROCalibration();
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1329,14 +1402,50 @@ public:
 
     std::vector<Point2d> src_transformed;
 
+    /**
+     * @brief t_x x-com
+     */
     double t_x = 0;
     double t_y = 0;
     double angle = 0;
-    double scale = 0;
+    double scale = 1;
+
+    /**
+     * @brief outlier_threshold Maximum initial distance between source and destination point.
+     */
+    double outlier_threshold = -1;
 
     double cauchy_param = -1;
 
     double ceres_tolerance = 1e-12;
+
+    /**
+     * @brief max_movement Maximum movement (= max(length(src[i] - transform(src[i])))
+     */
+    double max_movement = -1;
+    cv::Point2d max_movement_pt = {0,0};
+
+    /**
+     * @brief max_scale_movement Maximum movement caused by the scaling.
+     */
+    double max_scale_movement = -1;
+
+    /**
+     * @brief max_rotate_movement Maximum movement caused by the rotation.
+     */
+    double max_rotate_movement = -1;
+
+    /**
+     * @brief ignored Number of ignored correspondences due to outlier_threshold
+     */
+    size_t ignored = 0;
+
+    /**
+     * @brief t_length Length of the translation vector.
+     */
+    double t_length = 0;
+
+    bool verbose = false;
 
     struct Similarity2DCost {
         cv::Point2d src, dst;
@@ -1370,6 +1479,7 @@ public:
  */
     void runFit();
 
+    void print(std::ostream &out) const;
 };
 
 struct FitGrid {
