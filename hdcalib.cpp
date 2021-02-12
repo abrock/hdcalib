@@ -121,7 +121,7 @@ void Calib::getReprojections(
     std::vector<std::vector<double> > data;
     for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
         Corner const& current_corner = store.get(jj);
-        cv::Point3i simple_id = getSimpleId(current_corner);
+        cv::Scalar_<int> simple_id = getSimpleIdLayer(current_corner);
         cv::Point3f correction;
         auto const it = calib.objectPointCorrections.find(simple_id);
         if (calib.objectPointCorrections.end() != it) {
@@ -1403,6 +1403,15 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
         assert(data.size() == imagePoints.size());
         assert(objectPoints.size() == imagePoints.size());
         assert(objectPoints.size() == reduced_marker_references.size());
+        // Transfer the objectPointCorrections to the new_object_points vector.
+        for (size_t ii = 0; ii < reduced_marker_references[0].size(); ++ii) {
+            auto it = res.objectPointCorrections.find(reduced_marker_references[0][ii]);
+            cv::Point3f pt = objectPoints[0][ii];
+            if (it != res.objectPointCorrections.end()) {
+                pt += it->second;
+            }
+            new_object_points.push_back(pt);
+        }
         result_err = cv::calibrateCameraRO (
                     objectPoints,
                     imagePoints,
@@ -1436,7 +1445,7 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
             assert(std::abs(init_pt.y - init_compare_pt.y) < 1e-4);
             assert(std::abs(init_pt.z - init_compare_pt.z) < 1e-4);
             cv::Point3f correction = new_object_points[ii] - init_compare_pt;
-            res.objectPointCorrections[getSimpleId(c)] = correction;
+            res.objectPointCorrections[getSimpleIdLayer(c)] = correction;
         }
     }
     else {
@@ -1614,7 +1623,7 @@ Vec3d Calib::get3DPoint(CalibResult& calib, const Corner &c, const Mat &_rvec, c
     cv::Mat_<double> rvec(_rvec);
     cv::Mat_<double> tvec(_tvec);
     cv::Point3f _src = getInitial3DCoord(c);
-    _src += calib.objectPointCorrections[getSimpleId(c)];
+    _src += calib.objectPointCorrections[getSimpleIdLayer(c)];
     double src[3] = {double(_src.x), double(_src.y), double(_src.z)};
     double rot[9];
     double rvec_data[3] = {rvec(0), rvec(1), rvec(2)};

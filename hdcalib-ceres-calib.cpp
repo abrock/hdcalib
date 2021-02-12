@@ -331,16 +331,16 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
     cv::Mat_<double> old_dist = calib.distCoeffs.clone();
 
 
-    std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > local_corrections;
+    std::map<cv::Scalar_<int>, std::vector<double>, cmpScalar > local_corrections;
 
     for (const auto& it: data) {
         for (size_t ii = 0; ii < it.second.size(); ++ii) {
-            cv::Point3i const c = getSimpleId(it.second.get(ii));
+            cv::Scalar_<int> const c = getSimpleIdLayer(it.second.get(ii));
             local_corrections[c] = point2vec3f(calib.objectPointCorrections[c]);
         }
     }
 
-    std::set<cv::Point3i, cmpSimpleIndex3<cv::Point3i> > ids;
+    std::set<cv::Scalar_<int>, cmpScalar> ids;
 
     if (calib.outlier_percentages.size() != data.size()) {
         calib.outlier_percentages = std::vector<double>(data.size(), 0.0);
@@ -360,7 +360,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
         for (size_t jj = 0; jj < sub_data.size(); ++jj) {
-            cv::Point3i const c = getSimpleId(sub_data.get(jj));
+            cv::Scalar_<int> const c = getSimpleIdLayer(sub_data.get(jj));
             ids.insert(c);
             {
                 FlexibleTargetProjectionFunctor loss (
@@ -430,7 +430,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
         clog::L(__func__, 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
     }
 
-    for (cv::Point3i const& it : ids) {
+    for (cv::Scalar_<int> const& it : ids) {
         ceres::CostFunction* cost_function =
                 new ceres::AutoDiffCostFunction<LocalCorrectionsSum, 3, 3>(
                     new LocalCorrectionsSum());

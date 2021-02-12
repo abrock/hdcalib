@@ -10,15 +10,19 @@
 
 #include <ParallelTime/paralleltime.h>
 
+#include <boost/math/common_factor_rt.hpp>
+
+#include <opencv2/optflow.hpp>
+
 namespace {
 boost::system::error_code ignore_error_code;
 }
 
 namespace hdcalib {
 
-void Calib::printObjectPointCorrectionsStats(const std::map<Point3i, Point3f, cmpPoint3i> &corrections) const {
+void Calib::printObjectPointCorrectionsStats(const std::map<cv::Scalar_<int>, Point3f, cmpScalar> &corrections) const {
     runningstats::RunningStats dx, dy, dz, abs_dx, abs_dy, abs_dz, length;
-    for (std::pair<cv::Point3i, cv::Point3f> const& it : corrections) {
+    for (std::pair<cv::Scalar_<int>, cv::Point3f> const& it : corrections) {
         dx.push(it.second.x);
         dy.push(it.second.y);
         dz.push(it.second.z);
@@ -239,7 +243,188 @@ void Calib::plotResidualsByMarkerStats(
     out << plot_command.str();
 }
 
+namespace {
+/**
+ * @brief tolerantGCD
+ * @param a
+ * @param b
+ * @return
+ */
+int tolerantGCD(int a, int b) {
+    if (a<0) {
+        if (b > 0) {
+            return b;
+        }
+        return -1;
+    }
+    if (b <= 0) {
+        return a;
+    }
+    return boost::math::gcd(a, b);
+}
+}
+
+template<>
+bool Calib::isValidValue(cv::Vec2f const& val, double const threshold) {
+    return std::isfinite(val[0]) && std::isfinite(val[1]) && std::abs(val[0]) <= threshold && std::abs(val[1]) <= threshold;
+}
+
+template<class T>
+bool Calib::isValidValue(T const& val, double const threshold) {
+    return std::isfinite(val) && std::abs(val) <= threshold;
+}
+
+template<class T>
+cv::Mat_<T> Calib::fillHoles(cv::Mat_<T> const& _src, int const max_tries) {
+    cv::Mat_<T> src = _src.clone();
+    cv::Mat_<T> dst = src.clone();
+    int const rows = src.rows;
+    int const cols = src.cols;
+
+    int const window = 1;
+    bool found_invalid = true;
+    bool found_valid = false;
+    volatile int num_try = 0;
+    while (found_invalid) {
+        num_try++;
+        found_invalid = false;
+        for (int ii = 0; ii < rows; ++ii) {
+            T* src_l = src.template ptr<T>(ii);
+            T* dst_l = dst.template ptr<T>(ii);
+            for (int jj = 0; jj < cols; ++jj) {
+                if (isValidValue(src_l[jj], 1e6)) {
+                    found_valid = true;
+                    continue;
+                }
+                found_invalid = true;
+                T sum;
+                int counter = 0;
+                for (int dii = ii - window; dii <= ii + window; dii++) {
+                    for (int djj = jj - window; djj <= jj + window; djj++) {
+                        if (dii > 0 && dii < rows) {
+                            T* line = src.template ptr<T>(dii);
+                            if (djj > 0 && djj < cols) {
+                                if (isValidValue(line[djj], 1e6)) {
+                                    sum = sum + line[djj];
+                                    counter++;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (counter > 0) {
+                    dst_l[jj] = sum / double(counter);
+                }
+            }
+        }
+        if (!found_valid) {
+            return cv::Mat_<T>(rows, cols, T());
+        }
+        src = dst.clone();
+
+        if (max_tries > 0) {
+            if (num_try >= max_tries) {
+                break;
+            }
+        }
+        if (num_try > src.rows && num_try > src.cols) {
+            break;
+        }
+    }
+    return dst;
+}
+
+void Calib::plotObjectPointCorrections(std::string const& calibName, string prefix, const string suffix) {
+    fs::create_directory("plots/obj-corr/", ignore_error_code);
+    prefix = std::string("plots/obj-corr/") + prefix;
+
+    std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> const& data = getCalib(calibName).objectPointCorrections;
+
+    int min_x = std::numeric_limits<int>::max();
+    int min_y = std::numeric_limits<int>::max();
+    int max_x = 0;
+    int max_y = 0;
+
+    double min_obj_x = std::numeric_limits<double>::max();
+    double min_obj_y = std::numeric_limits<double>::max();
+    double max_obj_x = 0;
+    double max_obj_y = 0;
+    int gcd = - 1;
+    for (std::pair<const cv::Scalar_<int>, cv::Point3f> const & it : data) {
+        min_x = std::min(min_x, it.first[0]);
+        min_y = std::min(min_y, it.first[1]);
+        max_x = std::max(max_x, it.first[0]);
+        max_y = std::max(max_y, it.first[1]);
+        gcd = tolerantGCD(gcd, it.first[0]);
+        gcd = tolerantGCD(gcd, it.first[1]);
+
+        cv::Point3f obj = getInitial3DCoord({it.first[0], it.first[1], it.first[2]});
+        min_obj_x = std::min<double>(min_obj_x, obj.x);
+        min_obj_y = std::min<double>(min_obj_y, obj.y);
+        max_obj_x = std::max<double>(max_obj_x, obj.x);
+        max_obj_y = std::max<double>(max_obj_y, obj.y);
+    }
+    if (min_x >= max_x || min_y >= max_y
+            || min_obj_x >= max_obj_x || min_obj_y > max_obj_y) {
+        return;
+    }
+    cv::Scalar_<int> const offset = {min_x, min_y, 0, 0};
+    int const width = (max_x - min_x)/gcd + 1;
+    int const height = (max_y - min_y)/gcd + 1;
+
+    double const index_diag = std::sqrt(width * width + height * height);
+
+    double const obj_width = max_obj_x - min_obj_x;
+    double const obj_height = max_obj_y - min_obj_y;
+
+    // Physical diagonal of the target
+    double const obj_diagonal = std::sqrt(obj_width * obj_width + obj_height * obj_height);
+    // Normalization factor to get the object correction as percentage of the target diagonal.
+    float const obj_factor = 100.0 / obj_diagonal;
+    //float const obj_factor = 1;
+
+    // ObjectPointCorrection vector (only x- and y- component)
+    cv::Mat_<cv::Vec2f> flow(height, width, cv::Vec2f(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN()));
+
+    // Object-point-correction, z component
+    cv::Mat_<float> z(height, width, std::numeric_limits<float>::quiet_NaN());
+
+    // Highest layer number so far
+    cv::Mat_<int8_t> lowest_level(height, width, int8_t(-1));
+
+    bool has_data = false;
+    for (std::pair<const cv::Scalar_<int>, cv::Point3f> const & it : data) {
+        cv::Scalar_<int> _index = it.first - offset;
+        cv::Point2i index(_index[0]/gcd, _index[1]/gcd);
+        assert(index.x >= 0);
+        assert(index.y >= 0);
+        assert(index.x < flow.size().width);
+        assert(index.y < flow.size().width);
+        if (lowest_level(index) < it.first[3]) {
+            lowest_level(index) = it.first[3];
+            flow(index) = {obj_factor * it.second.x, obj_factor * it.second.y};
+            z(index) = obj_factor * it.second.z;
+            has_data = true;
+        }
+    }
+
+    cv::writeOpticalFlow(prefix + "-object-xy" + suffix + ".flo", flow);
+    cv::imwrite(prefix + "-object-z" + suffix + ".tif", z);
+
+    flow = fillHoles(flow);
+    z = fillHoles(z);
+
+    if (gcd > 1) {
+        cv::resize(flow, flow, cv::Size(), gcd, gcd, cv::INTER_NEAREST);
+        cv::resize(z, z, cv::Size(), gcd, gcd, cv::INTER_NEAREST);
+    }
+
+    cv::writeOpticalFlow(prefix + "-object-xy-filled" + suffix + ".flo", flow);
+    cv::imwrite(prefix + "-object-z-filled" + suffix + ".tif", z);
+}
+
 void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, const string suffix) {
+    plotObjectPointCorrections(calibName, prefix, suffix);
     MarkerMap residuals_by_marker;
     getCalib(calibName);
     fs::create_directory("plots", ignore_error_code);
@@ -249,6 +434,9 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
     std::multimap<double, std::string> error_overview;
     if ("OpenCV" == calibName || "SimpleOpenCV" == calibName) {
         prepareOpenCVCalibration();
+    }
+    else if ("OpenCVRO" == calibName || "SimpleOpenCVRO" == calibName) {
+        prepareOpenCVROCalibration();
     }
     else {
         prepareCalibration();
@@ -296,8 +484,10 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
         std::string name_y = prefix + "all-y" + suffix;
         std::string name_all = prefix + "all-xy" + suffix;
         runningstats::HistConfig conf;
+        conf.setIgnoreAmount(0.001);
         conf.setMinMaxX(-3, 3);
         conf.setMinMaxY(-3, 3);
+        conf.setMaxBins(200, 200);
         conf.setXLabel("Residual [px]")
                 .setYLabel("Estimated probability density");
         res_x.plotHist(name_x, res_x.FreedmanDiaconisBinSize(), conf.setTitle("x-residuals"));
@@ -319,6 +509,8 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
         std::string name_error_y = prefix + "-errors-all-y" + suffix;
         std::string name_error_all = prefix + "-errors-all-xy" + suffix;
         runningstats::HistConfig conf;
+        conf.setIgnoreAmount(0.001);
+        conf.setMaxBins(200, 200);
         conf.setMinMaxX(-3, 3);
         conf.setMinMaxY(-3, 3);
         conf.setXLabel("Error [px]")
@@ -340,6 +532,7 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string prefix, 
         error_lengths.plotCDF(prefix + "-error-lengths" + suffix, conf.setXLabel("error length [px]").setYLabel("Estimated CDF").setTitle("Error length"));
         //plotErrorsByMarker(residuals_by_marker);
     }
+
     clog::L("plotReprojectionErrors", 2) << "Time for global plots: " << t.print();
 }
 

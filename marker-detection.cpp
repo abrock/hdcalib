@@ -189,7 +189,9 @@ int main(int argc, char* argv[]) {
     calib.setRecursionDepth(recursion_depth);
 
     cv::setNumThreads(num_threads);
+#if defined(_OPENMP)
     omp_set_num_threads(num_threads);
+#endif
 
     for (size_t ii = 0; ii < input_files.size(); ++ii) {
         std::string const& input_file = input_files[ii];

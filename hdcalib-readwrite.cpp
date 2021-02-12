@@ -525,7 +525,7 @@ void CalibResult::scaleResult(const double ratio) {
     for (cv::Mat& m : tvecs) {
         m *= ratio;
     }
-    for (std::pair<const cv::Point3i, cv::Point3f> & it : objectPointCorrections) {
+    for (std::pair<const cv::Scalar_<int>, cv::Point3f> & it : objectPointCorrections) {
         it.second *= ratio;
     }
 }
@@ -541,13 +541,10 @@ Mat CalibResult::getTVec(const string &filename) const {
 }
 
 void CalibResult::keepMarkers(CornerStore const& keep) {
-    std::map<cv::Point3i, cv::Point3f, cmpPoint3i> new_objectPointCorrections;
-    for (std::pair<const cv::Point3i, cv::Point3f> const& it : objectPointCorrections) {
+    std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> new_objectPointCorrections;
+    for (std::pair<const cv::Scalar_<int>, cv::Point3f> const& it : objectPointCorrections) {
         hdmarker::Corner c;
-        c.id.x = it.first.x;
-        c.id.y = it.first.y;
-        c.page = it.first.z;
-        if (keep.hasID(c, c)) {
+        if (keep.hasIDLevel(it.first, c)) {
             new_objectPointCorrections[it.first] = it.second;
         }
     }
@@ -594,7 +591,7 @@ void CalibResult::read(const FileNode &node) {
         throw std::runtime_error("Error while reading cached calibration result: objectPointCorrections is not a sequence. Aborting.");
     }
     for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
-        cv::Point3i id;
+        cv::Scalar_<int> id;
         cv::Point3f val;
         (*it)["id"] >> id;
         (*it)["val"] >> val;

@@ -486,7 +486,7 @@ public:
      * which allow the optimization to account for systematic misplacements
      * by the marker detection algorithm
      */
-    std::map<cv::Point3i, cv::Point3f, cmpPoint3i> objectPointCorrections;
+    std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> objectPointCorrections;
 
     /**
      * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
@@ -624,7 +624,7 @@ class Calib {
      */
     size_t openCVMaxPoints = 1000;
 
-    void printObjectPointCorrectionsStats(std::map<cv::Point3i, cv::Point3f, cmpPoint3i> const& corrections) const;
+    void printObjectPointCorrectionsStats(const std::map<cv::Scalar_<int>, Point3f, cmpScalar> &corrections) const;
 
     /**
      * @brief imageSize Resolution of the input images.
@@ -1377,6 +1377,31 @@ public:
      * @brief prepareOpenCVROCalibration prepares calibration for calibrateCameraRO since this one requires all points to be visible in all images.
      */
     void prepareOpenCVROCalibration();
+
+    /**
+     * @brief plotObjectPointCorrections plots objectPointCorrection into optical-flow files
+     * @param calibName
+     * @param prefix
+     * @param suffix
+     */
+    void plotObjectPointCorrections(const std::string &calibName, string prefix, const string suffix);
+    template<class T>
+
+    /**
+     * @brief isValidValue Checks if a value (float, double, cv::Vec2f) is finite and within a given threshold.
+     * @param val
+     * @param threshold
+     * @return
+     */
+    bool isValidValue(const T &val, const double threshold);
+
+    template<class T>
+    /**
+     * @brief fillHoles Fills holes in an image with mean values of neighbours
+     * @param _src
+     * @return
+     */
+    cv::Mat_<T> fillHoles(const cv::Mat_<T> &_src, const int max_tries = -1);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
