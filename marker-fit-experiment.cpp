@@ -895,6 +895,118 @@ void squares(int const radius = 2, bool const noise_only = false) {
     std::cout << std::endl;
 }
 
+void exposure(size_t const radius) {
+    std::cout << "square_size_vs_noise" << std::endl;
+    double const dotsize_step = 30;
+    double const underexposure_step = 1;
+    std::string const width = std::to_string(2*radius+1);
+
+    rs::Image2D<rs::QuantileStats<float> >
+            rms(dotsize_step, underexposure_step),
+            snr(dotsize_step, underexposure_step),
+            snr_times_sigma(dotsize_step, underexposure_step);
+
+    std::map<double, std::map<double, rs::QuantileStats<double> > > error;
+
+    rs::Image2D<std::vector<rs::QuantileStats<float> > > combined_stats(dotsize_step, underexposure_step);
+
+    rs::Stats2D<double> rms_vs_error, snr_vs_error;
+    rs::QuantileStats<float> x_res, y_res;
+
+    rs::Image1D<rs::QuantileStats<float> > snr_vs_error_1d(1), rms_vs_error_1d(.05);
+    rs::Image1D<rs::QuantileStats<float> > snr_vs_error_1d_res(1), rms_vs_error_1d_res(.05);
+    rs::BinaryStats success_count;
+
+    rs::Histogram fail_by_exposure(underexposure_step);
+
+    size_t total_count = 0;
+    for (size_t kk = 0; kk < 100'000; ++kk) {
+        size_t n = 0;
+        ParallelTime runtime;
+        for (size_t jj = 0; jj < 100; ++jj) {
+            for (double dot_size = 100; dot_size <= 170; dot_size += dotsize_step) {
+                for (double underexposure = 0; underexposure <= 5; underexposure += underexposure_step) {
+                    for (bool invert : {true, false}) {
+                        FitExperiment f;
+                        f.verbose = false;
+                        cv::Mat_<float> img = renderSquare(radius, dot_size, invert);
+                        img *= 4095.0 * std::pow(2.0, -1.0/2.0) * std::pow(2.0, -underexposure);
+                        addNoise(img);
+                        img *= 255.0 / 4095.0;
+                        f.runFitImg(img);
+                        success_count.push(f.success);
+                        if (f.success) {
+                            total_count++;
+                            error[dot_size][underexposure].push_unsafe(f.error_length);
+                            /*
+                            rms[dot_size][underexposure].push_unsafe(f.rms);
+                            snr[dot_size][underexposure].push_unsafe(f.snr);
+                            snr_times_sigma[dot_size][underexposure].push_unsafe(f.snr * std::sqrt(f.getFitSigma()));
+                            combined_stats.push_unsafe(dot_size,underexposure,
+                                                       {
+                                                           f.rms, // 3
+                                                           f.snr, // 4
+                                                           f.error_length, // 5
+                                                           f.getFitSigma(), // 6
+                                                           f.getFitScale() // 7
+                                                       });
+
+                            rms_vs_error.push_unsafe(f.rms, f.error_length);
+                            snr_vs_error.push_unsafe(f.snr, f.error_length);
+                            x_res.push_unsafe(f.diff_x);
+                            y_res.push_unsafe(f.diff_y);
+                            snr_vs_error_1d[f.snr].push_unsafe(f.error_length);
+                            rms_vs_error_1d[f.rms].push_unsafe(f.error_length);
+
+                            snr_vs_error_1d_res[f.snr].push_unsafe(f.diff_x);
+                            snr_vs_error_1d_res[f.snr].push_unsafe(f.diff_y);
+                            rms_vs_error_1d_res[f.rms].push_unsafe(f.diff_x);
+                            rms_vs_error_1d_res[f.rms].push_unsafe(f.diff_y);
+                            */
+                        }
+                        else {
+                            fail_by_exposure.push_unsafe(underexposure);
+                        }
+                        n = error[dot_size][underexposure].getCount();
+                    }
+                }
+            }
+        }
+        runtime.stop();
+        ParallelTime plottime;
+        std::cout << "Plotting " << width << "..." << std::endl;
+
+        for (auto& it1 : error) {
+            double const dotsize = it1.first;
+            std::cout << "Dot size: " << dotsize << std::endl;
+            for (auto& it2 : it1.second) {
+                double const under_exp = it2.first;
+                std::cout << under_exp << ": " << it2.second.getMedian();
+                auto const next_exp = it1.second.find(under_exp + underexposure_step);
+                if (next_exp == it1.second.end()) {
+                    std::cout << ", ...";
+                }
+                else {
+                    std::cout << ", " << (1.0-it2.second.getMedian()/next_exp->second.getMedian())*100;
+                }
+                auto const prev_size = error.find(dotsize - dotsize_step);
+                if (prev_size != error.end()) {
+                    std::cout << ", " << (1.0 - it2.second.getMedian()/prev_size->second[under_exp].getMedian())*100;
+                }
+                std::cout << std::endl;
+            }
+        }
+
+        std::cout << "Success stats: " << success_count.print() << std::endl;
+        std::cout << "Total count: " << total_count << std::endl;
+        std::cout << "Per-pixel count: " << n << std::endl;
+        std::cout << "Runtime: " << runtime.print() << std::endl
+                  << "Plot time: " << plottime.print() << std::endl;
+        std::cout << std::endl << std::endl;
+    }
+    std::cout << std::endl;
+}
+
 int main(int argc, char ** argv) {
 
 
@@ -951,5 +1063,8 @@ int main(int argc, char ** argv) {
                 single_square(radius, scale);
             }
         }
+    }
+    if ("exposure" == action) {
+        exposure(std::round(scale));
     }
 }
