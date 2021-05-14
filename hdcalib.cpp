@@ -168,6 +168,10 @@ void Calib::setUseRaw(const bool val) {
     use_raw = val;
 }
 
+void Calib::setMaxIter(const size_t val) {
+    max_iter = val;
+}
+
 std::vector<string> Calib::getImageNames() const {
     std::vector<std::string> result;
     for (const auto& it : data) {
@@ -703,6 +707,7 @@ void Calib::prepareOpenCVCalibration() {
         return;
     }
     preparedOpenCVCalib = true;
+    preparedOpenCVROCalib = false;
     preparedCalib = false;
 
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
@@ -719,10 +724,11 @@ void Calib::prepareOpenCVCalibration() {
 }
 
 void Calib::prepareOpenCVROCalibration() {
-    if (preparedOpenCVCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size()) {
+    if (preparedOpenCVROCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size()) {
         return;
     }
-    preparedOpenCVCalib = true;
+    preparedOpenCVROCalib = true;
+    preparedOpenCVCalib = false;
     preparedCalib = false;
 
     CornerStore intersection = data.begin()->second;
@@ -768,6 +774,19 @@ void Calib::prepareOpenCVROCalibration() {
             third_fixed_point_index = ii;
         }
     }
+    assert(third_fixed_point_index > 0);
+    assert(third_fixed_point_index+1 < objectPoints[0].size());
+
+    clog::L(__FUNCTION__, 2)
+            << "Fixed points: " << objectPoints[0].front() << ", " << objectPoints[0][third_fixed_point_index] << ", " << objectPoints[0].back();
+
+    clog::L(__FUNCTION__, 2)
+            << "Distances between fixed points: "
+            << "0-1: " << cv::norm(objectPoints[0].front() - objectPoints[0][third_fixed_point_index])
+            << ", 1-2: " << cv::norm(objectPoints[0].back() - objectPoints[0][third_fixed_point_index])
+            << ", 0-2: " << cv::norm(objectPoints[0].back() - objectPoints[0].front());
+
+    clog::L(__FUNCTION__, 2) << "Number of markers used: " << objectPoints[0].size();
 }
 
 
@@ -839,6 +858,10 @@ Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
     res.y *= float(markerSize / cornerIdFactor);
 
     return res;
+}
+
+Point3f Calib::getInitial3DCoord(const cv::Scalar &c, const double z) const {
+    return getInitial3DCoord(cv::Point3f{float(c[0]), float(c[1]), float(c[2])}, z);
 }
 
 void Calib::setMarkerSize(double const size) {
@@ -998,6 +1021,34 @@ vector<Corner> Calib::filterSNR(vector<Corner> const& in, double const threshold
     return out;
 }
 
+namespace {
+void save_corners(std::string const &input_file, const vector<Corner> &corners_sub, std::vector<cv::Point3f> &tpoints) {
+    std::string const output_file = input_file + ".points.yaml";
+    if (fs::is_regular_file(output_file)) {
+        return;
+    }
+    FileStorage store(output_file, FileStorage::WRITE);
+
+    //    std::vector<cv::Point3f> tpoints;
+    std::vector<cv::Point3f> ipoints;
+
+    for(size_t i=0; i<corners_sub.size(); i++) {
+        cv::Point3f ip = cv::Point3f(corners_sub[i].p.x, corners_sub[i].p.y, corners_sub[i].layer);
+        ipoints.push_back(ip);
+    }
+
+    store << "target_points" << tpoints;
+    store << "image_points" << ipoints;
+}
+}
+
+void Calib::checkHDMPointcache(std::string const& input_file, std::vector<Corner> const& corners) {
+    std::vector<cv::Point3f> tpoints;
+    for(auto &c : corners)
+        tpoints.push_back(cv::Point3f(c.id.x, c.id.y, c.page));
+    save_corners(input_file, corners, tpoints);
+}
+
 vector<Corner> Calib::getSubMarkers(const std::string input_file,
                                     const float effort,
                                     const bool demosaic,
@@ -1015,7 +1066,9 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
         if (nullptr != is_clean) {
             *is_clean = true;
         }
-        return filterSNR(result, min_snr);
+        result = filterSNR(result, min_snr);
+        checkHDMPointcache(input_file, result);
+        return result;
     }
     if (nullptr != is_clean) {
         *is_clean = false;
@@ -1024,7 +1077,9 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
     std::string const hdm_gz_cache_file = input_file + "-submarkers.hdmarker.gz";
     if (fs::is_regular_file(hdm_gz_cache_file)) {
         Corner::readFile(hdm_gz_cache_file, result);
-        return filterSNR(result, min_snr);
+        result = filterSNR(result, min_snr);
+        checkHDMPointcache(input_file, result);
+        return result;
     }
 
     std::string const cv_gz_cache_file = input_file + "-submarkers.yaml.gz";
@@ -1038,7 +1093,9 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
             resolutionKnown = true;
         }
         Corner::writeGzipFile(hdm_gz_cache_file, result);
-        return filterSNR(result, min_snr);
+        result = filterSNR(result, min_snr);
+        checkHDMPointcache(input_file, result);
+        return result;
     }
 
     std::vector<Corner> main_markers = getMainMarkers(input_file, effort, demosaic, raw);
@@ -1069,7 +1126,9 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
 
     Corner::writeGzipFile(hdm_gz_cache_file, result);
 
-    return filterSNR(result, min_snr);
+    result = filterSNR(result, min_snr);
+    checkHDMPointcache(input_file, result);
+    return result;
 }
 
 cv::Mat Calib::scaleImage(cv::Mat const& img) {
@@ -1412,6 +1471,7 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
             }
             new_object_points.push_back(pt);
         }
+        clog::L(__FUNCTION__, 2) << "Third fixed point index: " << third_fixed_point_index;
         result_err = cv::calibrateCameraRO (
                     objectPoints,
                     imagePoints,
@@ -1540,7 +1600,22 @@ double Calib::runCalib(const string name, const double outlier_threshold) {
     if ("Flexible" == name) {
         return CeresCalibFlexibleTarget(outlier_threshold);
     }
+    if ("SemiFlexible" == name) {
+        return CeresCalibSemiFlexibleTarget(outlier_threshold);
+    }
     throw std::runtime_error(std::string("Calib type ") + name + " unknown");
+}
+
+std::string Calib::printVec(std::vector<double> const& vec) {
+    std::stringstream result;
+    if (vec.empty()) {
+        return "";
+    }
+    result << vec[0];
+    for (size_t ii = 1; ii < vec.size(); ++ii) {
+        result << ", " << vec[ii];
+    }
+    return result.str();
 }
 
 void Calib::setPlotMarkers(bool plot) {

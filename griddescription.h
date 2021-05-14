@@ -38,6 +38,7 @@ void read(const cv::FileNode &node, GridPointDesc &x, const GridPointDesc &defau
 struct GridDescription {
     std::string name;
     std::vector<GridPointDesc> points;
+    double fixed_scale = 0;
 
     GridPointDesc getDesc(std::string const& suffix) const;
 

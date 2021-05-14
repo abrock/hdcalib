@@ -465,6 +465,88 @@ public:
             T* residuals) const;
 };
 
+class SingleProjectionFunctor {
+    cv::Point2f const marker;
+    cv::Point3f const point;
+public:
+    double weight = 1;
+    SingleProjectionFunctor(cv::Point2f const& _marker,
+                            cv::Point3f const& _point);
+    /*
+    1, // focal length x
+    1, // focal length y
+    1, // principal point x
+    1, // principal point y
+    3, // rotation vector for the target
+    3, // translation vector for the target
+    3, // correction vector for the 3d marker position
+    14 // distortion coefficients
+    */
+    template<class T>
+    bool operator()(
+            T const* const f_x,
+            T const* const f_y,
+            T const* const c_x,
+            T const* const c_y,
+            T const* const rvec,
+            T const* const tvec,
+            T const* const dist,
+            T* residuals) const;
+};
+
+struct DistortedTargetCorrectionFunctor {
+    cv::Point3f const src;
+    cv::Point2f const center;
+
+    DistortedTargetCorrectionFunctor(cv::Point3f const& _src, cv::Point2f const& _center);
+    /*
+    3, // correction vector for the 3d marker position
+    14 // distortion coefficients
+    */
+    template<class T, class U>
+    bool operator()(
+            T const* const correction,
+            U const* const inverse_dist,
+            T* residuals) const;
+};
+
+class SemiFlexibleTargetProjectionFunctor {
+    cv::Point2f const marker;
+    cv::Point3f const point;
+    cv::Point2f const center;
+public:
+    double weight = 1;
+    SemiFlexibleTargetProjectionFunctor(cv::Point2f const& _marker,
+                                        cv::Point3f const& _point,
+                                        cv::Point2f const& _center);
+    /*
+    1, // focal length x
+    1, // focal length y
+    1, // principal point x
+    1, // principal point y
+    3, // rotation vector for the target
+    3, // translation vector for the target
+    3, // correction vector for the 3d marker position
+    14 // distortion coefficients
+    */
+    template<class T>
+    bool operator()(
+            T const* const f_x,
+            T const* const f_y,
+            T const* const c_x,
+            T const* const c_y,
+            T const* const rvec,
+            T const* const tvec,
+            T const* const correction,
+            T const* const dist,
+            T const* const inverse_dist,
+            T* residuals) const;
+
+    template<class T, class U>
+    static void applyInverseDist(const T src[], T dst[], const T center[], const U dist[]);
+};
+
+
 template<class C>
 struct cmpSimpleIndex3 {
     bool operator()(const C& a, const C& b) const;
@@ -488,6 +570,8 @@ public:
      */
     std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> objectPointCorrections;
 
+    std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> raw_objectPointCorrections;
+
     /**
      * @brief cameraMatrix intrinsic parameters of the camera (3x3 homography)
      */
@@ -500,6 +584,14 @@ public:
      * From the OpenCV documentation: Order of deviations values: \((f_x, f_y, c_x, c_y, k_1, k_2, p_1, p_2, k_3, k_4, k_5, k_6 , s_1, s_2, s_3, s_4, \tau_x, \tau_y)\) If one of parameters is not estimated, it's deviation is equals to zero.
      */
     cv::Mat_<double> distCoeffs;
+
+
+    /**
+     * @brief distCoeffs distortion coefficients of the estimated distortion of the target. This prevents the calibration
+     * from trading real distortion for non-sense distortion of the target.
+     * From the OpenCV documentation: Order of deviations values: \((f_x, f_y, c_x, c_y, k_1, k_2, p_1, p_2, k_3, k_4, k_5, k_6 , s_1, s_2, s_3, s_4, \tau_x, \tau_y)\) If one of parameters is not estimated, it's deviation is equals to zero.
+     */
+    std::vector<double> inverseDistCoeffs;
 
     /**
      * @brief stdDevIntrinsics standard deviations of the intrinsic parameters.
@@ -624,7 +716,13 @@ class Calib {
      */
     size_t openCVMaxPoints = 1000;
 
-    void printObjectPointCorrectionsStats(const std::map<cv::Scalar_<int>, Point3f, cmpScalar> &corrections) const;
+    /**
+     * @brief max_iter Maximum number of iterations used in the calibrations via Ceres.
+     */
+    size_t max_iter = 1000;
+
+    static void printObjectPointCorrectionsStats(std::string const& name,
+                                          const std::map<cv::Scalar_<int>, Point3f, cmpScalar> &corrections);
 
     /**
      * @brief imageSize Resolution of the input images.
@@ -727,6 +825,7 @@ class Calib {
     std::vector<int> validPages = {6,7};
 
     bool preparedOpenCVCalib = false;
+    bool preparedOpenCVROCalib = false;
     bool preparedCalib = false;
 
     std::vector<cv::Scalar> const color_circle = {
@@ -778,6 +877,8 @@ public:
     void setMinSNR(double const val);
 
     void setUseRaw(bool const val);
+
+    void setMaxIter(size_t const val);
 
     /**
      * @brief getImageNames returns a (sorted) list of all filenames stored in the data map.
@@ -868,7 +969,7 @@ public:
 
     void setRecursionDepth(const int _recursionDepth);
 
-    typedef std::map<cv::Point3i, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpPoint3i> MarkerMap;
+    typedef std::map<cv::Scalar_<int>, std::vector<std::pair<cv::Point2f, cv::Point2f> >, cmpScalar> MarkerMap;
 
     static void scaleCornerIds(std::vector<hdmarker::Corner>& corners, int factor);
 
@@ -933,7 +1034,7 @@ public:
      * @param prefix prefix for all files
      * @param suffix suffix for all files (before filename extension)
      */
-    void plotReprojectionErrors(const string &calibName, string prefix = "",
+    void plotReprojectionErrors(const string &calibName, const string prefix = "",
                                 const std::string suffix ="");
 
     /**
@@ -1384,16 +1485,24 @@ public:
      * @param prefix
      * @param suffix
      */
-    void plotObjectPointCorrections(const std::string &calibName, string prefix, const string suffix);
-    template<class T>
+    void plotObjectPointCorrections(const std::map<cv::Scalar_<int>, Point3f, cmpScalar> &data, const std::string &calibName, string prefix, const string suffix);
 
+    /**
+     * @brief plotObjectPointCorrections plots objectPointCorrection into optical-flow files
+     * @param calibName
+     * @param prefix
+     * @param suffix
+     */
+    void plotObjectPointCorrections(const std::string &calibName, string prefix, const string suffix);
+
+    template<class T>
     /**
      * @brief isValidValue Checks if a value (float, double, cv::Vec2f) is finite and within a given threshold.
      * @param val
      * @param threshold
      * @return
      */
-    bool isValidValue(const T &val, const double threshold);
+    static bool isValidValue(const T &val, const double threshold);
 
     template<class T>
     /**
@@ -1402,6 +1511,14 @@ public:
      * @return
      */
     cv::Mat_<T> fillHoles(const cv::Mat_<T> &_src, const int max_tries = -1);
+    double CeresCalibSemiFlexibleTarget(const double outlier_threshold);
+    void minMaxPoint3f(const cv::Point3f &x, cv::Point3f &min, cv::Point3f &max);
+    Point3f getInitial3DCoord(const cv::Scalar &c, const double z = 0) const;
+    static std::string printVec(const std::vector<double> &vec);
+    double CeresCalibKnownCorrections(const double outlier_threshold, CalibResult &calib);
+    void checkHDMPointcache(const std::string &input_file, const std::vector<Corner> &corners);
+    void plotMeanResiduals(const MarkerMap &data, string prefix, const string suffix, const double pre_filter = -1);
+    static int tolerantGCD(int a, int b);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1434,6 +1551,8 @@ public:
     double t_y = 0;
     double angle = 0;
     double scale = 1;
+
+    double fixed_scale = -1;
 
     /**
      * @brief outlier_threshold Maximum initial distance between source and destination point.
@@ -1508,15 +1627,22 @@ public:
 };
 
 struct FitGrid {
+    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_x;
+    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_y;
+    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_z;
+    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_length;
+
     double scale = 1;
 
     double ceres_tolerance = 1e-16;
 
     void findGrids(std::map<std::string, std::map<std::string, std::vector<cv::Point3f> > > &detected_grids,
                    const GridDescription &desc, Calib &calib, CalibResult & calib_result, std::vector<Point3f> initial_points);
-
+    void findGridsSchilling(std::map<std::string, std::map<std::string, std::pair<std::vector<cv::Scalar_<int> >, std::vector<cv::Point3f> > > > &detected_grids, const GridDescription &desc);
 public:
-    void runFit(Calib &calib, CalibResult &calib_result, const std::vector<GridDescription> &desc);
+    string runFit(Calib &calib, CalibResult &calib_result, const std::vector<GridDescription> &desc);
+    void runSchilling(const std::vector<GridDescription> &desc);
+    void plotOffsetCorrectionSchilling(const std::vector<cv::Scalar_<int> > &_ids, const std::vector<cv::Point3f> &pts);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

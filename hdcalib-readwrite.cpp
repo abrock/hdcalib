@@ -554,7 +554,8 @@ void CalibResult::keepMarkers(CornerStore const& keep) {
 void CalibResult::write(FileStorage &fs) const {
     fs << "{"
        << "cameraMatrix" << cameraMatrix
-       << "distCoeffs" << distCoeffs;
+       << "distCoeffs" << distCoeffs
+       << "inverseDistCoeffs" << inverseDistCoeffs;
     fs << "outlier_percentages" << outlier_percentages;
     fs << "rectification" << rectification;
 
@@ -577,6 +578,17 @@ void CalibResult::write(FileStorage &fs) const {
                << "}";
         }
     }
+    fs << "]"
+       << "raw_objectPointCorrections" << "[";
+    for (const auto& it : raw_objectPointCorrections) {
+        double const sq_norm = it.second.dot(it.second);
+        if (sq_norm > 1e-100) {
+            fs << "{"
+               << "id" << it.first
+               << "val" << it.second
+               << "}";
+        }
+    }
     fs << "]";
     fs << "}";
 }
@@ -586,6 +598,7 @@ void CalibResult::read(const FileNode &node) {
     node["distCoeffs"] >> distCoeffs;
     node["rectification"] >> rectification;
     node["outlier_percentages"] >> outlier_percentages;
+    node["inverseDistCoeffs"] >> inverseDistCoeffs;
     FileNode n = node["objectPointCorrections"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
         throw std::runtime_error("Error while reading cached calibration result: objectPointCorrections is not a sequence. Aborting.");
@@ -596,6 +609,16 @@ void CalibResult::read(const FileNode &node) {
         (*it)["id"] >> id;
         (*it)["val"] >> val;
         objectPointCorrections[id] = val;
+    }
+    n = node["raw_objectPointCorrections"]; // Read string sequence - Get node
+    if (n.type() == FileNode::SEQ) {
+        for (FileNodeIterator it = n.begin(); it != n.end(); ++it) {
+            cv::Scalar_<int> id;
+            cv::Point3f val;
+            (*it)["id"] >> id;
+            (*it)["val"] >> val;
+            raw_objectPointCorrections[id] = val;
+        }
     }
     n = node["images"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {

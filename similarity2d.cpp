@@ -48,6 +48,12 @@ void Similarity2D::runFit() {
                                  );
     }
 
+    if (fixed_scale > 0) {
+        scale = fixed_scale;
+        problem.SetParameterBlockConstant(&scale);
+    }
+
+
     ceres::Solver::Options options;
     options.num_threads = int(8);
     options.linear_solver_type = ceres::SPARSE_SCHUR;

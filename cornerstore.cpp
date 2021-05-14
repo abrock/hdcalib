@@ -403,7 +403,13 @@ bool CornerStore::purgeOutOfBounds(const int min_x, const int min_y, const int m
 string Calib::printAllCameraMatrices() {
     std::stringstream result;
     for (auto & it : calibrations) {
-        result << it.first << std::endl << it.second.cameraMatrix << std::endl << std::endl;
+        double const fx = it.second.cameraMatrix(0,0);
+        double const fy = it.second.cameraMatrix(1,1);
+        result << std::endl << it.first << std::endl
+               << it.second.cameraMatrix << std::endl
+               << "fx/fy: " << fx / fy << std::endl
+               << "2|f_x-f_y|/(f_x+f_y): " << (2*std::abs(fx-fy)/(fx+fy)) << std::endl
+               << std::endl;
     }
     return result.str();
 }

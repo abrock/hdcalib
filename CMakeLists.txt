@@ -26,6 +26,9 @@ add_library(hdcalib-analyze-grid hdcalib-analyze-grid.cpp)
 add_library(hdcalib-rectify hdcalib-rectify.cpp)
 add_library(hdcalib-lensfun hdcalib-lensfun.cpp)
 add_library(hdcalib hdcalib.cpp)
+target_link_libraries(hdcalib
+    calib-stats
+    )
 add_library(hdcalib-cornercolor cornercolor.cpp)
 include_directories("/usr/local/include/hdmarker")
 
@@ -60,6 +63,10 @@ add_library(hdcalib-fit-grid fitgrid-lib.cpp)
 add_library(similarity2d similarity2d.cpp)
 target_link_libraries(similarity2d
     ${CATLOGGER_LIBRARIES}
+    )
+
+target_link_libraries(hdcalib-fit-grid
+    calib-stats
     )
 
 target_link_libraries(hdcalib
@@ -218,4 +225,40 @@ add_executable(hdcalib-image-series-noise image-series-noise.cpp)
 target_link_libraries(hdcalib-image-series-noise
     ${OpenCV_LIBS}
     ${RUNNINGSTATS_LIBRARIES}
+    )
+
+add_library(plotoptflow libplotoptflow.cpp)
+target_link_libraries(plotoptflow PUBLIC
+    ${OpenCV_LIBS}
+    ${CERES_LIBRARIES}
+    )
+
+add_executable(hdcalib-plot-flow plot-flow.cpp)
+target_link_libraries(hdcalib-plot-flow PUBLIC
+    plotoptflow
+    ${RUNNINGSTATS_LIBRARIES}
+    )
+
+add_executable(hdcalib-add-noise add-noise.cpp)
+target_link_libraries(hdcalib-add-noise PUBLIC
+    ${OpenCV_LIBS}
+    )
+
+add_executable(hdcalib-fill-black hdcalib-fill-black.cpp)
+target_link_libraries(hdcalib-fill-black PUBLIC
+    ${OpenCV_LIBS}
+    hdcalib
+    calib-stats
+    #${Boost_FILESYSTEM_LIBRARY}
+    #${Boost_SYSTEM_LIBRARY}
+    #${Boost_IOSTREAMS_LIBRARY}
+
+    )
+
+add_executable(radial-models radial-models.cpp)
+target_link_libraries(radial-models
+    ${CERES_LIBRARIES}
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_IOSTREAMS_LIBRARY}
     )

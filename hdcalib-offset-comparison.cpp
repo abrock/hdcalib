@@ -307,8 +307,6 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
         fit.runFit();
         fit.outlier_threshold = 1;
         fit.runFit();
-        fit.outlier_threshold = .1;
-        fit.runFit();
         std::cout << "+" << std::flush;
     }
 
@@ -714,6 +712,60 @@ public:
         return 1;
     }
 
+    void plotFlow(std::string const & name,
+                  std::vector<std::string> const& files,
+                  std::string const& prefix) {
+        ParallelTime t;
+#pragma omp parallel for
+        for (size_t ii = 0; ii < files.size(); ++ii) {
+            CornerCache::getInstance()[files[ii]];
+        }
+        std::cout << "Reading " << files.size() << " files: " << t.print() << std::endl;
+        t.start();
+        std::vector<hdm::Corner> const reference = CornerCache::getInstance()[files[0]];
+        std::map<cv::Scalar_<int>, hdm::Corner, cmpScalar> ref_map;
+        for(const hdm::Corner& c : reference) {
+            ref_map[hdcalib::Calib::getSimpleIdLayer(c)] = c;
+        }
+        Calib calib;
+        std::cout << "Reference count: " << reference.size() << std::endl;
+        for (size_t ii = 1; ii < files.size(); ++ii) {
+            std::cout << "Comparison count: " << reference.size() << std::endl;
+            std::vector<hdm::Corner> const compare = CornerCache::getInstance()[files[ii]];
+            hdcalib::Calib::MarkerMap map;
+
+            hdcalib::Similarity2D fit;
+            fit.fixed_scale = 1;
+            for (hdm::Corner const& c : compare) {
+                auto const it = ref_map.find(hdcalib::Calib::getSimpleIdLayer(c));
+                if (it == ref_map.end()) {
+                    continue;
+                }
+                fit.src.push_back(it->second.p);
+                fit.dst.push_back(c.p);
+            }
+            fit.cauchy_param = 0.1;
+            fit.outlier_threshold = 10;
+            fit.runFit();
+            fit.outlier_threshold = 1;
+            fit.runFit();
+            for (hdm::Corner const& c : compare) {
+                auto const it = ref_map.find(hdcalib::Calib::getSimpleIdLayer(c));
+                if (it == ref_map.end()) {
+                    continue;
+                }
+                map[it->first].push_back({fit.transform(it->second.p), c.p});
+            }
+            fit.print(std::cout);
+
+            std::cout << "Match count: " << map.size() << std::endl;
+            calib.plotMeanResiduals(map, std::to_string(ii), "", -1);
+        }
+
+        std::cout << "Plotting " << files.size() << " files: " << t.print() << std::endl;
+        t.start();
+    }
+
     void addList(std::string const & name, std::vector<std::string> const& files) {
         ParallelTime t;
 #pragma omp parallel for
@@ -788,6 +840,7 @@ int main(int argc, char ** argv) {
     int recursion = 0;
 
     bool rms_eval = false;
+    bool flow_eval = false;
 
     cv::Mat_<uint8_t> mask;
 
@@ -811,14 +864,18 @@ int main(int argc, char ** argv) {
                                               false, "", "int");
         cmd.add(mask_arg);
 
-        TCLAP::SwitchArg rms_eval_arg("", "rms", "Only plot RMS / SNR evaluation");
+        TCLAP::SwitchArg rms_eval_arg("", "rms", "Plot RMS / SNR evaluation");
         cmd.add(rms_eval_arg);
+
+        TCLAP::SwitchArg flow_eval_arg("", "flow", "Plot optical flow");
+        cmd.add(flow_eval_arg);
 
 
         cmd.parse(argc, argv);
 
         recursion = recursive_depth_arg.getValue();
         rms_eval = rms_eval_arg.getValue();
+        flow_eval = flow_eval_arg.getValue();
 
         if (mask_arg.isSet()) {
             mask = cv::imread(mask_arg.getValue(), cv::IMREAD_GRAYSCALE);
@@ -866,6 +923,23 @@ int main(int argc, char ** argv) {
             fs::create_directories(plots_name, ignore_error_code);
             eval.addList(it.first, it.second);
             eval.plot(plots_name + "/");
+            std::cout << "Time: " << local_t.print() << std::endl;
+        }
+        std::cout << "Total RMS eval time: " << t.print() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    if (flow_eval) {
+        CornerCache::setSNRSigmaMin(5);
+        t.start();
+        for (auto const& it : files) {
+            ParallelTime local_t;
+            std::cout << "Reading files " << it.first << std::endl;
+            RMS_Eval eval;
+            eval.valid_mask = mask;
+            std::string plots_name = "flowplots-" + it.first;
+            fs::create_directories(plots_name, ignore_error_code);
+            eval.plotFlow(it.first, it.second, plots_name + "/");
             std::cout << "Time: " << local_t.print() << std::endl;
         }
         std::cout << "Total RMS eval time: " << t.print() << std::endl;

@@ -31,6 +31,45 @@ void trim(std::string &s) {
     std::cout << time_log.str() << "Total time: " << total_time.print() << std::endl << std::endl;\
     }
 
+template<class T>
+std::vector<T> commaSeparate(std::vector<std::string> const& args) {
+    std::vector<T> result;
+    for (std::string const& s : args) {
+        std::string current;
+        for (char c : s) {
+            if (c == ',' || c == ';') {
+                trim(current);
+                if (!current.empty()) {
+                    std::stringstream stream(current);
+                    T val;
+                    stream >> val;
+                    result.push_back(val);
+                    current = "";
+                }
+            }
+            else {
+                current += c;
+            }
+        }
+        trim(current);
+        if (!current.empty()) {
+            std::stringstream stream(current);
+            T val;
+            stream >> val;
+            result.push_back(val);
+        }
+    }
+    return result;
+}
+
+double round2(double x) {
+    return std::round(x*100)/100;
+}
+
+double round1(double x) {
+    return std::round(x*100)/100;
+}
+
 int main(int argc, char* argv[]) {
     std::ofstream logfile("hdcalib.log", std::ofstream::out);
 
@@ -40,12 +79,13 @@ int main(int argc, char* argv[]) {
     ParallelTime t, total_time;
     std::stringstream time_log;
 
-    bool calib_updated = false;
+    bool schilling = false;
 
     hdcalib::Calib calib;
     std::vector<std::string> calibration_types;
     std::string cache_file;
     std::string grids_file;
+
     std::vector<hdcalib::GridDescription> descriptions;
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
@@ -60,6 +100,9 @@ int main(int argc, char* argv[]) {
                                                false, "", "Grid descriptions file.");
         cmd.add(grids_arg);
 
+        TCLAP::SwitchArg schilling_arg("", "schilling", "Use 3D points provided by Schilling");
+        cmd.add(schilling_arg);
+
         TCLAP::MultiArg<std::string> type_arg("t", "type",
                                               "Type of the calibration(s) to run. "
                                               "Possibilities in increasing order of computational complexity:"
@@ -69,9 +112,10 @@ int main(int argc, char* argv[]) {
 
         cmd.parse(argc, argv);
 
+        schilling = schilling_arg.getValue();
 
-        cache_file = cache_arg.getValue();
-        calibration_types = type_arg.getValue();
+        cache_file = cache_arg.getValue() + ".yaml.gz";
+        calibration_types = commaSeparate<std::string>(type_arg.getValue());
         grids_file = grids_arg.getValue();
         if (!grids_arg.isSet() || grids_file.empty()) {
             grids_file = "grids-example.yaml";
@@ -104,6 +148,29 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    if (schilling) {
+        hdcalib::FitGrid fit;
+        fit.runSchilling(descriptions);
+
+        runningstats::QuantileStats<float> merged;
+        for (size_t ii = 0; ii < descriptions.size(); ++ii) {
+            std::cout << "Grid:" << descriptions[ii].name << std::endl;
+            std::cout << std::setw(12) << std::left << "Schilling" << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMean()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getStddev()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << "\\\\"
+                       << std::endl;
+            merged.push_unsafe(fit.per_grid_type_stats_length[ii].getData());
+        }
+        std::cout << "All grids " << std::endl;
+        std::cout << std::setw(12) << std::left << "Schilling" << " & "
+                  << std::setw(10) << std::left << round1(1000.0 * merged.getMean()) << " & "
+                  << std::setw(10) << std::left << round1(1000.0 * merged.getStddev()) << " & "
+                  << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << "\\\\"
+                  << std::endl;
+        return EXIT_SUCCESS;
+    }
+
     std::map<std::string, std::vector<hdmarker::Corner> > detected_markers;
 
     TIMELOG("Argument parsing");
@@ -123,14 +190,62 @@ int main(int argc, char* argv[]) {
     calib.purgeUnlikelyByDetectedRectangles();
     TIMELOG("purgeUnlikelyByDetectedRectangles");
 
+    std::stringstream msg;
+    std::stringstream mean_table;
+
+    mean_table << "Grid: all" << std::endl
+               << std::setw(12) << std::left << "type" << " & "
+               << std::setw(10) << std::left << "mean" << " & "
+               << std::setw(10) << std::left << "stddev" << " & "
+               << std::setw(10) << std::left << "max\\\\" << std::endl;
+
+    std::vector<std::stringstream> tables(descriptions.size());
+    for (size_t ii = 0; ii < descriptions.size(); ++ii) {
+        tables[ii] << "Grid:" << descriptions[ii].name << std::endl
+                   << std::setw(12) << std::left << "type" << " & "
+                   << std::setw(10) << std::left << "mean" << " & "
+                   << std::setw(10) << std::left << "stddev" << " & "
+                   << std::setw(10) << std::left << "max\\\\" << std::endl;
+    }
+
     for (std::string const& calibration_type : calibration_types) {
         clog::L(__func__, 2) << "Running fitGrid on calib " << calibration_type << std::endl;
 
         hdcalib::FitGrid fit;
-        fit.runFit(calib, calib.getCalib(calibration_type), descriptions);
+        hdcalib::CalibResult & res = calib.getCalib(calibration_type);
+        res.name = calibration_type;
+        msg << "Calib " << calibration_type << std::endl
+            << fit.runFit(calib, res, descriptions) << std::endl;
+
+        runningstats::QuantileStats<float> merged;
+        for (size_t ii = 0; ii < descriptions.size(); ++ii) {
+            tables[ii] << std::setw(12) << std::left << calibration_type << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMean()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getStddev()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << "\\\\"
+                       << std::endl;
+            merged.push_unsafe(fit.per_grid_type_stats_length[ii].getData());
+        }
+
+        mean_table << std::setw(12) << std::left << calibration_type << " & "
+                   << std::setw(10) << std::left << round1(1000.0 * merged.getMean()) << " & "
+                   << std::setw(10) << std::left << round1(1000.0 * merged.getStddev()) << " & "
+                   << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << "\\\\"
+                   << std::endl;
 
         TIMELOG(std::string("Calib ") + calibration_type);
     }
+
+    std::cout << "################################################################" << std::endl
+              << msg.str();
+
+    std::cout << "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" << std::endl;
+
+    for (size_t ii = 0; ii < tables.size(); ++ii) {
+        std::cout << tables[ii].str() << std::endl;
+    }
+
+    std::cout << mean_table.str() << std::endl;
 
     return EXIT_SUCCESS;
 }

@@ -145,6 +145,11 @@ int main(int argc, char* argv[]) {
                                                false, 5, "Minimum SNR value.");
         cmd.add(min_snr_arg);
 
+        TCLAP::ValueArg<double> max_iter_arg("", "max-iter",
+                                               "Maximum number of iterations used in the calibrations using ceres.",
+                                               false, 1000, "Max #iterations.");
+        cmd.add(max_iter_arg);
+
         TCLAP::ValueArg<std::string> delete_arg("", "delete",
                                                 "Specify a calibration result to delete from the cached calibration. ",
                                                 false, "", "Calibration type.");
@@ -169,7 +174,7 @@ int main(int argc, char* argv[]) {
                                                   "The option specifies a suffix for the full path of the shot. "
                                                   "Specify at least twice in order to name two path suffixes which are expected to show identical target positions. "
                                                   "This is meant to be used for checking if the target accidentally moved while a motion stage was moving the camera, "
-                                                  "or to test the repeatability of the translation stage.",
+                                                  "or to test the repeatability of the motion stage.",
                                                   false, "Same position suffix.");
         cmd.add(same_pos_arg);
 
@@ -210,9 +215,9 @@ int main(int argc, char* argv[]) {
 
         TCLAP::MultiArg<std::string> valid_pages_arg("",
                                              "valid",
-                                             "Page number of a valid corner.",
+                                             "Page number(s) of valid corners.",
                                              false,
-                                             "Page number of a valid corner.");
+                                             "Page number(s) of valid corners.");
         cmd.add(valid_pages_arg);
 
         TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input_img",
@@ -244,6 +249,7 @@ int main(int argc, char* argv[]) {
         outlier_threshold = outlier_threshold_arg.getValue();
         cauchy_param = cauchy_param_arg.getValue();
         min_snr = min_snr_arg.getValue();
+        calib.setMaxIter(std::max<size_t>(1, max_iter_arg.getValue()));
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
@@ -290,6 +296,9 @@ int main(int argc, char* argv[]) {
         calib.setPlotMarkers(plot_markers);
         calib.only_green(only_green);
         marker_size = marker_size_arg.getValue();
+        if (marker_size > 0) {
+            calib.setMarkerSize(marker_size);
+        }
         calib.setCauchyParam(cauchy_param);
         calib.setRecursionDepth(recursion_depth);
         calib.setMaxOutlierPercentage(max_outlier_percentage);

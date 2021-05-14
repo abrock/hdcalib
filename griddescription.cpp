@@ -35,12 +35,14 @@ void GridDescription::write(cv::FileStorage &fs) const {
     fs << "{"
        << "name" << name
        << "points" << points
+       << "fixed_scale" << fixed_scale
        << "}";
 }
 
 void GridDescription::read(const cv::FileNode &node) {
     node["name"] >> name;
     node["points"] >> points;
+    node["fixed_scale"] >> fixed_scale;
 }
 
 void GridDescription::readFile(const std::string filename, std::vector<GridDescription> &data) {

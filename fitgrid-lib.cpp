@@ -1,3 +1,6 @@
+#undef NDEBUG
+#include <cassert>
+
 #include "hdcalib.h"
 
 #include <opencv2/highgui.hpp>
@@ -56,6 +59,9 @@ struct GridFitCost {
                     T const * const rvec,
                     T const * const tvec,
                     T * residuals) const {
+        if (scale[0] < T(1e-4)) {
+            //return false;
+        }
         T pt[3] = {scale[0]*T(src.x), scale[0]*T(src.y), scale[0]*T(src.z)};
         rotate_translate(pt, residuals, rvec, tvec);
         residuals[0] -= dst.x;
@@ -94,13 +100,316 @@ void FitGrid::findGrids(std::map<std::string, std::map<std::string, std::vector<
     }
 }
 
-void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<GridDescription> &desc) {
+//                                        grid prefix           suffix       vector of 3D marker locations
+void FitGrid::findGridsSchilling(
+        std::map<std::string, // grid prefix
+        std::map<std::string, // Point filename
+        std::pair<std::vector<cv::Scalar_<int> >, std::vector<cv::Point3f> > > >& detected_grids,
+        GridDescription const& desc) {
+
+    for (GridPointDesc const& pt : desc.points) {
+        if (!fs::is_regular_file(pt.suffix)) {
+            continue;
+        }
+        try {
+            cv::FileStorage in(pt.suffix, cv::FileStorage::READ);
+            std::vector<cv::Scalar_<int> >ids;
+            std::vector<cv::Point3f> points;
+            in["ids"] >> ids;
+            in["points"] >> points;
+            std::string const name = desc.name;
+            std::string const suffix = pt.suffix;
+            detected_grids[name];
+            detected_grids[name][suffix] = {ids, points};
+        }
+        catch(std::exception const& e) {
+            std::cout << "Exception while reading " << pt.suffix << ": " << e.what() << std::endl;
+            continue;
+        }
+    }
+}
+
+void FitGrid::plotOffsetCorrectionSchilling(std::vector<cv::Scalar_<int> > const& _ids, std::vector<cv::Point3f> const& pts) {
+    int gcd = -1;
+    std::vector<cv::Scalar_<int> > ids = _ids;
+    for (cv::Scalar_<int> const& id : ids) {
+        gcd = hdcalib::Calib::tolerantGCD(gcd, id[0]);
+        gcd = hdcalib::Calib::tolerantGCD(gcd, id[1]);
+    }
+    for (cv::Scalar_<int> & id : ids) {
+        id[0] /= gcd;
+        id[1] /= gcd;
+    }
+    std::cout << "plotOffsetCorrectionSchilling, GCD: " << gcd << std::endl;
+    ceres::Problem problem;
+
+    assert(ids.size() == pts.size());
+
+    double scale = 1;
+    cv::Vec3d r_vec(0.12, 0.13, 0.14);
+    cv::Vec3d t_vec(0,0,0);
+
+    Calib c;
+    c.setMarkerSize(18.52);
+
+    for (size_t ii = 0; ii < ids.size(); ++ii) {
+        problem.AddResidualBlock(
+                    new ceres::AutoDiffCostFunction<GridFitCost, 3, 1, 3, 3>(
+                        new GridFitCost(pts[ii], c.getInitial3DCoord(ids[ii]))
+                        ),
+                    nullptr, // loss function
+                    &scale,
+                    r_vec.val,
+                    t_vec.val
+                    );
+    }
+
+    ceres::Solver::Options options;
+    options.num_threads = 8;
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.max_num_iterations = 150*1000;
+    options.minimizer_progress_to_stdout = true;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
+    ceres::Solver::Summary summary;
+    Solve(options, &problem, &summary);
+
+    clog::L(__func__, 1) << summary.BriefReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
+
+    clog::L(__func__, 1) << "Scale: " << scale;
+
+    std::map<cv::Scalar_<int>, cv::Point3f, hdcalib::cmpScalar> data;
+
+    for (size_t ii = 0; ii < ids.size(); ++ii) {
+        GridFitCost cost(pts[ii], c.getInitial3DCoord(ids[ii]));
+        cv::Vec3d correction(0,0,0);
+        cost(&scale, r_vec.val, t_vec.val, correction.val);
+        data[ids[ii]] = cv::Point3f(correction[0], correction[1], correction[2]);
+    }
+
+    c.plotObjectPointCorrections(data, "Schilling", "a", "");
+}
+
+void FitGrid::runSchilling(const std::vector<GridDescription> &desc) {
+    std::vector<
+            std::map<std::string, // grid prefix
+            std::map<std::string, // Point filename
+            std::pair<std::vector<cv::Scalar_<int> >, std::vector<cv::Point3f> > > > > detected_grids(desc.size());
+
+    // desc index        grid prefix  rvec
+    std::vector<std::map<std::string, cv::Vec3d> > rvecs(desc.size());
+
+    // desc index        grid prefix  vector of tvecs, one for each marker on the target
+    std::vector<std::map<std::string, std::map<cv::Scalar_<int>, cv::Vec3d, hdcalib::cmpScalar> > > tvecs(desc.size());
+
+    scale = 7.3479152;
+
+    for (size_t grid = 0; grid < desc.size(); ++grid) {
+        findGridsSchilling(detected_grids[grid], desc[grid]);
+    }
+
+    plotOffsetCorrectionSchilling(detected_grids[0].begin()->second.begin()->second.first,
+            detected_grids[0].begin()->second.begin()->second.second
+            );
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) {
+        clog::L(__func__, 2) << "Grid name: " << desc[ii].name << std::endl
+                             << "#points: " << desc[ii].points.size() << std::endl
+                             << "#detected: " << detected_grids[ii].size() << std::endl
+                             << "sizes: " << std::endl;
+        for (auto const& it : detected_grids[ii]) {
+            std::cout << it.second.size() << "\t" << it.first << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    ceres::Problem problem;
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Debug output only
+        clog::L(__func__, 2) << "Grid name: " << desc[ii].name << std::endl
+                             << "#points: " << desc[ii].points.size() << std::endl
+                             << "#detected: " << detected_grids[ii].size() << std::endl
+                             << "sizes: " << std::endl;
+        for (auto const& it : detected_grids[ii]) {
+            std::cout << it.second.size() << "\t" << it.first << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Initialize all the rvecs and tvecs in the nested containers.
+        for (auto const& it : detected_grids[ii]) {
+            std::string const& grid_prefix = it.first;
+
+            std::map<std::string, // Point filename
+                    std::pair<std::vector<cv::Scalar_<int> >, std::vector<cv::Point3f> > > const& grid = it.second;
+            for (auto const& it2 : grid) {
+                rvecs[ii][grid_prefix] = cv::Vec3d(0.1, 0.1, 0.1);
+                rvecs[ii][grid_prefix][0] = 0.11;
+                rvecs[ii][grid_prefix][1] = 0.12;
+                rvecs[ii][grid_prefix][2] = 0.13;
+                for (cv::Scalar_<int> const& id : it2.second.first) {
+                    tvecs[ii][grid_prefix][id] = cv::Vec3d(0,0,0);
+                }
+            }
+        }
+    }
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Initialize all the rvecs and tvecs in the nested containers.
+        GridDescription const& grid_desc = desc[ii];
+        for (auto const& it : detected_grids[ii]) {
+            std::string const& grid_prefix = it.first;
+            std::map<std::string, // Point filename
+                    std::pair<std::vector<cv::Scalar_<int> >, std::vector<cv::Point3f> > > const& grid = it.second;
+            for (auto const& it2 : grid) {
+                auto const rvec_it = rvecs[ii].find(grid_prefix);
+                assert(rvec_it != rvecs[ii].end());
+                cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
+                assert(r_vec.dot(r_vec) > 0.0001);
+
+                GridPointDesc const& pt_desc = grid_desc.getDesc(it2.first);
+
+                auto const& ids = it2.second.first;
+                auto const& pts = it2.second.second;
+                assert(ids.size() == pts.size());
+                for (size_t jj = 0; jj < ids.size(); ++jj) {
+                    auto const tvec = tvecs[ii][grid_prefix].find(ids[jj]);
+                    assert(tvec != tvecs[ii][grid_prefix].end());
+                    problem.AddResidualBlock(
+                                new ceres::AutoDiffCostFunction<GridFitCost, 3, 1, 3, 3>(
+                                    new GridFitCost(pts[jj], pt_desc.getPt())
+                                    ),
+                                nullptr, // loss function
+                                &scale,
+                                r_vec.val,
+                                tvec->second.val
+                                );
+                }
+            }
+        }
+        if (grid_desc.fixed_scale > 0) {
+            scale = grid_desc.fixed_scale;
+            problem.SetParameterBlockConstant(&scale);
+        }
+    }
+
+
+
+    ceres::Solver::Options options;
+    options.num_threads = 8;
+    options.linear_solver_type = ceres::SPARSE_SCHUR;
+    options.max_num_iterations = 150*1000;
+    options.minimizer_progress_to_stdout = true;
+    options.function_tolerance = ceres_tolerance;
+    options.gradient_tolerance = ceres_tolerance;
+    options.parameter_tolerance = ceres_tolerance;
+    ceres::Solver::Summary summary;
+    Solve(options, &problem, &summary);
+
+    clog::L(__func__, 1) << summary.BriefReport() << "\n";
+    clog::L(__func__, 1) << summary.FullReport() << "\n";
+
+    std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_x(desc.size());
+    std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_y(desc.size());
+    std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_z(desc.size());
+
+    per_grid_type_stats_x      = std::vector<runningstats::QuantileStats<float> >(desc.size());
+    per_grid_type_stats_y      = std::vector<runningstats::QuantileStats<float> >(desc.size());
+    per_grid_type_stats_z      = std::vector<runningstats::QuantileStats<float> >(desc.size());
+    per_grid_type_stats_length = std::vector<runningstats::QuantileStats<float> >(desc.size());
+
+
+
+    std::multimap<double, std::string> max_errors_per_image;
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) { // Gather stats
+        GridDescription const& grid_desc = desc[ii];
+        for (auto const& it : detected_grids[ii]) {
+            std::string const& grid_prefix = it.first;
+            std::map<std::string, // Point filename
+                    std::pair<std::vector<cv::Scalar_<int> >, std::vector<cv::Point3f> > > const& grid = it.second;
+            for (auto const& it2 : grid) {
+                auto const rvec_it = rvecs[ii].find(grid_prefix);
+                assert(rvec_it != rvecs[ii].end());
+                cv::Vec3d & r_vec = rvecs[ii][grid_prefix];
+                assert(r_vec.dot(r_vec) > 0.0001);
+                GridPointDesc const& pt_desc = grid_desc.getDesc(it2.first);
+
+                auto const& ids = it2.second.first;
+                auto const& pts = it2.second.second;
+                assert(ids.size() == pts.size());
+                double max_error_length = 0;
+                for (size_t jj = 0; jj < ids.size(); ++jj) {
+                    auto const tvec = tvecs[ii][grid_prefix].find(ids[jj]);
+                    assert(tvec != tvecs[ii][grid_prefix].end());
+                    GridFitCost cost (pts[jj], pt_desc.getPt());
+                    cv::Vec3d residual(0,0,0);
+                    cost(&scale,
+                         r_vec.val,
+                         tvec->second.val,
+                         residual.val
+                         );
+                    per_grid_stats_x[ii][grid_prefix].push_unsafe(residual[0]);
+                    per_grid_stats_y[ii][grid_prefix].push_unsafe(residual[1]);
+                    per_grid_stats_z[ii][grid_prefix].push_unsafe(residual[2]);
+
+                    per_grid_type_stats_x[ii].push_unsafe(residual[0]);
+                    per_grid_type_stats_y[ii].push_unsafe(residual[1]);
+                    per_grid_type_stats_z[ii].push_unsafe(residual[2]);
+
+                    double const error_length = std::sqrt(residual.dot(residual));
+                    per_grid_type_stats_length[ii].push_unsafe(error_length);
+                    max_error_length = std::max(max_error_length, error_length);
+                }
+                max_errors_per_image.insert({max_error_length, grid_desc.name + ": " + grid_prefix + it2.first});
+            }
+        }
+        if (grid_desc.fixed_scale > 0) {
+            scale = grid_desc.fixed_scale;
+            problem.SetParameterBlockConstant(&scale);
+        }
+    }
+
+    std::stringstream msg;
+    msg << "Calib: Schilling" << std::endl;
+
+    msg << "Max errors per image, sorted: " << std::endl;
+    for (auto const& it : max_errors_per_image) {
+        double const error = it.first;
+        std::string const& filename = it.second;
+        msg << std::setw(8) << error << "\t" << filename << std::endl;
+    }
+    msg << std::endl;
+
+    for (size_t ii = 0; ii < desc.size(); ++ii) {
+        msg << "Residual stats for grid type " << desc[ii].name << ": " << std::endl
+            << "x: " << per_grid_type_stats_x[ii].print() << std::endl
+            << "y: " << per_grid_type_stats_y[ii].print() << std::endl
+            << "z: " << per_grid_type_stats_z[ii].print() << std::endl
+            << "length: " << per_grid_type_stats_length[ii].print() << std::endl;
+        runningstats::HistConfig conf;
+        conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", x-axis")
+                .setXLabel("Residual[mm]");
+        per_grid_type_stats_x[ii].plotHist(desc[ii].name + "-schilling-stats-x", per_grid_type_stats_x[ii].FreedmanDiaconisBinSize(), conf);
+        conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", y-axis");
+        per_grid_type_stats_y[ii].plotHist(desc[ii].name + "-schilling-stats-y", per_grid_type_stats_y[ii].FreedmanDiaconisBinSize());
+        conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", z-axis");
+        per_grid_type_stats_z[ii].plotHist(desc[ii].name + "-schilling-stats-z", per_grid_type_stats_z[ii].FreedmanDiaconisBinSize());
+    }
+
+    msg << "estimated scale for calib Schilling: " << std::setprecision(8) << scale << std::endl;
+
+    std::cout << msg.str();
+}
+
+std::string FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<GridDescription> &desc) {
     cv::Rect_<int> const area = calib.getIdRectangleUnion();
 
     // Number of grid points on x axis.
-    double const num_x = 3;
+    double const num_x = 100;
     // Number of grid points on y axis. Total number of points is num_x * num_y
-    double const num_y = 3;
+    double const num_y = 100;
 
     /**
      * @brief target_pts holds the initial 3D coordinates of the 3D markers used in the fit.
@@ -125,17 +434,17 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
     // desc index        grid prefix  vector of tvecs, one for each marker on the target
     std::vector<std::map<std::string, std::vector<cv::Vec3d> > > tvecs(desc.size());
 
-    double scale = 102.24;
+    scale = 1;
 
     for (size_t grid = 0; grid < desc.size(); ++grid) {
         findGrids(detected_grids[grid], desc[grid], calib, calib_result, known_grid_pts);
     }
 
     for (size_t ii = 0; ii < desc.size(); ++ii) {
-        std::cout << "Grid name: " << desc[ii].name << std::endl
-                  << "#points: " << desc[ii].points.size() << std::endl
-                  << "#detected: " << detected_grids[ii].size() << std::endl
-                  << "sizes: " << std::endl;
+        clog::L(__func__, 2) << "Grid name: " << desc[ii].name << std::endl
+                             << "#points: " << desc[ii].points.size() << std::endl
+                             << "#detected: " << detected_grids[ii].size() << std::endl
+                             << "sizes: " << std::endl;
         for (auto const& it : detected_grids[ii]) {
             std::cout << it.second.size() << "\t" << it.first << std::endl;
         }
@@ -145,10 +454,10 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
     ceres::Problem problem;
 
     for (size_t ii = 0; ii < desc.size(); ++ii) { // Debug output only
-        std::cout << "Grid name: " << desc[ii].name << std::endl
-                  << "#points: " << desc[ii].points.size() << std::endl
-                  << "#detected: " << detected_grids[ii].size() << std::endl
-                  << "sizes: " << std::endl;
+        clog::L(__func__, 2) << "Grid name: " << desc[ii].name << std::endl
+                             << "#points: " << desc[ii].points.size() << std::endl
+                             << "#detected: " << detected_grids[ii].size() << std::endl
+                             << "sizes: " << std::endl;
         for (auto const& it : detected_grids[ii]) {
             std::cout << it.second.size() << "\t" << it.first << std::endl;
         }
@@ -204,7 +513,13 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
                 }
             }
         }
+        if (grid_desc.fixed_scale > 0) {
+            scale = grid_desc.fixed_scale;
+            problem.SetParameterBlockConstant(&scale);
+        }
     }
+
+
 
     ceres::Solver::Options options;
     options.num_threads = int(calib.threads);
@@ -224,9 +539,12 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
     std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_y(desc.size());
     std::vector<std::map<std::string, runningstats::QuantileStats<float> > > per_grid_stats_z(desc.size());
 
-    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_x(desc.size());
-    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_y(desc.size());
-    std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_z(desc.size());
+    per_grid_type_stats_x      = std::vector<runningstats::QuantileStats<float> >(desc.size());
+    per_grid_type_stats_y      = std::vector<runningstats::QuantileStats<float> >(desc.size());
+    per_grid_type_stats_z      = std::vector<runningstats::QuantileStats<float> >(desc.size());
+    per_grid_type_stats_length = std::vector<runningstats::QuantileStats<float> >(desc.size());
+
+
 
     std::multimap<double, std::string> max_errors_per_image;
 
@@ -262,6 +580,7 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
                     per_grid_type_stats_z[ii].push_unsafe(residual[2]);
 
                     double const error_length = std::sqrt(residual.dot(residual));
+                    per_grid_type_stats_length[ii].push_unsafe(error_length);
                     max_error_length = std::max(max_error_length, error_length);
                 }
                 max_errors_per_image.insert({max_error_length, grid_desc.name + ": " + grid_prefix + suffix});
@@ -276,31 +595,38 @@ void FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::vector<
         }
     }
 
-    std::cout << "Max errors per image, sorted: " << std::endl;
+    std::stringstream msg;
+    msg << "Calib: " << calib_result.name << std::endl;
+
+    msg << "Max errors per image, sorted: " << std::endl;
     for (auto const& it : max_errors_per_image) {
         double const error = it.first;
         std::string const& filename = it.second;
-        std::cout << std::setw(8) << error << "\t" << filename << std::endl;
+        msg << std::setw(8) << error << "\t" << filename << std::endl;
     }
-    std::cout << std::endl;
+    msg << std::endl;
 
     for (size_t ii = 0; ii < desc.size(); ++ii) {
-        std::cout << "Residual stats for grid type " << desc[ii].name << ": " << std::endl
-                  << "x: " << per_grid_type_stats_x[ii].print() << std::endl
-                  << "y: " << per_grid_type_stats_y[ii].print() << std::endl
-                  << "z: " << per_grid_type_stats_z[ii].print() << std::endl << std::endl;
+        msg << "Residual stats for grid type " << desc[ii].name << ": " << std::endl
+            << "x: " << per_grid_type_stats_x[ii].print() << std::endl
+            << "y: " << per_grid_type_stats_y[ii].print() << std::endl
+            << "z: " << per_grid_type_stats_z[ii].print() << std::endl
+            << "length: " << per_grid_type_stats_length[ii].print() << std::endl;
         runningstats::HistConfig conf;
         conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", x-axis")
                 .setXLabel("Residual[mm]");
-        per_grid_type_stats_x[ii].plotHist(desc[ii].name + "-stats-x", per_grid_type_stats_x[ii].FreedmanDiaconisBinSize(), conf);
+        per_grid_type_stats_x[ii].plotHist(desc[ii].name + "-" + calib_result.name + "-stats-x", per_grid_type_stats_x[ii].FreedmanDiaconisBinSize(), conf);
         conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", y-axis");
-        per_grid_type_stats_y[ii].plotHist(desc[ii].name + "-stats-y", per_grid_type_stats_y[ii].FreedmanDiaconisBinSize());
+        per_grid_type_stats_y[ii].plotHist(desc[ii].name + "-" + calib_result.name + "-stats-y", per_grid_type_stats_y[ii].FreedmanDiaconisBinSize());
         conf.setTitle(std::string("Residuals for Grid ") + desc[ii].name + ", z-axis");
-        per_grid_type_stats_z[ii].plotHist(desc[ii].name + "-stats-z", per_grid_type_stats_z[ii].FreedmanDiaconisBinSize());
+        per_grid_type_stats_z[ii].plotHist(desc[ii].name + "-" + calib_result.name + "-stats-z", per_grid_type_stats_z[ii].FreedmanDiaconisBinSize());
     }
 
-    std::cout << "estimated scale: " << scale << std::endl;
+    msg << "estimated scale for calib " << calib_result.name << ": " << std::setprecision(8) << scale << ", marker size was " << calib.getMarkerSize() << std::endl;
 
+    std::cout << msg.str();
+
+    return msg.str();
 }
 
 } // namespace hdcalib
