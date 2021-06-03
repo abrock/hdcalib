@@ -1007,9 +1007,9 @@ void exposure(size_t const radius) {
     std::cout << std::endl;
 }
 
-void addGradient(cv::Mat_<float>& img, double const gradient, double const angle = std::asin(M_SQRT1_2)) {
-    double const sin = std::sin(angle);
-    double const cos = std::cos(angle);
+void addGradient(cv::Mat_<float>& img, double const gradient, double const angle = 45) {
+    double const sin = std::sin(angle*M_PI/180);
+    double const cos = std::cos(angle*M_PI/180);
 
     int const rows = img.rows;
     int const cols = img.cols;
@@ -1030,19 +1030,19 @@ void plotTable(T & table, double const a_step, double const b_step) {
         std::cout << "Dot size: " << dotsize << std::endl;
         for (auto& it2 : it1.second) {
             double const under_exp = it2.first;
-            std::cout << std::setw(7) << under_exp << ": " << std::setw(14) << 1000*std::abs(it2.second.getMedian());
+            std::cout << std::setw(7) << under_exp << " &" << std::setw(14) << 1000*std::abs(it2.second.getMedian());
             auto const next_exp = it1.second.find(under_exp + b_step);
             if (next_exp == it1.second.end()) {
-                std::cout << ", " << std::setw(14) << "...";
+                std::cout << " &" << std::setw(14) << "...";
             }
             else {
-                std::cout << ", " << std::setw(14) << (1.0-std::abs(it2.second.getMedian()/next_exp->second.getMedian()))*100;
+                std::cout << " &" << std::setw(14) << (1.0-std::abs(it2.second.getMedian()/next_exp->second.getMedian()))*100;
             }
             auto const prev_size = table.find(dotsize - a_step);
             if (prev_size != table.end()) {
-                std::cout << ", " << std::setw(14) << (1.0 - std::abs(it2.second.getMedian())/std::abs(prev_size->second[under_exp].getMedian()))*100;
+                std::cout << " &" << std::setw(14) << (1.0 - std::abs(it2.second.getMedian())/std::abs(prev_size->second[under_exp].getMedian()))*100;
             }
-            std::cout << std::endl;
+            std::cout << " \\\\" << std::endl;
         }
     }
     std::cout << std::endl;
@@ -1154,7 +1154,7 @@ void backgroundGradient(size_t const radius) {
 void backgroundGradientByAngle(size_t const radius) {
     std::cout << "backgroundGradientByAngle" << std::endl;
     double const dotsize_step = 30;
-    double const angle_step = M_PI_2/6;
+    double const angle_step = 9;
     std::string const width = std::to_string(2*radius+1);
 
     rs::Image2D<rs::QuantileStats<float> >
@@ -1183,7 +1183,7 @@ void backgroundGradientByAngle(size_t const radius) {
         ParallelTime runtime;
         for (size_t jj = 0; jj < 100; ++jj) {
             for (double dot_size = 100; dot_size <= 170; dot_size += dotsize_step) {
-                for (double angle = 0; angle <= M_PI_2; angle += angle_step) {
+                for (double angle = 0; angle <= 45; angle += angle_step) {
                     for (bool invert : {true, false}) {
                         FitExperiment f;
                         f.verbose = false;
