@@ -1007,7 +1007,10 @@ void exposure(size_t const radius) {
     std::cout << std::endl;
 }
 
-void addGradient(cv::Mat_<float>& img, double const gradient) {
+void addGradient(cv::Mat_<float>& img, double const gradient, double const angle = std::asin(M_SQRT1_2)) {
+    double const sin = std::sin(angle);
+    double const cos = std::cos(angle);
+
     int const rows = img.rows;
     int const cols = img.cols;
     if (rows < 2 || cols < 2) {
@@ -1015,7 +1018,7 @@ void addGradient(cv::Mat_<float>& img, double const gradient) {
     }
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
-            img(row, col) += gradient*row/(rows-1);
+            img(row, col) += gradient*(row*sin + col*cos)/(rows-1);
         }
     }
 }
@@ -1148,6 +1151,108 @@ void backgroundGradient(size_t const radius) {
     std::cout << std::endl;
 }
 
+void backgroundGradientByAngle(size_t const radius) {
+    std::cout << "backgroundGradientByAngle" << std::endl;
+    double const dotsize_step = 30;
+    double const angle_step = M_PI_2/6;
+    std::string const width = std::to_string(2*radius+1);
+
+    rs::Image2D<rs::QuantileStats<float> >
+            rms(dotsize_step, angle_step),
+            snr(dotsize_step, angle_step),
+            snr_times_sigma(dotsize_step, angle_step);
+
+    std::map<double, std::map<double, rs::QuantileStats<double> > > error;
+    std::map<double, std::map<double, rs::QuantileStats<double> > > bias_x;
+    std::map<double, std::map<double, rs::QuantileStats<double> > > bias_y;
+
+    rs::Image2D<std::vector<rs::QuantileStats<float> > > combined_stats(dotsize_step, angle_step);
+
+    rs::Stats2D<double> rms_vs_error, snr_vs_error;
+    rs::QuantileStats<float> x_res, y_res;
+
+    rs::Image1D<rs::QuantileStats<float> > snr_vs_error_1d(1), rms_vs_error_1d(.05);
+    rs::Image1D<rs::QuantileStats<float> > snr_vs_error_1d_res(1), rms_vs_error_1d_res(.05);
+    rs::BinaryStats success_count;
+
+    rs::Histogram fail_by_exposure(angle_step);
+
+    size_t total_count = 0;
+    for (size_t kk = 0; kk < 100'000; ++kk) {
+        size_t n = 0;
+        ParallelTime runtime;
+        for (size_t jj = 0; jj < 100; ++jj) {
+            for (double dot_size = 100; dot_size <= 170; dot_size += dotsize_step) {
+                for (double angle = 0; angle <= M_PI_2; angle += angle_step) {
+                    for (bool invert : {true, false}) {
+                        FitExperiment f;
+                        f.verbose = false;
+                        cv::Mat_<float> img = renderSquare(radius, dot_size, invert);
+                        addGradient(img, 1.0, angle);
+                        img *= 4095.0 * std::pow(2.0, -1.0/2.0);
+                        addNoise(img);
+                        img *= 255.0 / 4095.0;
+                        f.runFitImg(img);
+                        success_count.push(f.success);
+                        if (f.success) {
+                            total_count++;
+                            error[dot_size][angle].push_unsafe(f.error_length);
+                            bias_x[dot_size][angle].push_unsafe((f.diff_x));
+                            bias_y[dot_size][angle].push_unsafe((f.diff_y));
+                            /*
+                            rms[dot_size][underexposure].push_unsafe(f.rms);
+                            snr[dot_size][underexposure].push_unsafe(f.snr);
+                            snr_times_sigma[dot_size][underexposure].push_unsafe(f.snr * std::sqrt(f.getFitSigma()));
+                            combined_stats.push_unsafe(dot_size,underexposure,
+                                                       {
+                                                           f.rms, // 3
+                                                           f.snr, // 4
+                                                           f.error_length, // 5
+                                                           f.getFitSigma(), // 6
+                                                           f.getFitScale() // 7
+                                                       });
+
+                            rms_vs_error.push_unsafe(f.rms, f.error_length);
+                            snr_vs_error.push_unsafe(f.snr, f.error_length);
+                            x_res.push_unsafe(f.diff_x);
+                            y_res.push_unsafe(f.diff_y);
+                            snr_vs_error_1d[f.snr].push_unsafe(f.error_length);
+                            rms_vs_error_1d[f.rms].push_unsafe(f.error_length);
+
+                            snr_vs_error_1d_res[f.snr].push_unsafe(f.diff_x);
+                            snr_vs_error_1d_res[f.snr].push_unsafe(f.diff_y);
+                            rms_vs_error_1d_res[f.rms].push_unsafe(f.diff_x);
+                            rms_vs_error_1d_res[f.rms].push_unsafe(f.diff_y);
+                            */
+                        }
+                        else {
+                            fail_by_exposure.push_unsafe(angle);
+                        }
+                        n = error[dot_size][angle].getCount();
+                    }
+                }
+            }
+        }
+        runtime.stop();
+
+        ParallelTime plottime;
+        std::cout << "Plotting " << width << "..." << std::endl;
+        plotTable(error, dotsize_step, angle_step);
+        std::cout << "Bias x, " << width << "..." << std::endl;
+        plotTable(bias_x, dotsize_step, angle_step);
+        std::cout << "Bias y, " << width << "..." << std::endl;
+        plotTable(bias_y, dotsize_step, angle_step);
+
+        std::cout << "Success stats: " << success_count.print() << std::endl;
+        std::cout << "Total count: " << total_count << std::endl;
+        std::cout << "Per-pixel count: " << n << std::endl;
+        std::cout << "Runtime: " << runtime.print() << std::endl
+                  << "Plot time: " << plottime.print() << std::endl;
+        std::cout << std::endl << std::endl << std::endl << std::endl << std::endl << std::endl;
+    }
+    std::cout << std::endl;
+}
+
 int main(int argc, char ** argv) {
 
     for (int radius = 2; radius <= 19; ++radius) {
@@ -1221,5 +1326,8 @@ int main(int argc, char ** argv) {
     }
     if ("bg-grad" == action) {
         backgroundGradient(scale);
+    }
+    if ("bg-grad-angle" == action) {
+        backgroundGradientByAngle(scale);
     }
 }
