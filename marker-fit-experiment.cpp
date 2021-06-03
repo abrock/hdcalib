@@ -1092,8 +1092,8 @@ void backgroundGradient(size_t const radius) {
                         if (f.success) {
                             total_count++;
                             error[dot_size][gradient].push_unsafe(f.error_length);
-                            bias_x[dot_size][gradient].push_unsafe(std::abs(f.diff_x));
-                            bias_y[dot_size][gradient].push_unsafe(std::abs(f.diff_y));
+                            bias_x[dot_size][gradient].push_unsafe((f.diff_x));
+                            bias_y[dot_size][gradient].push_unsafe((f.diff_y));
                             /*
                             rms[dot_size][underexposure].push_unsafe(f.rms);
                             snr[dot_size][underexposure].push_unsafe(f.snr);
