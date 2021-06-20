@@ -964,7 +964,7 @@ vector<Corner> Calib::getMainMarkers(const std::string input_file,
     cv::imwrite("debug.png", img_raw);
 
     Marker::init();
-    detect(img_raw, result, use_rgb, 0, 10, effort);
+    detect_robust(img_raw, result, use_rgb, 0, 10, effort);
     std::map<int, int> counter;
     for (auto const& it : result) {
         counter[it.page]++;
