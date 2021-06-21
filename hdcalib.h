@@ -158,10 +158,12 @@ private:
 public:
     CornerStore();
 
+    void sort();
+
     size_t lastCleanDifference() const;
 
     std::vector<hdmarker::Corner> getSquaresTopLeft(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
-    std::vector<hdmarker::Corner> getMainMarkers(int const cornerIdFactor) const;
+    std::vector<hdmarker::Corner> getMainMarkers(int const cornerIdFactor = 10) const;
 
     std::vector<std::vector<hdmarker::Corner> > getSquares(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
 

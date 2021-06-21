@@ -731,7 +731,7 @@ void Calib::prepareOpenCVROCalibration() {
     preparedOpenCVCalib = false;
     preparedCalib = false;
 
-    CornerStore intersection = data.begin()->second;
+    CornerStore intersection = data.begin()->second.getMainMarkers();
     for (std::pair<const std::string, CornerStore> const& it : data) {
         intersection.intersect(it.second);
     }
@@ -745,6 +745,7 @@ void Calib::prepareOpenCVROCalibration() {
     for (std::pair<const std::string, CornerStore> const& it : data) {
         CornerStore copy = it.second;
         copy.intersect(intersection);
+        copy.sort();
         copy.getMajorPoints(imagePoints[ii], objectPoints[ii], reduced_marker_references[ii], *this);
         imageFiles[ii] = it.first;
         ++ii;

@@ -74,6 +74,17 @@ CornerStore::CornerStore() :
 
 }
 
+void CornerStore::sort() {
+    std::vector<Corner> sorted = corners;
+    std::sort(sorted.begin(), sorted.end());
+    for (size_t ii = 0; ii < sorted.size(); ++ii) {
+        if (corners[ii] != sorted[ii]) {
+            replaceCorners(sorted);
+            return;
+        }
+    }
+}
+
 size_t CornerStore::lastCleanDifference() const {
     return last_clean_diff;
 }
