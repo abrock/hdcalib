@@ -262,3 +262,14 @@ target_link_libraries(radial-models
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_IOSTREAMS_LIBRARY}
     )
+
+
+add_library(libdownscale libdownscale.cpp)
+target_link_libraries(libdownscale
+    ${OpenCV_LIBS}
+    )
+
+add_executable(hdcalib-downscale downscale.cpp)
+target_link_libraries(hdcalib-downscale
+    libdownscale
+    )
