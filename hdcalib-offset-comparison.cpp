@@ -712,6 +712,51 @@ public:
         return 1;
     }
 
+    void plotOffsets(
+            std::string const& name,
+            std::vector<std::string> const& files,
+            std::string const& prefix
+            ) {
+        ParallelTime t;
+#pragma omp parallel for
+        for (size_t ii = 0; ii < files.size(); ++ii) {
+            CornerCache::getInstance()[files[ii]];
+        }
+        std::cout << "Reading " << files.size() << " files: " << t.print() << std::endl;
+        t.start();
+        std::vector<hdm::Corner> const reference = CornerCache::getInstance()[files[0]];
+        std::map<cv::Scalar_<int>, hdm::Corner, cmpScalar> ref_map;
+        for(const hdm::Corner& c : reference) {
+            ref_map[hdcalib::Calib::getSimpleIdLayer(c)] = c;
+        }
+        Calib calib;
+        std::cout << "Reference count: " << reference.size() << std::endl;
+        for (size_t ii = 1; ii < files.size(); ++ii) {
+            std::cout << "Comparison count: " << reference.size() << std::endl;
+            std::vector<hdm::Corner> const compare = CornerCache::getInstance()[files[ii]];
+            hdcalib::Calib::MarkerMap map;
+
+            runningstats::QuantileStats<float> diff_x, diff_y;
+            for (hdm::Corner const& c : compare) {
+                auto const it = ref_map.find(hdcalib::Calib::getSimpleIdLayer(c));
+                if (it == ref_map.end()) {
+                    continue;
+                }
+                diff_x.push_unsafe(it->second.p.x - c.p.x);
+                diff_y.push_unsafe(it->second.p.y - c.p.y);
+            }
+            std::cout << "Match count: " << map.size() << std::endl;
+
+            std::cout << "File: " << files[ii] << std::endl;
+            std::cout << "Diff x: " << diff_x.print() << std::endl;
+            std::cout << "Diff y: " << diff_y.print() << std::endl;
+        }
+
+        std::cout << "Plotting " << files.size() << " files: " << t.print() << std::endl;
+        t.start();
+
+    }
+
     void plotFlow(std::string const & name,
                   std::vector<std::string> const& files,
                   std::string const& prefix) {
@@ -841,6 +886,7 @@ int main(int argc, char ** argv) {
 
     bool rms_eval = false;
     bool flow_eval = false;
+    bool offset_eval = false;
 
     cv::Mat_<uint8_t> mask;
 
@@ -870,12 +916,15 @@ int main(int argc, char ** argv) {
         TCLAP::SwitchArg flow_eval_arg("", "flow", "Plot optical flow");
         cmd.add(flow_eval_arg);
 
+        TCLAP::SwitchArg offset_eval_arg("", "offset", "Show simple offset stats");
+        cmd.add(offset_eval_arg);
 
         cmd.parse(argc, argv);
 
         recursion = recursive_depth_arg.getValue();
         rms_eval = rms_eval_arg.getValue();
         flow_eval = flow_eval_arg.getValue();
+        offset_eval = offset_eval_arg.getValue();
 
         if (mask_arg.isSet()) {
             mask = cv::imread(mask_arg.getValue(), cv::IMREAD_GRAYSCALE);
@@ -910,6 +959,24 @@ int main(int argc, char ** argv) {
 
     //fs::current_path("./plots", ignore_error_code);
     std::cout << fs::current_path() << std::endl;
+
+    if (offset_eval) {
+        CornerCache::setSNRSigmaMin(-1);
+        t.start();
+        for (auto const& it : files) {
+            ParallelTime local_t;
+            std::cout << "Reading files " << it.first << std::endl;
+            RMS_Eval eval;
+            eval.valid_mask = mask;
+            std::string plots_name = "offsets-" + it.first;
+            fs::create_directories(plots_name, ignore_error_code);
+            eval.plotOffsets(plots_name + "/", it.second, "");
+            std::cout << "Time: " << local_t.print() << std::endl;
+        }
+        std::cout << "Total offset eval time: " << t.print() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
 
     if (rms_eval) {
         CornerCache::setSNRSigmaMin(-1);
