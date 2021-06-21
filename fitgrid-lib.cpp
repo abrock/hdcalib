@@ -98,6 +98,21 @@ void FitGrid::findGrids(std::map<std::string, std::map<std::string, std::vector<
             }
         }
     }
+
+    for (auto& it1 : detected_grids) {
+        for (auto& it2 : it1.second) {
+            if (it2.second.empty()) {
+                throw std::runtime_error(std::string("No points for grid ") + desc.name + " / " + it1.first + " / " + it2.first);
+            }
+        }
+        if (it1.second.empty()) {
+            throw std::runtime_error(std::string("No points for grid ") + desc.name + " / "  + it1.first);
+        }
+        if (it1.second.size() == 1) {
+            throw std::runtime_error(std::string("Only one point for grid ") + desc.name + " / "  + it1.first);
+        }
+    }
+
 }
 
 //                                        grid prefix           suffix       vector of 3D marker locations

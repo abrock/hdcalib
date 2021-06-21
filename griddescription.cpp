@@ -49,6 +49,9 @@ void GridDescription::readFile(const std::string filename, std::vector<GridDescr
     cv::FileStorage storage(filename, cv::FileStorage::READ);
     std::vector<GridDescription> new_data;
     storage["grids"] >> new_data;
+    if (new_data.empty()) {
+        throw std::runtime_error(std::string("File ") + filename + " doesn't contain any readable grid descriptions");
+    }
     data.insert(data.end(), new_data.begin(), new_data.end());
 }
 

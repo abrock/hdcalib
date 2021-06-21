@@ -143,10 +143,6 @@ int main(int argc, char* argv[]) {
         std::cerr << e.what() << std::endl;
         return 0;
     }
-    catch (...) {
-        std::cerr << "Unknown exception" << std::endl;
-        return 0;
-    }
 
     if (schilling) {
         hdcalib::FitGrid fit;
