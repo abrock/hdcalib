@@ -137,8 +137,9 @@ std::vector<Corner> CornerStore::getSquaresTopLeft(int const cornerIdFactor, run
 std::vector<hdmarker::Corner> CornerStore::getMainMarkers(const int cornerIdFactor) const {
     std::vector<hdmarker::Corner> result;
     for (hdmarker::Corner const& c : corners) {
-        if (0 == (c.id.x % cornerIdFactor)
-                && 0 == (c.id.y % cornerIdFactor)) {
+        if (0 == c.layer ||
+                (0 == (c.id.x % cornerIdFactor)
+                && 0 == (c.id.y % cornerIdFactor))) {
             result.push_back(c);
         }
     }
