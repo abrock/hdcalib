@@ -422,9 +422,9 @@ std::string FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::
     cv::Rect_<int> const area = calib.getIdRectangleUnion();
 
     // Number of grid points on x axis.
-    double const num_x = 100;
+    double const num_x = 50;
     // Number of grid points on y axis. Total number of points is num_x * num_y
-    double const num_y = 100;
+    double const num_y = 50;
 
     /**
      * @brief target_pts holds the initial 3D coordinates of the 3D markers used in the fit.
