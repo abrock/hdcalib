@@ -555,6 +555,7 @@ void CalibResult::write(FileStorage &fs) const {
     fs << "{"
        << "cameraMatrix" << cameraMatrix
        << "distCoeffs" << distCoeffs
+       << "distN" << distN
        << "inverseDistCoeffs" << inverseDistCoeffs;
     fs << "outlier_percentages" << outlier_percentages;
     fs << "rectification" << rectification;
@@ -596,6 +597,7 @@ void CalibResult::write(FileStorage &fs) const {
 void CalibResult::read(const FileNode &node) {
     node["cameraMatrix"] >> cameraMatrix;
     node["distCoeffs"] >> distCoeffs;
+    node["distN"] >> distN;
     node["rectification"] >> rectification;
     node["outlier_percentages"] >> outlier_percentages;
     node["inverseDistCoeffs"] >> inverseDistCoeffs;

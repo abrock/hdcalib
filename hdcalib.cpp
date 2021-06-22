@@ -1604,6 +1604,32 @@ double Calib::runCalib(const string name, const double outlier_threshold) {
     if ("SemiFlexible" == name) {
         return CeresCalibSemiFlexibleTarget(outlier_threshold);
     }
+    if ("FlexibleN" == name.substr(0, std::string("FlexibleN").size())) {
+        int const num = std::stoi(name.substr(std::string("FlexibleN").size()));
+        switch (num) {
+        case  2: return CeresCalibFlexibleTargetN< 2>(outlier_threshold);
+        case  4: return CeresCalibFlexibleTargetN< 4>(outlier_threshold);
+        case  6: return CeresCalibFlexibleTargetN< 6>(outlier_threshold);
+        case  8: return CeresCalibFlexibleTargetN< 8>(outlier_threshold);
+        case 10: return CeresCalibFlexibleTargetN<10>(outlier_threshold);
+        case 12: return CeresCalibFlexibleTargetN<12>(outlier_threshold);
+        case 14: return CeresCalibFlexibleTargetN<14>(outlier_threshold);
+        case 16: return CeresCalibFlexibleTargetN<16>(outlier_threshold);
+        }
+    }
+    if ("FlexibleOdd" == name.substr(0, std::string("FlexibleOdd").size())) {
+        int const num = std::stoi(name.substr(std::string("FlexibleOdd").size()));
+        switch (num) {
+        case  2: return CeresCalibFlexibleTargetOdd< 2>(outlier_threshold);
+        case  4: return CeresCalibFlexibleTargetOdd< 4>(outlier_threshold);
+        case  6: return CeresCalibFlexibleTargetOdd< 6>(outlier_threshold);
+        case  8: return CeresCalibFlexibleTargetOdd< 8>(outlier_threshold);
+        case 10: return CeresCalibFlexibleTargetOdd<10>(outlier_threshold);
+        case 12: return CeresCalibFlexibleTargetOdd<12>(outlier_threshold);
+        case 14: return CeresCalibFlexibleTargetOdd<14>(outlier_threshold);
+        case 16: return CeresCalibFlexibleTargetOdd<16>(outlier_threshold);
+        }
+    }
     throw std::runtime_error(std::string("Calib type ") + name + " unknown");
 }
 

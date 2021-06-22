@@ -205,6 +205,9 @@ int main(int argc, char* argv[]) {
     }
 
     for (std::string const& calibration_type : calibration_types) {
+        if (!calib.hasCalibName(calibration_type)) {
+            continue;
+        }
         clog::L(__func__, 2) << "Running fitGrid on calib " << calibration_type << std::endl;
 
         hdcalib::FitGrid fit;

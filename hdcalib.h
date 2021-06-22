@@ -467,6 +467,68 @@ public:
             T* residuals) const;
 };
 
+template<int N>
+class FlexibleTargetProjectionFunctorN {
+    cv::Point2f const marker;
+    cv::Point3f const point;
+public:
+    double weight = 1;
+    FlexibleTargetProjectionFunctorN(cv::Point2f const& _marker,
+                                    cv::Point3f const& _point);
+    /*
+    1, // focal length x
+    1, // focal length y
+    1, // principal point x
+    1, // principal point y
+    3, // rotation vector for the target
+    3, // translation vector for the target
+    3, // correction vector for the 3d marker position
+    14 // distortion coefficients
+    */
+    template<class T>
+    bool operator()(
+            T const* const f_x,
+            T const* const f_y,
+            T const* const c_x,
+            T const* const c_y,
+            T const* const rvec,
+            T const* const tvec,
+            T const* const correction,
+            T const* const dist,
+            T* residuals) const;
+};
+
+template<int N>
+class FlexibleTargetProjectionFunctorOdd {
+    cv::Point2f const marker;
+    cv::Point3f const point;
+public:
+    double weight = 1;
+    FlexibleTargetProjectionFunctorOdd(cv::Point2f const& _marker,
+                                    cv::Point3f const& _point);
+    /*
+    1, // focal length x
+    1, // focal length y
+    1, // principal point x
+    1, // principal point y
+    3, // rotation vector for the target
+    3, // translation vector for the target
+    3, // correction vector for the 3d marker position
+    14 // distortion coefficients
+    */
+    template<class T>
+    bool operator()(
+            T const* const f_x,
+            T const* const f_y,
+            T const* const c_x,
+            T const* const c_y,
+            T const* const rvec,
+            T const* const tvec,
+            T const* const correction,
+            T const* const dist,
+            T* residuals) const;
+};
+
 class SingleProjectionFunctor {
     cv::Point2f const marker;
     cv::Point3f const point;
@@ -586,6 +648,11 @@ public:
      * From the OpenCV documentation: Order of deviations values: \((f_x, f_y, c_x, c_y, k_1, k_2, p_1, p_2, k_3, k_4, k_5, k_6 , s_1, s_2, s_3, s_4, \tau_x, \tau_y)\) If one of parameters is not estimated, it's deviation is equals to zero.
      */
     cv::Mat_<double> distCoeffs;
+
+    /**
+     * @brief dist12 distortion coefficients for 16-parameter rational function
+     */
+    std::vector<double> distN;
 
 
     /**
@@ -1121,6 +1188,28 @@ public:
     const T dist[14]
     );
 
+    template<int N, class F, class T>
+    static void projectN(
+            F const p[3],
+    T result[2],
+    const T focal[2],
+    const T principal[2],
+    const T R[9],
+    const T t[3],
+    const T dist[N+8]
+    );
+
+    template<int N, class F, class T>
+    static void projectOdd(
+            F const p[3],
+    T result[2],
+    const T focal[2],
+    const T principal[2],
+    const T R[9],
+    const T t[3],
+    const T dist[N+8]
+    );
+
     template<class F, class T>
     static void get3DPoint(
             F const p[3],
@@ -1521,6 +1610,10 @@ public:
     void checkHDMPointcache(const std::string &input_file, const std::vector<Corner> &corners);
     void plotMeanResiduals(const MarkerMap &data, string prefix, const string suffix, const double pre_filter = -1);
     static int tolerantGCD(int a, int b);
+    template<int N>
+    double CeresCalibFlexibleTargetN(const double outlier_threshold);
+    template<int N>
+    double CeresCalibFlexibleTargetOdd(const double outlier_threshold);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1651,8 +1744,6 @@ void write(cv::FileStorage& fs, const std::string&, const Calib& x);
 void read(const cv::FileNode& node, Calib& x, const Calib& default_value = Calib());
 
 std::string type2str(int type);
-
-
 
 }
 
