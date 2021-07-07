@@ -504,6 +504,8 @@ void Calib::read(const FileNode &node) {
             cv::FileNode node = *it;
             std::string const key = node.name();
             node >> calibrations[key];
+            calibrations[key].calib = this;
+            calibrations[key].name = key;
         }
     }
     if (!calibrations.empty()) {
@@ -540,6 +542,16 @@ Mat CalibResult::getTVec(const string &filename) const {
     throw std::runtime_error(std::string("CalibResult does not contain the requested file ") + filename);
 }
 
+std::vector<double> CalibResult::getErrorPercentiles() {
+    if (error_percentiles.size() >= 101) {
+        return error_percentiles;
+    }
+    std::vector<cv::Point2d> markers, reprojections;
+    getAllReprojections(markers, reprojections);
+    assert(error_percentiles.size() >= 101);
+    return error_percentiles;
+}
+
 void CalibResult::keepMarkers(CornerStore const& keep) {
     std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> new_objectPointCorrections;
     for (std::pair<const cv::Scalar_<int>, cv::Point3f> const& it : objectPointCorrections) {
@@ -556,6 +568,8 @@ void CalibResult::write(FileStorage &fs) const {
        << "cameraMatrix" << cameraMatrix
        << "distCoeffs" << distCoeffs
        << "distN" << distN
+       << "x_factor" << x_factor
+       << "error_percentiles" << error_percentiles
        << "inverseDistCoeffs" << inverseDistCoeffs;
     fs << "outlier_percentages" << outlier_percentages;
     fs << "rectification" << rectification;
@@ -601,6 +615,8 @@ void CalibResult::read(const FileNode &node) {
     node["rectification"] >> rectification;
     node["outlier_percentages"] >> outlier_percentages;
     node["inverseDistCoeffs"] >> inverseDistCoeffs;
+    node["x_factor"] >> x_factor;
+    node["error_percentiles"] >> error_percentiles;
     FileNode n = node["objectPointCorrections"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
         throw std::runtime_error("Error while reading cached calibration result: objectPointCorrections is not a sequence. Aborting.");
@@ -748,9 +764,9 @@ void Calib::refineRecursiveByPage(Mat &img,
     cv::Mat_<float> clone(img.clone());
     for (const auto& it : pages) {
         _markerSize = markerSize;
-        std::vector<hdmarker::Corner> _out;
+        std::vector<hdmarker::Corner> _out, _rejected;
         std::vector<cv::Rect> limits = {{0, 0, 31, 31}};
-        hdmarker::refine_recursive(clone, in, _out, recursion_depth, &_markerSize, nullptr, nullptr, it.first, limits);
+        hdmarker::refine_recursive(clone, in, _out, _rejected, recursion_depth, &_markerSize, nullptr, nullptr, it.first, limits);
         out.insert(out.end(), _out.begin(), _out.end());
         clog::L(__func__, 2) << "Refining page " << it.first
                              << ", recursion depth " << recursion_depth

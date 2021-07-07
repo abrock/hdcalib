@@ -79,7 +79,7 @@ void Calib::plotReprojectionErrors(
 
 #pragma omp critical
     {
-        getReprojections(calib, image_index, markers, reprojections);
+        calib.getReprojections(image_index, markers, reprojections);
 
         for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
             cv::Point2d const& marker = markers[ii];

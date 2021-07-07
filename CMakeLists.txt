@@ -19,6 +19,7 @@ find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
 add_library(cornerstore cornerstore.cpp)
 add_library(calib-stats hdcalib-stats.cpp)
+target_link_libraries(calib-stats ${OpenCV_LIBS})
 add_library(hdcalib-readwrite hdcalib-readwrite.cpp)
 target_link_libraries(hdcalib-readwrite ParallelTime)
 add_library(hdcalib-ceres-calib hdcalib-ceres-calib.cpp)
@@ -272,4 +273,10 @@ target_link_libraries(libdownscale
 add_executable(hdcalib-downscale downscale.cpp)
 target_link_libraries(hdcalib-downscale
     libdownscale
+    )
+
+add_executable(hdcalib-scan-analysis scan-analysis.cpp)
+target_link_libraries(hdcalib-scan-analysis
+    ${OpenCV_LIBS}
+    hdcalib
     )

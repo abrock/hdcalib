@@ -345,6 +345,8 @@ public:
                         hdcalib::Calib const& calib) const;
 
     void addConditional(const std::vector<Corner> &vec);
+    static int getCornerIdFactorFromMainMarkers(const std::vector<Corner> &vec);
+    int getCornerIdFactorFromMainMarkers() const;
 };
 
 template<int LENGTH>
@@ -525,6 +527,7 @@ public:
             T const* const rvec,
             T const* const tvec,
             T const* const correction,
+            T const* const x_factor,
             T const* const dist,
             T* residuals) const;
 };
@@ -627,6 +630,7 @@ struct cmpScalar {
 
 class CalibResult {
 public:
+    Calib * calib;
     /**
      * @brief objectPointCorrections Corrections to the objectPoints
      * which allow the optimization to account for systematic misplacements
@@ -654,6 +658,17 @@ public:
      */
     std::vector<double> distN;
 
+    /**
+     * @brief x_factor percentage of the calibration target non-uniformity (x-scale being different from y-scale)
+     */
+    double x_factor = 0;
+
+    /**
+     * @brief error_quantiles is a vector containing 101 elements, one for each error percentile.
+     */
+    std::vector<double> error_percentiles;
+
+    std::vector<double> getErrorPercentiles();
 
     /**
      * @brief distCoeffs distortion coefficients of the estimated distortion of the target. This prevents the calibration
@@ -712,6 +727,11 @@ public:
         objectPointCorrections = t.objectPointCorrections;
         cameraMatrix = t.cameraMatrix.clone();
         distCoeffs = t.distCoeffs.clone();
+        distN = t.distN;
+        name = t.name;
+        x_factor = t.x_factor;
+        errors = t.errors;
+        error_percentiles = t.error_percentiles;
         stdDevIntrinsics = t.stdDevIntrinsics.clone();
         stdDevExtrinsics = t.stdDevExtrinsics.clone();
         perViewErrors = t.perViewErrors.clone();
@@ -727,6 +747,13 @@ public:
 
     void write(cv::FileStorage & fs) const;
     void read(const FileNode &node);
+
+    /**
+     * @brief isExpandedType checks if the calibration uses an expanded Model,
+     * those are named (Semi)Flexible(Odd|N)
+     * @return
+     */
+    bool isExpandedType();
 
     /**
      * @brief getTVec returns the translation vector corresponding to a given filename.
@@ -750,7 +777,27 @@ public:
     std::string name;
 
     void scaleResult(double const ratio);
-};
+    template<class F, class T>
+    void projectByCalibName(
+            const F p[],
+            T result[],
+            const T focal[],
+            const T principal[],
+            const T R[],
+            const T t[]);
+    std::vector<double> getDistCoeffsVector();
+
+    void getReprojections(
+            const size_t ii,
+            std::vector<Point2d> &markers,
+            std::vector<Point2d> &reprojections);
+
+    void getAllReprojections(
+            std::vector<Point2d> &markers,
+            std::vector<Point2d> &reprojections);
+
+    runningstats::QuantileStats<float> errors;
+}; // class CalibResult
 
 void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);
 void read(const cv::FileNode& node, CalibResult& x, const CalibResult& default_value = CalibResult());
@@ -833,11 +880,6 @@ class Calib {
      */
     double aspectRatio;
 
-    void getReprojections(CalibResult &calib,
-                          const size_t ii,
-                          std::vector<cv::Point2d> & markers,
-                          std::vector<cv::Point2d> & reprojections);
-
     bool verbose = true;
     bool verbose2 = false;
 
@@ -847,9 +889,6 @@ class Calib {
     bool use_rgb = false;
 
     bool use_raw = false;
-
-    typedef std::map<std::string, CornerStore> Store_T;
-    Store_T data;
 
     bool plotMarkers = false;
 
@@ -937,6 +976,11 @@ class Calib {
     double min_snr = 5;
 
 public:
+    typedef std::map<std::string, CornerStore> Store_T;
+    Store_T data;
+
+    void prepareCalibrationByName(std::string const& name);
+
     Calib();
 
     unsigned int threads = std::thread::hardware_concurrency() > 0 ? std::thread::hardware_concurrency() : 4;
@@ -1176,6 +1220,29 @@ public:
     );
 
     cv::Point2f project(const cv::Mat_<double> &cameraMatrix, cv::Vec3d const& point) const;
+
+    template<class F, class T>
+    /**
+     * @brief project
+     * @param name Name of the calibration result.
+     * @param p 3D world point
+     * @param result 2D projected point
+     * @param focal focal lengths (f_x and f_y)
+     * @param principal Principal point (orthogonal projection of the pinhole on the sensor)
+     * @param R Rotation matrix (3x3)
+     * @param t translation vector
+     * @param dist distortion vector
+     */
+    static void projectByCalibName(
+    std::string const& name,
+    F const p[3],
+    T result[2],
+    const T focal[2],
+    const T principal[2],
+    const T R[9],
+    const T t[3],
+    const T dist[]
+    );
 
     template<class F, class T>
     static void project(
@@ -1614,6 +1681,11 @@ public:
     double CeresCalibFlexibleTargetN(const double outlier_threshold);
     template<int N>
     double CeresCalibFlexibleTargetOdd(const double outlier_threshold);
+    static bool startsWith(const std::string &str, const std::string &term);
+    std::vector<std::vector<cv::Point2f> > getImagePoints() const;
+
+    std::vector<std::vector<cv::Point3f> > getObjectPoints() const;
+
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

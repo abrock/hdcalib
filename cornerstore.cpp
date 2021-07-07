@@ -89,10 +89,25 @@ size_t CornerStore::lastCleanDifference() const {
     return last_clean_diff;
 }
 
-std::vector<std::vector<Corner> > CornerStore::getSquares(const int cornerIdFactor, runningstats::QuantileStats<float> *distances) const
+int CornerStore::getCornerIdFactorFromMainMarkers(std::vector<Corner> const& vec) {
+    int gcd = -1;
+    for (Corner const& c : vec) {
+        if (c.layer == 0) {
+            gcd = Calib::tolerantGCD(gcd, c.id.x);
+            gcd = Calib::tolerantGCD(gcd, c.id.y);
+        }
+    }
+    return gcd;
+}
+
+int CornerStore::getCornerIdFactorFromMainMarkers() const {
+    return getCornerIdFactorFromMainMarkers(corners);
+}
+
+std::vector<std::vector<Corner> > CornerStore::getSquares(int cornerIdFactor, runningstats::QuantileStats<float> *distances) const
 {
     std::vector<std::vector<Corner> > result;
-
+    cornerIdFactor = getCornerIdFactorFromMainMarkers();
     for (auto const& c : corners) {
         if (c.id.x % cornerIdFactor == 0 && c.id.y % cornerIdFactor == 0) {
             bool has_square = true;

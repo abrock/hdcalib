@@ -55,14 +55,14 @@ void localizeException(cv::Mat _img, std::string const name, int const recursion
     std::cout << "Testing " << name << " with size " << _img.size << std::endl;
     cv::Mat img = _img.clone();
     cv::imwrite(name + ".png", img);
-    std::vector<hdmarker::Corner> corners;
+    std::vector<hdmarker::Corner> corners, rejected;
     std::vector<hdmarker::Corner> corners2;
     bool const use_rgb = false;
     try {
         hdmarker::detect(img, corners, use_rgb, 0, 10, effort, 3);
         if (recursion_depth > 0) {
             double msize = 1.0;
-            hdmarker::refine_recursive(img, corners, corners2, 3, &msize);
+            hdmarker::refine_recursive(img, corners, corners2, rejected, 3, &msize);
         }
     }
     catch (hdmarker::runaway_subpattern const& e) {

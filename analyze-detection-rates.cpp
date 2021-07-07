@@ -10,6 +10,9 @@
 
 #include "gnuplot-iostream.h"
 
+#undef NDEBUG
+#include <cassert>
+
 namespace fs = boost::filesystem;
 
 void trim(std::string &s) {
@@ -41,6 +44,10 @@ struct Rates {
     std::string filename;
     double mean_dist;
 
+    double mean_main_edge;
+
+    double density;
+
     /**
      * @brief write Function needed for serializating a Corner using the OpenCV FileStorage system.
      * @param fs
@@ -52,6 +59,7 @@ struct Rates {
            << "rate" << rate
            << "filename" << filename
            << "mean_dist" << mean_dist
+           << "mean_main_edge" << mean_main_edge
            << "}";
     }
 
@@ -70,6 +78,7 @@ struct Rates {
         node["rate"] >> rate;
         node["filename"] >> filename;
         node["mean_dist"] >> mean_dist;
+        node["mean_main_edge"] >> mean_main_edge;
         if (rates_by_color.size() != 2) {
             throw std::runtime_error(std::string("rates_by_color has unexpected size ") + std::to_string(rates_by_color.size()) + ", expected 2.");
         }
@@ -99,24 +108,48 @@ void read(const cv::FileNode& node, Rates& x, const Rates& default_value = Rates
         x.read(node);
 }
 
+bool isInSquare(hdmarker::Corner const& c, std::vector<hdmarker::Corner> const& square) {
+    assert(square.size() == 4);
+    int min_x = std::min(std::min(square[0].id.x, square[1].id.x), std::min(square[2].id.x, square[3].id.x));
+    int min_y = std::min(std::min(square[0].id.y, square[1].id.y), std::min(square[2].id.y, square[3].id.y));
+
+    int max_x = std::max(std::max(square[0].id.x, square[1].id.x), std::max(square[2].id.x, square[3].id.x));
+    int max_y = std::max(std::max(square[0].id.y, square[1].id.y), std::max(square[2].id.y, square[3].id.y));
+
+    return c.id.x < max_x && c.id.y < max_y && c.id.x > min_x && c.id.y > min_y;
+}
+
+double polynomeArea(std::vector<hdmarker::Corner> const& vec) {
+    double result = 0;
+    int const n = vec.size();
+    for (int ii = 0; ii < n; ++ii) {
+        result += vec[ii].p.x*(vec.at((ii+1)%n).p.y - vec.at((ii+n-1)%n).p.y);
+    }
+    return std::abs(result/2);
+}
+
 Rates analyzeRates(fs::path const& file, int8_t const recursion, int const page) {
     Rates result;
     fs::path const rates_cache_file = file.string() + "-rates-r" + std::to_string(recursion) + "-p" + std::to_string(page) + ".yaml";
-    if (fs::is_regular_file(rates_cache_file)) {
-        try {
-            cv::FileStorage cache(rates_cache_file.string(), cv::FileStorage::READ);
-            cache["cache"] >> result;
-            return result;
-        } catch (std::exception const& e) {
-            std::cout << "Reading file " << rates_cache_file .string() << " failed with exception:" << std::endl
-                      << e.what() << std::endl;
+    if (false) {
+        if (fs::is_regular_file(rates_cache_file)) {
+            try {
+                cv::FileStorage cache(rates_cache_file.string(), cv::FileStorage::READ);
+                cache["cache"] >> result;
+                return result;
+            } catch (std::exception const& e) {
+                std::cout << "Reading file " << rates_cache_file .string() << " failed with exception:" << std::endl
+                          << e.what() << std::endl;
+            }
         }
     }
-    std::vector<hdmarker::Corner> corners = hdcalib::Calib::purgeInvalidPages(hdcalib::Calib::readCorners(file.string()), {page});
+    std::vector<hdmarker::Corner> corners;
+    hdmarker::Corner::readGzipFile(file.string(), corners);
+    corners = hdcalib::Calib::purgeInvalidPages(corners, {page});
     std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
-    int const factor = hdcalib::Calib::computeCornerIdFactor(recursion);
 
     hdcalib::CornerStore store(corners);
+    int const factor = store.getCornerIdFactorFromMainMarkers();
 
     runningstats::RunningStats distances;
     runningstats::BinaryStats rate;
@@ -170,16 +203,99 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion, int const page)
     return result;
 }
 
+double getDensity(fs::path const& file, Rates& rates, int const page) {
+    std::vector<hdmarker::Corner> corners;
+    hdmarker::Corner::readGzipFile(file.string(), corners);
+    corners = hdcalib::Calib::purgeInvalidPages(corners, {page});
+    std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
+
+    hdcalib::CornerStore store(corners);
+    int const factor = store.getCornerIdFactorFromMainMarkers();
+
+    runningstats::RunningStats distances, areas;
+    runningstats::BinaryStats rate;
+    runningstats::BinaryStats rates_by_color[2];
+
+    std::vector<std::vector<hdmarker::Corner> > squares = store.getSquares(factor);
+    double total_pixels = 0;
+    for (auto const& square : squares) {
+        assert(square.size() == 4);
+        for (size_t ii = 0; ii < 4; ++ii) {
+            distances.push_unsafe(hdcalib::Calib::distance(square[ii], square[(ii + 1) % 4]));
+        }
+        double const area = polynomeArea(square);
+        areas.push_unsafe(area);
+        total_pixels += area;
+    }
+    size_t in_square_count = 0;
+    for (hdmarker::Corner const& c : corners) {
+        size_t local_in_square_count = 0;
+        for (auto const& square: squares) {
+            if (isInSquare(c, square)) {
+                local_in_square_count++;
+            }
+        }
+        if (local_in_square_count > 1) {
+            std::cout << "Warning: corner " << c.id << " found in multiple squares?" << std::endl;
+        }
+        if (local_in_square_count > 0) {
+            in_square_count++;
+        }
+    }
+
+    double const mean_dist = distances.getMean();
+
+    std::cout << "Mean dist: " << mean_dist << ", square: " << mean_dist * mean_dist << std::endl;
+    std::cout << "Mean area: " << areas.getMean() << std::endl;
+
+    rates.mean_main_edge = mean_dist;
+    double const megapixels = double(total_pixels) / 1'000'000;
+    rates.density = double(in_square_count)/megapixels;
+
+    return 0;
+}
+
+void plotDensity(std::string prefix, std::map<double, Rates> & rates) {
+    prefix += "-density";
+    std::string logfile = prefix + ".data";
+    std::ofstream log(logfile);
+    log << "# 1. mean main marker square edge length, 2. density in markers/megapixels" << std::endl;
+    std::map<double, double> density_by_main_edge;
+    for (auto const& it : rates) {
+        if (it.second.density > 0) {
+            density_by_main_edge[it.second.mean_main_edge] = it.second.density;
+        }
+    }
+    for (auto const& it : density_by_main_edge) {
+        log << it.first << "\t" << it.second << std::endl;
+    }
+    for (auto const& it : rates) {
+        std::cout << it.second.filename << " has density " << it.second.density << ", main edge: " << it.second.mean_main_edge << std::endl;
+    }
+    gnuplotio::Gnuplot plt("tee " + prefix + ".gpl | gnuplot -persist");
+    plt << "set term svg enhanced background rgb \"white\";\n"
+        << "set output \"" << prefix << ".svg\";\n"
+        << "set title 'Marker detection density';\n"
+        //<< "set xrange [4.5:10];\n"
+        //<< "set yrange [0:100];\n"
+        << "set logscale x;\n"
+        << "set xlabel 'main marker edge [px]';\n"
+        << "set ylabel 'detection density[1/MP]';\n"
+        << "plot '" << logfile << "' u 1:2 w lp title 'density'";
+}
+
 void analyzeDirectory(std::string const& dir, int const recursion, int const page) {
     std::map<double, std::string> data;
     std::vector<fs::path> files;
     for (fs::recursive_directory_iterator itr(dir); itr!=fs::recursive_directory_iterator(); ++itr) {
         if (fs::is_regular_file(itr->status())
-                && stringEndsWith(itr->path().filename().string(), "-submarkers.yaml.gz")) {
+                && stringEndsWith(itr->path().filename().string(), "-submarkers.hdmarker.gz")) {
             files.push_back(itr->path());
         }
     }
     std::sort(files.begin(), files.end());
+
+    std::cout << "Directory " << dir << " has " << files.size() << " relevant files" << std::endl;
 
     std::map<double, std::string> overview;
 
@@ -188,10 +304,13 @@ void analyzeDirectory(std::string const& dir, int const recursion, int const pag
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < files.size(); ++ii) {
         fs::path const& p = files[ii];
-        Rates const result = analyzeRates(p, recursion, page);
+        Rates result = analyzeRates(p, recursion, page);
+        getDensity(p, result, page);
 #pragma omp critical
         {
-            rates[result.mean_dist] = result;
+            if (true || (result.num_corners > 0 && result.rate > 0)) {
+                rates[result.mean_dist] = result;
+            }
         }
     }
     if (rates.empty()) {
@@ -203,10 +322,11 @@ void analyzeDirectory(std::string const& dir, int const recursion, int const pag
     for (auto const& it : rates) {
         if (it.first > 0) {
             logfile << it.second.getString() << "\t" << it.second.filename << std::endl;
-            previous = it.second;
             overview[it.first] = it.second.getString() + "\t" + it.second.filename;
+            previous = it.second;
         }
     }
+    plotDensity(prefix, rates);
     gnuplotio::Gnuplot plt;
     std::stringstream cmd;
 
@@ -250,8 +370,8 @@ int main(int argc, char ** argv) {
         cmd.add(recursive_depth_arg);
 
         TCLAP::MultiArg<int> pages_arg("p", "pages",
-                                                 "page number (s) of the calibration target.",
-                                                 true, "int");
+                                       "page number (s) of the calibration target.",
+                                       true, "int");
         cmd.add(pages_arg);
 
         TCLAP::MultiArg<std::string> directories_arg("i",
@@ -298,9 +418,10 @@ int main(int argc, char ** argv) {
         }
     }
     for (auto const& dir : input_dirs) {
-        gnuplotio::Gnuplot plt;
-        std::stringstream cmd;
-        cmd << "set term svg enhanced background rgb 'white';\n"
+        { // Plot detection probabilities
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
             << "set output 'all-" << dir << ".svg';\n"
             << "set title 'Marker detection rates';\n"
             << "set xrange [4:10];\n"
@@ -309,12 +430,31 @@ int main(int argc, char ** argv) {
             << "set ylabel 'detection rate [%]';\n"
             << "set key out horiz;\n"
             << "plot '" << dir << pages[0] << "-log' u 1:2 w lp title '" << pages[0] << "'";
-        for (size_t ii = 1; ii < pages.size(); ++ii) {
-            cmd << ", '" << dir << pages[ii] << "-log' u 1:2 w lp title '" << pages[ii] << "'";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-log' u 1:2 w lp title '" << pages[ii] << "'";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-log.gpl");
+            gpl_file << cmd.str();
         }
-        plt << cmd.str();
-        std::ofstream gpl_file(std::string("all-") + dir + "-log.gpl");
-        gpl_file << cmd.str();
+        { // plot detection rates
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-density.svg';\n"
+            << "set title 'Marker detection densities';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel 'detection density [1/MP]';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:2 w l title '" << pages[0] << "'";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:2 w l title '" << pages[ii] << "'";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-density-log.gpl");
+            gpl_file << cmd.str();
+        }
     }
 
     std::cout << "Total time: " << total_time.print() << std::endl;

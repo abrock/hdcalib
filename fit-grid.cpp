@@ -190,7 +190,7 @@ int main(int argc, char* argv[]) {
     std::stringstream mean_table;
 
     mean_table << "Grid: all" << std::endl
-               << std::setw(12) << std::left << "type" << " & "
+               << std::setw(14) << std::left << "type" << " & "
                << std::setw(10) << std::left << "mean" << " & "
                << std::setw(10) << std::left << "stddev" << " & "
                << std::setw(10) << std::left << "max\\\\" << std::endl;
@@ -198,7 +198,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::stringstream> tables(descriptions.size());
     for (size_t ii = 0; ii < descriptions.size(); ++ii) {
         tables[ii] << "Grid:" << descriptions[ii].name << std::endl
-                   << std::setw(12) << std::left << "type" << " & "
+                   << std::setw(14) << std::left << "type" << " & "
                    << std::setw(10) << std::left << "mean" << " & "
                    << std::setw(10) << std::left << "stddev" << " & "
                    << std::setw(10) << std::left << "max\\\\" << std::endl;
@@ -212,24 +212,29 @@ int main(int argc, char* argv[]) {
 
         hdcalib::FitGrid fit;
         hdcalib::CalibResult & res = calib.getCalib(calibration_type);
+        std::vector<double> const error_percentiles = res.getErrorPercentiles();
+        assert(error_percentiles.size() >= 101);
+        double const median = error_percentiles[50];
         res.name = calibration_type;
         msg << "Calib " << calibration_type << std::endl
             << fit.runFit(calib, res, descriptions) << std::endl;
 
         runningstats::QuantileStats<float> merged;
         for (size_t ii = 0; ii < descriptions.size(); ++ii) {
-            tables[ii] << std::setw(12) << std::left << calibration_type << " & "
+            tables[ii] << std::setw(14) << std::left << calibration_type << " & "
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMean()) << " & "
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getStddev()) << " & "
-                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << "\\\\"
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << " & "
+                       << std::setw(8) << std::right << round(1000.0 * median) << "\\\\"
                        << std::endl;
             merged.push_unsafe(fit.per_grid_type_stats_length[ii].getData());
         }
 
-        mean_table << std::setw(12) << std::left << calibration_type << " & "
+        mean_table << std::setw(14) << std::left << calibration_type << " & "
                    << std::setw(10) << std::left << round1(1000.0 * merged.getMean()) << " & "
                    << std::setw(10) << std::left << round1(1000.0 * merged.getStddev()) << " & "
-                   << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << "\\\\"
+                   << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << " & "
+                   << std::setw(8) << std::right << round(1000.0 * median) << " \\\\"
                    << std::endl;
 
         TIMELOG(std::string("Calib ") + calibration_type);

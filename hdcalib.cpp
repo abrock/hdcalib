@@ -79,63 +79,14 @@ bool Calib::removeAllOutliers(const double threshold) {
     return result;
 }
 
-void Calib::getReprojections(
-        CalibResult & calib,
-        const size_t ii,
-        std::vector<Point2d> &markers,
-        std::vector<Point2d> &reprojections) {
+std::vector<std::vector<cv::Point2f> > Calib::getImagePoints() const
+{
+    return imagePoints;
+}
 
-    auto const& imgPoints = imagePoints[ii];
-    auto const& objPoints = objectPoints[ii];
-    std::string const& filename = imageFiles[ii];
-    CornerStore const& store = data[filename];
-    cv::Mat const& rvec = calib.rvecs[ii];
-    cv::Mat const& tvec = calib.tvecs[ii];
-
-    markers.clear();
-    markers.reserve(imgPoints.size());
-
-    reprojections.clear();
-    reprojections.reserve(imgPoints.size());
-
-    double p[3], r[3], t[3], R[9];
-
-    double result[2];
-
-    cv::Point3d r_point(rvec);
-    cv::Point3d t_point(tvec);
-
-    vec2arr(r, r_point);
-    vec2arr(t, t_point);
-
-    rot_vec2mat(r, R);
-
-    double dist[14];
-    for (int jj = 0; jj < 14; ++jj) {
-        dist[size_t(jj)] = calib.distCoeffs.cols > jj ? calib.distCoeffs(jj) : 0;
-    }
-
-    double focal[2] = {calib.cameraMatrix(0,0), calib.cameraMatrix(1,1)};
-    double principal[2] = {calib.cameraMatrix(0,2), calib.cameraMatrix(1,2)};
-
-    std::vector<std::vector<double> > data;
-    for (size_t jj = 0; jj < imgPoints.size(); ++jj) {
-        Corner const& current_corner = store.get(jj);
-        cv::Scalar_<int> simple_id = getSimpleIdLayer(current_corner);
-        cv::Point3f correction;
-        auto const it = calib.objectPointCorrections.find(simple_id);
-        if (calib.objectPointCorrections.end() != it) {
-            correction = it->second;
-        }
-        cv::Point3f current_objPoint = objPoints[jj] + correction;
-
-        vec2arr(p, current_objPoint);
-        cv::Point2d marker_pos(imgPoints[jj]);
-        project(p, result, focal, principal, R, t, dist);
-        cv::Point2d res(result[0], result[1]);
-        markers.push_back(marker_pos);
-        reprojections.push_back(res);
-    }
+std::vector<std::vector<cv::Point3f> > Calib::getObjectPoints() const
+{
+    return objectPoints;
 }
 
 char Calib::color(const int ii, const int jj) {
@@ -149,6 +100,18 @@ char Calib::color(const int ii, const int jj) {
         return 'G';
     }
     return 'B'; // Second row, second pixel (bottom right pixel)
+}
+
+void Calib::prepareCalibrationByName(const string &name) {
+    if ("OpenCV" == name || "SimpleOpenCV" == name) {
+        prepareOpenCVCalibration();
+        return;
+    }
+    if ("OpenCVRO" == name || "SimpleOpenCVRO" == name) {
+        prepareOpenCVROCalibration();
+        return;
+    }
+    prepareCalibration();
 }
 
 Calib::Calib() {
@@ -335,7 +298,7 @@ void Calib::plotResidualsIntoImages(const string calib_name) {
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
         std::vector<cv::Point2d> markers, reprojections;
-        getReprojections(calib, ii, markers, reprojections);
+        calib.getReprojections(ii, markers, reprojections);
         cv::Mat img = readImage(imageFiles[ii], demosaic, libraw, useOnlyGreen);
         if (1 == img.channels()) {
             cv::Mat _img[3] = {img.clone(), img.clone(), img.clone()};
@@ -395,8 +358,7 @@ Rect_<int> Calib::getIdRectangleUnion() const {
 }
 
 double Calib::distance(const Corner &a, const Corner &b) {
-    cv::Point2f res = a.p - b.p;
-    return std::sqrt(res.dot(res));
+    return cv::norm(a.p - b.p);
 }
 
 void Calib::plotPoly(cv::Mat & img, std::vector<cv::Point> const& poly, cv::Scalar const& color, int const line) {
@@ -457,7 +419,7 @@ void Calib::exportPointClouds(const string &calib_name, double const outlier_thr
         std::string const& filename = imageFiles[ii];
         std::ofstream out(filename + "-" + calib_name + "-target-points.txt", std::ofstream::out);
         CornerStore const& store = data[filename];
-        getReprojections(calib, ii, markers, reprojections);
+        calib.getReprojections(ii, markers, reprojections);
         if (markers.size() != reprojections.size() || markers.size() != store.size()) {
             throw std::runtime_error("Vector sizes don't match in exportPointClouds");
         }
@@ -855,7 +817,7 @@ Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
     case 7: res.x += cornerIdFactor * 32; break;
     }
 
-    res.x *= float(markerSize / cornerIdFactor);
+    res.x *= float(markerSize / cornerIdFactor) * (1.0 + 0.230475/100.0); // Hacky adjustment for aspect ratio
     res.y *= float(markerSize / cornerIdFactor);
 
     return res;
@@ -1430,6 +1392,8 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
         }
     }
     CalibResult & res = calibrations[name];
+    res.calib = this;
+    res.name = name;
 
     int flags = 0;
     flags |= CALIB_USE_LU;
@@ -1688,7 +1652,7 @@ void Calib::findOutliers(
         const size_t image_index,
         std::vector<hdmarker::Corner> & outliers) {
     std::vector<cv::Point2d> markers, projections;
-    getReprojections(calibrations[calib_name], image_index, markers, projections);
+    calibrations[calib_name].getReprojections(image_index, markers, projections);
 
     runningstats::RunningStats inlier_stats, outlier_stats;
     for (size_t ii = 0; ii < markers.size(); ++ii) {
@@ -1840,6 +1804,15 @@ r += "C";
 r += (chans+'0');
 
 return r;
+}
+
+bool CalibResult::isExpandedType() {
+for (std::string const& prefix : {"FlexibleN", "FlexibleOdd", "SemiFlexibleN", "SemiFlexibleOdd"}) {
+if (Calib::startsWith(name, prefix)) {
+return true;
+}
+}
+return false;
 }
 
 } // namespace hdcalib
