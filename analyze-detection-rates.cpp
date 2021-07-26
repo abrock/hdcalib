@@ -15,6 +15,8 @@
 
 namespace fs = boost::filesystem;
 
+std::set<int> found_pages;
+
 void trim(std::string &s) {
     s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
         return !std::isspace(ch);
@@ -38,15 +40,21 @@ bool stringEndsWith(std::string const& str, std::string const& search) {
 }
 
 struct Rates {
-    size_t num_corners;
+    size_t num_corners = 0;
+    size_t num_initial_corners = 0;
     std::vector<double> rates_by_color;
-    double rate;
+    double rate = -1;
     std::string filename;
-    double mean_dist;
+    double mean_dist = -1;
 
-    double mean_main_edge;
+    double mean_main_edge = -1;
 
-    double density;
+    runningstats::QuantileStats<float> homography_errors;
+    runningstats::QuantileStats<float> homography_residuals;
+    runningstats::QuantileStats<float> homography_residuals_x;
+    runningstats::QuantileStats<float> homography_residuals_y;
+
+    double density = -1;
 
     /**
      * @brief write Function needed for serializating a Corner using the OpenCV FileStorage system.
@@ -89,7 +97,8 @@ struct Rates {
                 + std::to_string(rate) + "\t"
                 + std::to_string(rates_by_color[0]) + "\t"
                 + std::to_string(rates_by_color[1]) + "\t"
-                + std::to_string(num_corners);
+                + std::to_string(num_corners) + "\t"
+                + std::to_string(homography_errors.getMedian());
     }
 
     Rates() {
@@ -128,25 +137,27 @@ double polynomeArea(std::vector<hdmarker::Corner> const& vec) {
     return std::abs(result/2);
 }
 
-Rates analyzeRates(fs::path const& file, int8_t const recursion, int const page) {
+Rates analyzeRates(std::string file, int8_t const recursion, int const page) {
     Rates result;
-    fs::path const rates_cache_file = file.string() + "-rates-r" + std::to_string(recursion) + "-p" + std::to_string(page) + ".yaml";
+    std::string const rates_cache_file = file + "-rates-r" + std::to_string(recursion) + "-p" + std::to_string(page) + ".yaml";
     if (false) {
         if (fs::is_regular_file(rates_cache_file)) {
             try {
-                cv::FileStorage cache(rates_cache_file.string(), cv::FileStorage::READ);
+                cv::FileStorage cache(rates_cache_file, cv::FileStorage::READ);
                 cache["cache"] >> result;
                 return result;
             } catch (std::exception const& e) {
-                std::cout << "Reading file " << rates_cache_file .string() << " failed with exception:" << std::endl
+                std::cout << "Reading file " << rates_cache_file << " failed with exception:" << std::endl
                           << e.what() << std::endl;
             }
         }
     }
     std::vector<hdmarker::Corner> corners;
-    hdmarker::Corner::readGzipFile(file.string(), corners);
+    hdmarker::Corner::readGzipFile(file, corners);
+    size_t raw_corners = corners.size();
     corners = hdcalib::Calib::purgeInvalidPages(corners, {page});
-    std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
+    result.num_initial_corners = corners.size();
+    std::cout << "File " << file << " has " << raw_corners << " / " << corners.size() << " corners." << std::endl;
 
     hdcalib::CornerStore store(corners);
     int const factor = store.getCornerIdFactorFromMainMarkers();
@@ -160,6 +171,7 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion, int const page)
             continue;
         }
         hdmarker::Corner const& c = squares[0];
+        found_pages.insert(c.page);
         for (size_t ii = 0; ii < 4; ++ii) {
             distances.push_unsafe(hdcalib::Calib::distance(squares[ii], squares[(ii + 1) % 4]) / (factor/2));
         }
@@ -169,7 +181,8 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion, int const page)
                 search.id += cv::Point2i(xx, yy);
                 size_t color = CornerColor::getColor(search, recursion);
                 if (color > 1) {
-                    throw std::runtime_error("Color value unexpectedly high, something is wrong.");
+                    //throw std::runtime_error("Color value unexpectedly high, something is wrong.");
+                    continue;
                 }
                 if (store.hasIDLevel(search, recursion)) {
                     rate.push(true);
@@ -191,14 +204,14 @@ Rates analyzeRates(fs::path const& file, int8_t const recursion, int const page)
     std::cout << std::endl;
 
     result.rate = rate.getPercent();
-    result.filename = file.string();
+    result.filename = file;
     result.mean_dist = distances.getMean();
     result.num_corners = corners.size();
     result.rates_by_color.resize(2);
     result.rates_by_color[0] = rates_by_color[0].getPercent();
     result.rates_by_color[1] = rates_by_color[1].getPercent();
 
-    cv::FileStorage cache(rates_cache_file.string(), cv::FileStorage::WRITE);
+    cv::FileStorage cache(rates_cache_file, cv::FileStorage::WRITE);
     cache << "cache" << result;
     return result;
 }
@@ -208,6 +221,9 @@ double getDensity(fs::path const& file, Rates& rates, int const page) {
     hdmarker::Corner::readGzipFile(file.string(), corners);
     corners = hdcalib::Calib::purgeInvalidPages(corners, {page});
     std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
+    if (corners.empty()) {
+        return 0;
+    }
 
     hdcalib::CornerStore store(corners);
     int const factor = store.getCornerIdFactorFromMainMarkers();
@@ -215,6 +231,8 @@ double getDensity(fs::path const& file, Rates& rates, int const page) {
     runningstats::RunningStats distances, areas;
     runningstats::BinaryStats rate;
     runningstats::BinaryStats rates_by_color[2];
+
+    std::vector<cv::Point2f> homography_src, homography_dst;
 
     std::vector<std::vector<hdmarker::Corner> > squares = store.getSquares(factor);
     double total_pixels = 0;
@@ -230,6 +248,9 @@ double getDensity(fs::path const& file, Rates& rates, int const page) {
     size_t in_square_count = 0;
     for (hdmarker::Corner const& c : corners) {
         size_t local_in_square_count = 0;
+        if (c.layer == 0) {
+            continue;
+        }
         for (auto const& square: squares) {
             if (isInSquare(c, square)) {
                 local_in_square_count++;
@@ -238,8 +259,32 @@ double getDensity(fs::path const& file, Rates& rates, int const page) {
         if (local_in_square_count > 1) {
             std::cout << "Warning: corner " << c.id << " found in multiple squares?" << std::endl;
         }
-        if (local_in_square_count > 0) {
+        if (local_in_square_count > 0 && c.layer > 0) {
             in_square_count++;
+            homography_src.push_back(c.id);
+            homography_dst.push_back(c.p);
+        }
+    }
+
+    assert(homography_src.size() == homography_dst.size());
+
+    if (homography_src.size() > 25) {
+        std::vector<cv::Point2f> homography_mapped;
+        cv::Mat homography = cv::findHomography(homography_src, homography_dst);
+        cv::perspectiveTransform(homography_src, homography_mapped, homography);
+        assert(homography_src.size() == homography_mapped.size());
+        rates.homography_errors.clear();
+        rates.homography_residuals.clear();
+        rates.homography_residuals_x.clear();
+        rates.homography_residuals_y.clear();
+
+        for (size_t ii = 0; ii < homography_dst.size(); ++ii) {
+            rates.homography_errors.push_unsafe(cv::norm(homography_dst[ii] - homography_mapped[ii]));
+            rates.homography_residuals.push_unsafe(homography_dst[ii].x - homography_mapped[ii].x);
+            rates.homography_residuals.push_unsafe(homography_dst[ii].y - homography_mapped[ii].y);
+
+            rates.homography_residuals_x.push_unsafe(homography_dst[ii].x - homography_mapped[ii].x);
+            rates.homography_residuals_y.push_unsafe(homography_dst[ii].y - homography_mapped[ii].y);
         }
     }
 
@@ -260,10 +305,16 @@ void plotDensity(std::string prefix, std::map<double, Rates> & rates) {
     std::string logfile = prefix + ".data";
     std::ofstream log(logfile);
     log << "# 1. mean main marker square edge length, 2. density in markers/megapixels" << std::endl;
-    std::map<double, double> density_by_main_edge;
+    std::map<double, std::string> density_by_main_edge;
     for (auto const& it : rates) {
-        if (it.second.density > 0) {
-            density_by_main_edge[it.second.mean_main_edge] = it.second.density;
+        if (it.second.density > 0 && it.second.homography_errors.getCount() > 0) {
+            density_by_main_edge[it.second.mean_main_edge] =
+                    std::to_string(it.second.density) + "\t"
+                    + std::to_string(it.second.homography_errors.getMedian()) + "\t"
+                    + std::to_string(std::abs(it.second.homography_residuals.getMedian())) + "\t"
+                    + std::to_string(std::abs(it.second.homography_residuals_x.getMedian())) + "\t"
+                    + std::to_string(std::abs(it.second.homography_residuals_y.getMedian())) + "\t"
+                    + it.second.filename;
         }
     }
     for (auto const& it : density_by_main_edge) {
@@ -272,20 +323,33 @@ void plotDensity(std::string prefix, std::map<double, Rates> & rates) {
     for (auto const& it : rates) {
         std::cout << it.second.filename << " has density " << it.second.density << ", main edge: " << it.second.mean_main_edge << std::endl;
     }
-    gnuplotio::Gnuplot plt("tee " + prefix + ".gpl | gnuplot -persist");
-    plt << "set term svg enhanced background rgb \"white\";\n"
+    {
+        gnuplotio::Gnuplot plt("tee " + prefix + ".gpl | gnuplot -persist");
+        plt << "set term svg enhanced background rgb \"white\";\n"
         << "set output \"" << prefix << ".svg\";\n"
         << "set title 'Marker detection density';\n"
         //<< "set xrange [4.5:10];\n"
-        //<< "set yrange [0:100];\n"
+           //<< "set yrange [0:100];\n"
         << "set logscale x;\n"
         << "set xlabel 'main marker edge [px]';\n"
         << "set ylabel 'detection density[1/MP]';\n"
         << "plot '" << logfile << "' u 1:2 w lp title 'density'";
+    }
+    {
+        gnuplotio::Gnuplot plt("tee " + prefix + "-homography.gpl | gnuplot -persist");
+        plt << "set term svg enhanced background rgb \"white\";\n"
+        << "set output \"" << prefix << "-homography.svg\";\n"
+        << "set title 'Homography errors';\n"
+        //<< "set xrange [4.5:10];\n"
+           //<< "set yrange [0:100];\n"
+        << "set logscale x;\n"
+        << "set xlabel 'main marker edge [px]';\n"
+        << "set ylabel 'error [px]';\n"
+        << "plot '" << logfile << "' u 1:3 w lp title 'error'";
+    }
 }
 
 void analyzeDirectory(std::string const& dir, int const recursion, int const page) {
-    std::map<double, std::string> data;
     std::vector<fs::path> files;
     for (fs::recursive_directory_iterator itr(dir); itr!=fs::recursive_directory_iterator(); ++itr) {
         if (fs::is_regular_file(itr->status())
@@ -301,14 +365,21 @@ void analyzeDirectory(std::string const& dir, int const recursion, int const pag
 
     std::map<double, Rates> rates;
 
+    double max_density = 0;
+
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < files.size(); ++ii) {
         fs::path const& p = files[ii];
-        Rates result = analyzeRates(p, recursion, page);
+        std::string name = p.string();
+        Rates result;
+        result = analyzeRates(name, recursion, page);
         getDensity(p, result, page);
+        if (result.density > max_density) {
+            max_density = result.density;
+        }
 #pragma omp critical
         {
-            if (true || (result.num_corners > 0 && result.rate > 0)) {
+            if (result.num_initial_corners > 25 || (result.num_corners > 25 && result.rate > 0)) {
                 rates[result.mean_dist] = result;
             }
         }
@@ -318,36 +389,43 @@ void analyzeDirectory(std::string const& dir, int const recursion, int const pag
     }
     std::string prefix = dir + std::to_string(page);
     std::ofstream logfile(prefix + "-log");
+    std::ofstream logfile_nonzero(prefix + "-nonzero-log");
     Rates previous = rates.begin()->second;
     for (auto const& it : rates) {
         if (it.first > 0) {
             logfile << it.second.getString() << "\t" << it.second.filename << std::endl;
             overview[it.first] = it.second.getString() + "\t" + it.second.filename;
             previous = it.second;
+            if (it.second.rate > 0) {
+                logfile_nonzero << it.second.getString() << "\t" << it.second.filename << std::endl;
+            }
         }
     }
     plotDensity(prefix, rates);
-    gnuplotio::Gnuplot plt;
-    std::stringstream cmd;
 
     std::cout << "Overview for directory " << dir << ":" << std::endl;
     for (auto const& it : overview) {
         std::cout << it.first << "\t" << it.second << std::endl;
     }
+    std::cout << "Max density for directory " << dir << ", page " << page << ": " << max_density << std::endl;
 
-    cmd << "set term svg enhanced background rgb \"white\";\n"
-        << "set output \"" << prefix << "-log.svg\";\n"
-        << "set title 'Marker detection rates';\n"
-        << "set xrange [4.5:10];\n"
-        << "set yrange [0:100];\n"
-        << "set xlabel 'submarker distance [px]';\n"
-        << "set ylabel 'detection rate [%]';\n"
-        << "plot '" << prefix << "-log' u 1:2 w lp title 'combined rate',"
-        << "'' u 1:3 w lp title 'black rate',"
-        << "'' u 1:4 w lp title 'white rate'\n";
-    plt << cmd.str();
-    std::ofstream gpl_file(prefix + "-log.gpl");
-    gpl_file << cmd.str();
+    for (std::string suffix : {"", "-nonzero"}) {
+        gnuplotio::Gnuplot plt;
+        std::stringstream cmd;
+        cmd << "set term svg enhanced background rgb \"white\";\n"
+            << "set output \"" << prefix << suffix << "-log.svg\";\n"
+            << "set title 'Marker detection rates';\n"
+            << "set xrange [4.5:10];\n"
+            << "set yrange [0:100];\n"
+            << "set xlabel 'submarker distance [px]';\n"
+            << "set ylabel 'detection rate [%]';\n"
+            << "plot '" << prefix << suffix << "-log' u 1:2 w lp title 'combined rate',"
+            << "'' u 1:3 w lp title 'black rate',"
+            << "'' u 1:4 w lp title 'white rate'\n";
+        plt << cmd.str();
+        std::ofstream gpl_file(prefix + suffix + "-log.gpl");
+        gpl_file << cmd.str();
+    }
 }
 
 int main(int argc, char ** argv) {
@@ -437,6 +515,25 @@ int main(int argc, char ** argv) {
             std::ofstream gpl_file(std::string("all-") + dir + "-log.gpl");
             gpl_file << cmd.str();
         }
+        { // Plot detection probabilities
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-nonzero.svg';\n"
+            << "set title 'Marker detection rates';\n"
+            << "set xrange [4:10];\n"
+            << "set yrange [0:100];\n"
+            << "set xlabel 'submarker distance [px]';\n"
+            << "set ylabel 'detection rate [%]';\n"
+            << "set key out horiz;\n"
+            << "plot '" << dir << pages[0] << "-nonzero-log' u 1:2 w lp title '" << pages[0] << "'";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-nonzero-log' u 1:2 w lp title '" << pages[ii] << "'";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-nonzero-log.gpl");
+            gpl_file << cmd.str();
+        }
         { // plot detection rates
             gnuplotio::Gnuplot plt;
             std::stringstream cmd;
@@ -455,6 +552,82 @@ int main(int argc, char ** argv) {
             std::ofstream gpl_file(std::string("all-") + dir + "-density-log.gpl");
             gpl_file << cmd.str();
         }
+        { // plot homography errors
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-homography.svg';\n"
+            << "set title 'Median errors of a homography fit';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel 'errors[px]';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:3 w l title '" << pages[0] << "'\\\n";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:3 w l title '" << pages[ii] << "'\\\n";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-homography.gpl");
+            gpl_file << cmd.str();
+        }
+        { // plot homography residuals
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-homography-res.svg';\n"
+            << "set title 'Median errors of a homography fit';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel 'errors[px]';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:4 w l title '" << pages[0] << "'\\\n";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:4 w l title '" << pages[ii] << "'\\\n";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-homography-res.gpl");
+            gpl_file << cmd.str();
+        }
+        { // plot homography residuals x
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-homography-res-x.svg';\n"
+            << "set title 'Median errors of a homography fit';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel 'errors[px]';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:5 w l title '" << pages[0] << "'\\\n";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:5 w l title '" << pages[ii] << "'\\\n";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-homography-res-x.gpl");
+            gpl_file << cmd.str();
+        }
+        { // plot homography residuals y
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-homography-res-y.svg';\n"
+            << "set title 'Median errors of a homography fit';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel 'errors[px]';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:6 w l title '" << pages[0] << "'\\\n";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:6 w l title '" << pages[ii] << "'\\\n";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-homography-res-y.gpl");
+            gpl_file << cmd.str();
+        }
+    }
+
+    for (int page : found_pages) {
+        std::cout << "Found page " << page << std::endl;
     }
 
     std::cout << "Total time: " << total_time.print() << std::endl;

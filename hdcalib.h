@@ -40,7 +40,7 @@ using namespace cv;
 namespace fs = boost::filesystem;
 
 /**
- * @brief remove_duplicate_markers purges duplicate markers from a vector of markers.
+ * @brief filter_duplicate_markers purges duplicate markers from a vector of markers.
  * These occur when a target has a with and/or height of 33 or more since different
  * "pages" are used on those larger targets and markers are identified as belonging
  * to both pages at the edges.
@@ -158,6 +158,10 @@ private:
 public:
     CornerStore();
 
+    void purgeRecursionDeeperThan(int level);
+
+    size_t countMainMarkers() const;
+
     void sort();
 
     size_t lastCleanDifference() const;
@@ -203,6 +207,8 @@ public:
     void difference(CornerStore const& subtrahend);
 
     void replaceCorners(std::vector<hdmarker::Corner> const& _corners);
+
+    void scaleIDs(int factor);
 
     /**
      * @brief getCorners returns a copy of the stored corners.
@@ -668,6 +674,8 @@ public:
      */
     std::vector<double> error_percentiles;
 
+    double error_median = -1;
+
     std::vector<double> getErrorPercentiles();
 
     /**
@@ -795,6 +803,8 @@ public:
     void getAllReprojections(
             std::vector<Point2d> &markers,
             std::vector<Point2d> &reprojections);
+
+    double getErrorMedian();
 
     runningstats::QuantileStats<float> errors;
 }; // class CalibResult
@@ -975,11 +985,21 @@ class Calib {
 
     double min_snr = 5;
 
+    double x_factor = 0;
+
 public:
     typedef std::map<std::string, CornerStore> Store_T;
     Store_T data;
 
+    void purgeRecursionDeeperThan(int level);
+
+    void autoScaleCornerIds();
+
+    static size_t countMainMarkers(std::vector<Corner> const& vec);
+
     void prepareCalibrationByName(std::string const& name);
+
+    void combineImages(std::string const& out_file);
 
     Calib();
 
@@ -1447,6 +1467,8 @@ public:
      */
     void addInputImage(const string filename, const std::vector<Corner> &corners, cv::Mat const& rvec, cv::Mat const& tvec);
 
+    void removeInputImage(const string filename);
+
     CornerStore get(std::string const filename) const;
 
     cv::Mat normalize_raw_per_channel(cv::Mat const& input);
@@ -1686,6 +1708,7 @@ public:
 
     std::vector<std::vector<cv::Point3f> > getObjectPoints() const;
 
+    int getImageIndex(const string &filename);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

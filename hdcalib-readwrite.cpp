@@ -120,6 +120,46 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
     }
 }
 
+void Calib::removeInputImage(const string filename) {
+    int const index = getImageIndex(filename);
+    if (index < 0) {
+        return;
+    }
+    prepareCalibration();
+    assert(size_t(index) < data.size());
+    assert(data.size() == imageFiles.size());
+    assert(data.size() == objectPoints.size());
+
+    imageFiles.erase(imageFiles.begin() + index);
+    objectPoints.erase(objectPoints.begin() + index);
+
+    auto const it = data.find(filename);
+    assert(it != data.end());
+    data.erase(it);
+
+
+    for (auto& it : calibrations) {
+        it.second.rvecs.erase(it.second.rvecs.begin() + index);
+        it.second.tvecs.erase(it.second.tvecs.begin() + index);
+    }
+
+    assert(size_t(index) < data.size());
+    assert(data.size() == imageFiles.size());
+    assert(data.size() == objectPoints.size());
+
+}
+
+int Calib::getImageIndex(const string& filename) {
+    int result = 0;
+    for (auto const& it : data) {
+        if (filename == it.first) {
+            return result;
+        }
+        result++;
+    }
+    return -1;
+}
+
 void Calib::addInputImage(const string filename, const CornerStore &corners) {
     invalidateCache();
 

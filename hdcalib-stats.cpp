@@ -90,8 +90,8 @@ void Calib::plotReprojectionErrors(
                             error});
             proj_x.push_unsafe(marker.x, reprojection.x);
             proj_y.push_unsafe(marker.y, reprojection.y);
-            double const residual_x = marker.x - reprojection.x;
-            double const residual_y = marker.y - reprojection.y;
+            float const residual_x = marker.x - reprojection.x;
+            float const residual_y = marker.y - reprojection.y;
             res_x.push_back(residual_x);
             res_y.push_back(residual_y);
             reprojection_residuals.push_unsafe(residual_x, residual_y);
@@ -585,6 +585,7 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string const _p
     runningstats::QuantileStats<float> res_x, res_y, res_all, errors_x, errors_y, errors_all, error_lengths;
     runningstats::Stats2D<float> res_xy, errors_xy;
     std::multimap<double, std::string> error_overview;
+    /*
     if ("OpenCV" == calibName || "SimpleOpenCV" == calibName) {
         prepareOpenCVCalibration();
     }
@@ -594,6 +595,8 @@ void Calib::plotReprojectionErrors(std::string const& calibName, string const _p
     else {
         prepareCalibration();
     }
+    */
+    prepareCalibrationByName(calibName);
     std::cout << "Plotting reprojection errors for calib " << calibName << ":" << std::endl;
     std::cout << std::string(imagePoints.size(), '-') << std::endl;
 #pragma omp parallel for schedule(dynamic)

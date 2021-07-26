@@ -74,6 +74,22 @@ CornerStore::CornerStore() :
 
 }
 
+void CornerStore::purgeRecursionDeeperThan(int level) {
+    std::vector<Corner> newvec;
+    for (Corner const& c : corners) {
+        if (c.layer <= level) {
+            newvec.push_back(c);
+        }
+    }
+    if (newvec.size() < corners.size()) {
+        replaceCorners(newvec);
+    }
+}
+
+size_t CornerStore::countMainMarkers() const {
+    return Calib::countMainMarkers(corners);
+}
+
 void CornerStore::sort() {
     std::vector<Corner> sorted = corners;
     std::sort(sorted.begin(), sorted.end());
@@ -266,6 +282,13 @@ void CornerStore::replaceCorners(const std::vector<Corner> &_corners) {
         idx_tree->addPoints(0, corners.size() - 1);
         pos_tree->addPoints(0, corners.size() - 1);
     }
+}
+
+void CornerStore::scaleIDs(int factor) {
+    for (Corner& c : corners) {
+        c.id *= factor;
+    }
+    replaceCorners(corners);
 }
 
 std::vector<Corner> CornerStore::getCorners() const {

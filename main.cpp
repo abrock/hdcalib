@@ -25,6 +25,14 @@ void trim(std::string &s) {
     }).base(), s.end());
 }
 
+double round2(double x) {
+    return std::round(x*100)/100;
+}
+
+double round1(double x) {
+    return std::round(x*100)/100;
+}
+
 template<class T>
 std::vector<T> commaSeparate(std::vector<std::string> const& args) {
     std::vector<T> result;
@@ -94,6 +102,18 @@ int main(int argc, char* argv[]) {
     double cauchy_param = 1;
     double marker_size = 1;
     double min_snr = 5;
+
+    TCLAP::ValueArg<std::string> combine_arg("", "combine",
+                                             "Combine image parts where markers were detected into large image. ",
+                                             false, "", "Output filename.");
+    TCLAP::ValueArg<std::string> grid_arg("", "grid",
+                                          "Grid description yaml file. ",
+                                          false, "", "Grid description yaml file.");
+
+    TCLAP::ValueArg<std::string> grid_types_arg("", "grid-types",
+                                          "Calibration types for evaluation. ",
+                                          false, "", "OpenCV,Ceres, etc.");
+
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -102,6 +122,7 @@ int main(int argc, char* argv[]) {
                                                  "Set this to the actual recursion depth of the used target.",
                                                  false, -1, "int");
         cmd.add(recursive_depth_arg);
+        cmd.add(grid_types_arg);
 
         TCLAP::ValueArg<float> effort_arg("e", "effort",
                                           "Effort value for the marker detection.",
@@ -140,20 +161,24 @@ int main(int argc, char* argv[]) {
                                                false, "", "Calibration cache.");
         cmd.add(cache_arg);
 
+        cmd.add(grid_arg);
+
         TCLAP::ValueArg<double> min_snr_arg("", "min-snr",
-                                               "Minimum SNR (x sigma) for a marker to be used.",
-                                               false, 5, "Minimum SNR value.");
+                                            "Minimum SNR (x sigma) for a marker to be used.",
+                                            false, 5, "Minimum SNR value.");
         cmd.add(min_snr_arg);
 
         TCLAP::ValueArg<double> max_iter_arg("", "max-iter",
-                                               "Maximum number of iterations used in the calibrations using ceres.",
-                                               false, 1000, "Max #iterations.");
+                                             "Maximum number of iterations used in the calibrations using ceres.",
+                                             false, 1000, "Max #iterations.");
         cmd.add(max_iter_arg);
 
         TCLAP::ValueArg<std::string> delete_arg("", "delete",
                                                 "Specify a calibration result to delete from the cached calibration. ",
                                                 false, "", "Calibration type.");
         cmd.add(delete_arg);
+
+        cmd.add(combine_arg);
 
         TCLAP::MultiArg<std::string> type_arg("t", "type",
                                               "Type of the calibration(s) to run. "
@@ -214,22 +239,14 @@ int main(int argc, char* argv[]) {
 
 
         TCLAP::MultiArg<std::string> valid_pages_arg("",
-                                             "valid",
-                                             "Page number(s) of valid corners.",
-                                             false,
-                                             "Page number(s) of valid corners.");
+                                                     "valid",
+                                                     "Page number(s) of valid corners.",
+                                                     false,
+                                                     "Page number(s) of valid corners.");
         cmd.add(valid_pages_arg);
-
-        TCLAP::UnlabeledMultiArg<std::string> input_img_arg("input_img",
-                                                            "Input images, should contain markers.",
-                                                            false,
-                                                            "Input images.");
-        cmd.add(input_img_arg);
 
         cmd.parse(argc, argv);
 
-
-        input_files = input_img_arg.getValue();
         recursion_depth = recursive_depth_arg.getValue();
         effort = effort_arg.getValue();
         libraw = read_raw_arg.getValue();
@@ -269,7 +286,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "Fatal error: No input files specified." << std::endl;
             cmd.getOutput()->usage(cmd);
 
-            return EXIT_FAILURE;
+            throw std::runtime_error("Fatal error: No input files specified.");
         }
 
         std::stringstream str_pages;
@@ -308,17 +325,13 @@ int main(int argc, char* argv[]) {
         std::cerr << e.what() << std::endl;
         return 0;
     }
-    catch (...) {
-        std::cerr << "Unknown exception" << std::endl;
-        return 0;
-    }
 
     std::map<std::string, std::vector<hdmarker::Corner> > detected_markers;
 
     TIMELOG("Argument parsing");
 
     bool has_cached_calib = false;
-    if (!cache_file.empty() && fs::is_regular_file(cache_file)) {
+    if (!cache_file_prefix.empty() && fs::is_regular_file(cache_file)) {
 #if CATCH_STORAGE
         try {
 #endif
@@ -373,7 +386,7 @@ int main(int argc, char* argv[]) {
         }
         TIMELOG("Reading missing files");
         for (auto const& it : detected_markers) {
-            if (!calib.hasFile(it.first)) {
+            if (!calib.hasFile(it.first) && hdcalib::Calib::countMainMarkers(it.second) > 3) {
                 calib.addInputImageAfterwards(it.first, it.second);
                 found_new_files = true;
             }
@@ -400,16 +413,21 @@ int main(int argc, char* argv[]) {
         clog::L(__func__, 2) << "Adding images to the calibration..." << std::endl;
         std::cout << std::string(detected_markers.size(), '-') << std::endl;
         for (auto const& it : detected_markers) {
-            calib.addInputImage(it.first, it.second);
+            if (hdcalib::Calib::countMainMarkers(it.second) > 3) {
+                calib.addInputImage(it.first, it.second);
+            }
             std::cout << "." << std::flush;
         }
         std::cout << std::endl;
         TIMELOG("Adding input images");
-        if (!cache_file.empty()) {
+        if (!cache_file_prefix.empty()) {
             calib.save(cache_file);
             TIMELOG("Writing cache file");
         }
     }
+    calib.purgeRecursionDeeperThan(recursion_depth);
+
+    calib.autoScaleCornerIds();
 
 
     calib.purgeInvalidPages();
@@ -423,7 +441,7 @@ int main(int argc, char* argv[]) {
         calib.runCalib(calibration_type, outlier_threshold);
         calib_updated = true;
         TIMELOG(std::string("Calib ") + calibration_type);
-        if (!cache_file.empty()) {
+        if (!cache_file_prefix.empty()) {
             calib.save(cache_file);
             TIMELOG("Writing cache file");
         }
@@ -448,14 +466,87 @@ int main(int argc, char* argv[]) {
         TIMELOG("checkSamePosition");
     }
 
-    if (calib_updated && !cache_file.empty()) {
+    if (calib_updated && !cache_file_prefix.empty()) {
         calib.save(cache_file);
         TIMELOG("Writing cache file");
     }
 
+    if (combine_arg.isSet()) {
+        calib.combineImages(combine_arg.getValue());
+    }
 
-    std::cout << "Level 1 log entries: " << std::endl;
-    clog::Logger::getInstance().printAll(std::cout, 1);
+    if (grid_arg.isSet() && fs::is_regular_file(grid_arg.getValue()) && grid_types_arg.isSet()) {
+        std::vector<hdcalib::GridDescription> descriptions;
+        hdcalib::GridDescription::readFile(grid_arg.getValue(), descriptions);
+
+        std::stringstream mean_table, msg;
+        mean_table << "Grid: all" << std::endl
+                   << std::setw(14) << std::left << "type" << " & "
+                   << std::setw(10) << std::left << "mean" << " & "
+                   << std::setw(10) << std::left << "stddev" << " & "
+                   << std::setw(10) << std::left << "max\\\\" << std::endl;
+
+        std::vector<std::stringstream> tables(descriptions.size());
+        for (size_t ii = 0; ii < descriptions.size(); ++ii) {
+            tables[ii] << "Grid:" << descriptions[ii].name << std::endl
+                       << std::setw(14) << std::left << "type" << " & "
+                       << std::setw(10) << std::left << "mean" << " & "
+                       << std::setw(10) << std::left << "stddev" << " & "
+                       << std::setw(10) << std::left << "max\\\\" << std::endl;
+        }
+
+        std::vector<std::string> grid_calibration_types = commaSeparate<std::string>({grid_types_arg.getValue()});
+
+        for (std::string const& calibration_type : grid_calibration_types) {
+            if (!calib.hasCalibName(calibration_type)) {
+                continue;
+            }
+            //calib.plotReprojectionErrors(calibration_type, calibration_type);
+            clog::L(__func__, 2) << "Running fitGrid on calib " << calibration_type << std::endl;
+
+            hdcalib::FitGrid fit;
+            hdcalib::CalibResult & res = calib.getCalib(calibration_type);
+            std::vector<double> const error_percentiles = res.getErrorPercentiles();
+            assert(error_percentiles.size() >= 101);
+            double const median = res.getErrorMedian();
+            res.name = calibration_type;
+            msg << "Calib " << calibration_type << std::endl
+                << fit.runFit(calib, res, descriptions) << std::endl;
+
+            runningstats::QuantileStats<float> merged;
+            for (size_t ii = 0; ii < descriptions.size(); ++ii) {
+                tables[ii] << std::setw(14) << std::left << calibration_type << " & "
+                           << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMean()) << " & "
+                           << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getStddev()) << " & "
+                           << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << " & "
+                           << std::setw(8) << std::right << round(1000.0 * median) << "\\\\"
+                           << std::endl;
+                merged.push_unsafe(fit.per_grid_type_stats_length[ii].getData());
+            }
+
+            mean_table << std::setw(14) << std::left << calibration_type << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * merged.getMean()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * merged.getStddev()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << " & "
+                       << std::setw(8) << std::right << round(1000.0 * median) << " \\\\"
+                       << std::endl;
+
+            TIMELOG(std::string("Calib ") + calibration_type);
+        }
+
+        std::cout << "################################################################" << std::endl
+                  << msg.str();
+
+        std::cout << "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++" << std::endl;
+
+        for (size_t ii = 0; ii < tables.size(); ++ii) {
+            std::cout << tables[ii].str() << std::endl;
+        }
+
+        std::cout << mean_table.str() << std::endl;
+    }
+
+
     TIMELOG("print all log entries");
 
     //  microbench_measure_output("app finish");

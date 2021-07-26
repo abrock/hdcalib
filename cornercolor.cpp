@@ -98,6 +98,7 @@ size_t CornerColor::getColor(const cv::Point2i id, const int page, const int rec
 }
 
 size_t CornerColor::getColor(hdmarker::Corner const& c, int const recursion) {
+    return c.color;
     return getInstance()._getColor(c.id, c.page, recursion);
 }
 

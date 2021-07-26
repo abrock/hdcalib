@@ -161,7 +161,7 @@ void FitGrid::plotOffsetCorrectionSchilling(std::vector<cv::Scalar_<int> > const
     assert(ids.size() == pts.size());
 
     double scale = 1;
-    cv::Vec3d r_vec(0.12, 0.13, 0.14);
+    cv::Vec3d r_vec(0.012, 0.013, 0.014);
     cv::Vec3d t_vec(0,0,0);
 
     Calib c;
@@ -422,9 +422,9 @@ std::string FitGrid::runFit(Calib &calib, CalibResult& calib_result, const std::
     cv::Rect_<int> const area = calib.getIdRectangleUnion();
 
     // Number of grid points on x axis.
-    double const num_x = 50;
+    double const num_x = 25;
     // Number of grid points on y axis. Total number of points is num_x * num_y
-    double const num_y = 50;
+    double const num_y = 25;
 
     /**
      * @brief target_pts holds the initial 3D coordinates of the 3D markers used in the fit.

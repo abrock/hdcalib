@@ -47,12 +47,14 @@ void CornerStore::getPoints(
         std::vector<Point2f> &imagePoints,
         std::vector<Point3f> &objectPoints,
         hdcalib::Calib const& calib) const {
-    imagePoints.resize(size());
-    objectPoints.resize(size());
+    imagePoints.clear();
+    objectPoints.clear();
     for (size_t ii = 0; ii < size(); ++ii) {
         hdmarker::Corner const& c = get(ii);
-        imagePoints[ii] = (c.p);
-        objectPoints[ii] = calib.getInitial3DCoord(c);
+        if (c.layer > 0) {
+            imagePoints.push_back(c.p);
+            objectPoints.push_back(calib.getInitial3DCoord(c));
+        }
     }
 }
 
@@ -1468,13 +1470,16 @@ void CalibResult::getReprojections(
     }
 
     calib->prepareCalibrationByName(name);
+    assert(ii < calib->data.size());
 
-    auto imgPoints = calib->getImagePoints()[ii];
-    auto objPoints = calib->getObjectPoints()[ii];
+    std::vector<cv::Point2f> imgPoints = calib->getImagePoints()[ii];
+    std::vector<cv::Point3f> objPoints = calib->getObjectPoints()[ii];
+    assert(imgPoints.size() == objPoints.size());
     std::string const& filename = imageFiles[ii];
     CornerStore const& store = calib->data[filename];
     cv::Mat const& rvec = rvecs[ii];
     cv::Mat const& tvec = tvecs[ii];
+    assert(rvecs.size() == tvecs.size());
 
     markers.clear();
     markers.reserve(imgPoints.size());
@@ -1542,6 +1547,16 @@ void CalibResult::getAllReprojections(
     for (double t = 0; t <= 1.000001; t += 0.01) {
         error_percentiles.push_back(errors.getQuantile(t));
     }
+    error_median = errors.getMedian();
+}
+
+double CalibResult::getErrorMedian() {
+    if (error_median <= 0) {
+        std::vector<cv::Point2d> markers, reprojections;
+        getAllReprojections(markers, reprojections);
+    }
+    assert(error_median >= 0);
+    return error_median;
 }
 
 std::vector<double> CalibResult::getDistCoeffsVector() {

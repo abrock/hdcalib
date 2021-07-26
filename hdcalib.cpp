@@ -102,6 +102,43 @@ char Calib::color(const int ii, const int jj) {
     return 'B'; // Second row, second pixel (bottom right pixel)
 }
 
+void Calib::purgeRecursionDeeperThan(int level) {
+    for (auto& it : data) {
+        it.second.purgeRecursionDeeperThan(level);
+    }
+}
+
+void Calib::autoScaleCornerIds() {
+    int max_main_marker_scale = 1;
+    for (auto const& it : data) {
+        max_main_marker_scale = std::max(max_main_marker_scale, it.second.getCornerIdFactorFromMainMarkers());
+    }
+    for (auto & it : data) {
+        int const main_marker_scale = it.second.getCornerIdFactorFromMainMarkers();
+        if (main_marker_scale < 1) {
+            throw std::runtime_error("Invalid main marker scale: " + std::to_string(main_marker_scale));
+        }
+        if (main_marker_scale < max_main_marker_scale) {
+            if ((max_main_marker_scale % main_marker_scale) != 0) {
+                throw std::runtime_error ("max main marker scale not divisible by main marker scale");
+            }
+            int const factor = max_main_marker_scale / main_marker_scale;
+            clog::L("Calib::autoScaleCornerIds", 2) << "Scaling ids of " << it.first << " by " << factor;
+            it.second.scaleIDs(factor);
+        }
+    }
+}
+
+size_t Calib::countMainMarkers(const std::vector<Corner> &vec) {
+    size_t result = 0;
+    for (Corner const& c : vec) {
+        if (c.layer == 0) {
+            result++;
+        }
+    }
+    return result;
+}
+
 void Calib::prepareCalibrationByName(const string &name) {
     if ("OpenCV" == name || "SimpleOpenCV" == name) {
         prepareOpenCVCalibration();
@@ -112,6 +149,42 @@ void Calib::prepareCalibrationByName(const string &name) {
         return;
     }
     prepareCalibration();
+}
+
+void Calib::combineImages(const string &out_file) {
+    cv::Mat_<uint16_t> result = cv::imread(data.begin()->first, cv::IMREAD_UNCHANGED);
+    result.setTo(0);
+    clog::L("Calib::combineImages", 2) << out_file;
+    for (auto const& it : data) {
+        std::cout << it.first << "  ";
+    }
+    std::cout << std::endl;
+    std::cout << std::string(data.size(), '.') << std::endl;
+    for (auto const& it : data) {
+        if (it.second.size() < 3) {
+            std::cout << "-" << std::flush;
+            continue;
+        }
+        std::cout << "+" << std::flush;
+        std::vector<Corner> const& corners = it.second.getCorners();
+        std::vector<cv::Point> points, hull;
+        for (Corner const& c : corners) {
+            points.push_back(c.p);
+        }
+        cv::convexHull(points, hull);
+        cv::Mat_<uint8_t> mask(result.size(), uint8_t(0));
+        cv::fillConvexPoly(mask, hull.data(), hull.size(), cv::Scalar(255));
+        cv::Mat_<uint16_t> const img = cv::imread(it.first, cv::IMREAD_UNCHANGED);
+        for (int ii = 0; ii < img.rows; ++ii) {
+            for (int jj = 0; jj < img.cols; ++jj) {
+                if (mask(ii,jj) > 127) {
+                    result(ii, jj) = img(ii,jj);
+                }
+            }
+        }
+    }
+    std::cout << std::endl;
+    cv::imwrite(out_file, result);
 }
 
 Calib::Calib() {
@@ -329,12 +402,19 @@ void Calib::purgeUnlikelyByDetectedRectangles() {
     cv::Rect_<int> const limits = getIdRectangleUnion();
     clog::L(__func__, 2) << "Purging unlikely markers by detected rectangles:" << std::endl;
     std::cout << std::string(data.size(), '-') << std::endl;
+    std::vector<std::string> invalid;
     for (auto & it : data) {
         CornerStore & store = it.second;
         store.purgeOutOfBounds(limits.x, limits.y, limits.x + limits.width, limits.y + limits.height);
         std::cout << '.' << std::flush;
+        if (store.countMainMarkers() < 4) {
+            invalid.push_back(it.first);
+        }
     }
     std::cout << std::endl;
+    for (std::string const& remove : invalid) {
+        removeInputImage(remove);
+    }
 }
 
 Rect_<int> Calib::getIdRectangleUnion() const {
@@ -420,9 +500,14 @@ void Calib::exportPointClouds(const string &calib_name, double const outlier_thr
         std::ofstream out(filename + "-" + calib_name + "-target-points.txt", std::ofstream::out);
         CornerStore const& store = data[filename];
         calib.getReprojections(ii, markers, reprojections);
-        if (markers.size() != reprojections.size() || markers.size() != store.size()) {
-            throw std::runtime_error("Vector sizes don't match in exportPointClouds");
+        if (markers.size() != reprojections.size()) {
+            throw std::runtime_error("Markers size (" + std::to_string(markers.size()) + ") doesn't match reprojections (" + std::to_string(reprojections.size()) + ") in exportPointClouds");
         }
+        /*
+        if (markers.size() != store.size()) {
+            throw std::runtime_error("Markers size (" + std::to_string(markers.size()) + ") doesn't match store (" + std::to_string(store.size()) + ") in exportPointClouds");
+        }
+        */
         for (size_t jj = 0; jj < store.size(); ++jj) {
             if (outlier_threshold <= 0 || distance(markers[jj], reprojections[jj]) < outlier_threshold) {
                 cv::Vec3d p = get3DPoint(calib, store.get(jj), calib.rvecs[ii], calib.tvecs[ii]);
@@ -817,7 +902,7 @@ Point3f Calib::getInitial3DCoord(const Point3i &c, const double z) const {
     case 7: res.x += cornerIdFactor * 32; break;
     }
 
-    res.x *= float(markerSize / cornerIdFactor) * (1.0 + 0.230475/100.0); // Hacky adjustment for aspect ratio
+    res.x *= float(markerSize / cornerIdFactor) * (1.0 + x_factor/100.0); // Hacky adjustment for aspect ratio
     res.y *= float(markerSize / cornerIdFactor);
 
     return res;
