@@ -242,7 +242,10 @@ target_link_libraries(hdcalib-plot-flow PUBLIC
 
 add_executable(hdcalib-add-noise add-noise.cpp)
 target_link_libraries(hdcalib-add-noise PUBLIC
+    libdownscale
     ${OpenCV_LIBS}
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
     )
 
 add_executable(hdcalib-fill-black hdcalib-fill-black.cpp)

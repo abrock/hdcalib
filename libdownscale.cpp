@@ -54,6 +54,7 @@ cv::Mat_<T> downscale(const cv::Mat_<T> &img, const size_t factor) {
     return result;
 }
 
+template cv::Mat_<uint16_t> downscale(const cv::Mat_<uint16_t> &img, const size_t factor);
 template cv::Mat_<float> downscale(const cv::Mat_<float> &img, const size_t factor);
 template cv::Mat_<double> downscale(const cv::Mat_<double> &img, const size_t factor);
 
