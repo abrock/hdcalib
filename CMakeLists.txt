@@ -17,20 +17,21 @@ INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIRS})
 
 find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
-add_library(cornerstore cornerstore.cpp)
-add_library(calib-stats hdcalib-stats.cpp)
-target_link_libraries(calib-stats ${OpenCV_LIBS})
-add_library(hdcalib-readwrite hdcalib-readwrite.cpp)
-target_link_libraries(hdcalib-readwrite ParallelTime)
-add_library(hdcalib-ceres-calib hdcalib-ceres-calib.cpp)
-add_library(hdcalib-analyze-grid hdcalib-analyze-grid.cpp)
-add_library(hdcalib-rectify hdcalib-rectify.cpp)
-add_library(hdcalib-lensfun hdcalib-lensfun.cpp)
-add_library(hdcalib hdcalib.cpp)
-target_link_libraries(hdcalib
-    calib-stats
+add_library(hdcalib
+    hdcalib.cpp
+    cornerstore.cpp
+    hdcalib-readwrite.cpp
+    hdcalib-stats.cpp
+    fitgrid-lib.cpp
+    hdcalib-ceres-calib.cpp
+    similarity2d.cpp
+    hdcalib-analyze-grid.cpp
+    hdcalib-rectify.cpp
+    hdcalib-lensfun.cpp
+    cornercolor.cpp
+    griddescription.cpp
     )
-add_library(hdcalib-cornercolor cornercolor.cpp)
+
 include_directories("/usr/local/include/hdmarker")
 
 find_package(Ceres REQUIRED)
@@ -42,44 +43,7 @@ include_directories(${RUNNINGSTATS_INCLUDE_DIRS})
 find_package(catlogger REQUIRED)
 include_directories(${CATLOGGER_INCLUDE_DIRS})
 
-target_link_libraries(cornerstore hdcalib)
-target_link_libraries(hdcalib-readwrite
-    calib-stats
-    hdmarker
-    )
-
-target_link_libraries(hdcalib-rectify
-    hdcalib-ceres-calib
-    hdcalib
-    ${CERES_LIBRARIES}
-)
-
-target_link_libraries(hdcalib-analyze-grid
-    hdcalib-rectify
-)
-
-add_library(griddescription griddescription.cpp)
-
-add_library(hdcalib-fit-grid fitgrid-lib.cpp)
-add_library(similarity2d similarity2d.cpp)
-target_link_libraries(similarity2d
-    ${CATLOGGER_LIBRARIES}
-    )
-
-target_link_libraries(hdcalib-fit-grid
-    calib-stats
-    )
-
 target_link_libraries(hdcalib
-  cornerstore
-  calib-stats
-  griddescription
-  hdcalib-readwrite
-  hdcalib-ceres-calib
-  hdcalib-cornercolor
-  hdcalib-fit-grid
-  hdcalib-analyze-grid
-  hdcalib-rectify
   hdmarker
   ParallelTime
   ${OpenCV_LIBS}
@@ -90,7 +54,6 @@ target_link_libraries(hdcalib
   ${RUNNINGSTATS_LIBRARIES}
   ${CATLOGGER_LIBRARIES}
   raw
-  similarity2d
 )
 
 add_executable(hdcalib-tool "main.cpp")
@@ -154,18 +117,6 @@ foreach(program
         test-similarity2d
     )
     target_link_libraries(${program} hdcalib)
-endforeach()
-
-foreach(program
-        hdcalib-analyze-detection-rates
-        hdcalib-fitgrid
-        hdcalib-offset-comparison
-        hdcalib-tool
-        hdcalib-speedtest-prepare-calibration
-        hdcalib-simulate
-        hdcalib-rectify-tool
-        )
-    target_link_libraries(${program} ParallelTime)
 endforeach()
 
 find_package(GTest REQUIRED)
@@ -252,7 +203,6 @@ add_executable(hdcalib-fill-black hdcalib-fill-black.cpp)
 target_link_libraries(hdcalib-fill-black PUBLIC
     ${OpenCV_LIBS}
     hdcalib
-    calib-stats
     #${Boost_FILESYSTEM_LIBRARY}
     #${Boost_SYSTEM_LIBRARY}
     #${Boost_IOSTREAMS_LIBRARY}
