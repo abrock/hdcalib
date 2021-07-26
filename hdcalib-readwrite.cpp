@@ -80,9 +80,11 @@ void Calib::addInputImageAfterwards(const string filename, const std::vector<Cor
         calibs.push_back(&it.second);
     }
     size_t index = 0;
-    for (; index < calibs.front()->imageFiles.size(); ++index) {
-        if (filename == calibs.front()->imageFiles[index]) {
-            break;
+    if (!calibs.empty()) {
+        for (; index < calibs.front()->imageFiles.size(); ++index) {
+            if (filename == calibs.front()->imageFiles[index]) {
+                break;
+            }
         }
     }
 
