@@ -33,6 +33,8 @@
 
 #include "randutils.hpp"
 
+#include "cornercache.h"
+
 namespace hdcalib {
 using namespace std;
 using namespace hdmarker;

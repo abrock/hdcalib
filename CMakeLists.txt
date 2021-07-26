@@ -18,18 +18,19 @@ INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIRS})
 find_package(Boost COMPONENTS system filesystem iostreams REQUIRED)
 
 add_library(hdcalib
-    hdcalib.cpp
-    cornerstore.cpp
-    hdcalib-readwrite.cpp
-    hdcalib-stats.cpp
-    fitgrid-lib.cpp
-    hdcalib-ceres-calib.cpp
-    similarity2d.cpp
-    hdcalib-analyze-grid.cpp
-    hdcalib-rectify.cpp
-    hdcalib-lensfun.cpp
+    cornercache.cpp
     cornercolor.cpp
+    cornerstore.cpp
+    fitgrid-lib.cpp
     griddescription.cpp
+    hdcalib-analyze-grid.cpp
+    hdcalib-ceres-calib.cpp
+    hdcalib-lensfun.cpp
+    hdcalib-readwrite.cpp
+    hdcalib-rectify.cpp
+    hdcalib-stats.cpp
+    hdcalib.cpp
+    similarity2d.cpp
     )
 
 include_directories("/usr/local/include/hdmarker")

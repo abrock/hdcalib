@@ -21,58 +21,6 @@ namespace rs = runningstats;
 
 namespace hdm = hdmarker;
 
-class CornerCache {
-public:
-    static CornerCache& getInstance() {
-        static CornerCache instance;
-        return instance;
-    }
-
-    std::vector<hdm::Corner> & operator[](std::string const& filename) {
-        {
-            std::lock_guard<std::mutex> guard(access_mutex);
-            std::lock_guard<std::mutex> guard2(access_mutex_by_file[filename]);
-            std::map<std::string, std::vector<hdm::Corner> >::iterator it = data.find(filename);
-            if (it != data.end()) {
-                return it->second;
-            }
-            data[filename];
-        }
-        std::lock_guard<std::mutex> guard(access_mutex_by_file[filename]);
-        hdcalib::Calib c;
-        c.setMinSNR(snr_sigma_min);
-        ParallelTime t;
-        std::vector<hdm::Corner> _corners = c.getSubMarkers(filename);
-        std::vector<hdm::Corner> corners;
-        corners.reserve(_corners.size());
-        for (hdm::Corner const& c : _corners) {
-            if (std::abs(c.snr * c.getSigma()) > snr_sigma_min) {
-                corners.push_back(c);
-            }
-        }
-        //std::cout << "Reading " << filename << ": " << t.print() << std::endl;
-        t.start();
-        data[filename] = corners;
-        //std::cout << "Creating CornerStore for " << filename << ": " << t.print() << std::endl;
-        return data[filename];
-    }
-
-    static void setSNRSigmaMin(double const val) {
-        getInstance().snr_sigma_min = val;
-    }
-
-private:
-    std::mutex access_mutex;
-    std::map<std::string, std::mutex> access_mutex_by_file;
-    CornerCache() {}
-    CornerCache(CornerCache const&) = delete;
-    void operator=(CornerCache const&) = delete;
-
-    double snr_sigma_min = 0;
-
-    std::map<std::string, std::vector<hdm::Corner>> data;
-};
-
 boost::system::error_code ignore_error_code;
 
 void trim(std::string &s) {
@@ -278,7 +226,7 @@ void analyzeFileList(std::vector<std::string> const& files, std::string const& p
     }
     hdcalib::Calib calib;
     calib.setRecursionDepth(recursion);
-    CornerCache & cache = CornerCache::getInstance();
+    hdcalib::CornerCache & cache = hdcalib::CornerCache::getInstance();
     std::vector<hdm::Corner> & first_corners = cache[files.front()];
     rs::Stats2D<float> stat_2d, stat_2d_color[3][4];
     std::set<std::string> suffixes;

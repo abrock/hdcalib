@@ -218,7 +218,7 @@ Rates analyzeRates(std::string file, int8_t const recursion, int const page) {
 
 double getDensity(fs::path const& file, Rates& rates, int const page) {
     std::vector<hdmarker::Corner> corners;
-    hdmarker::Corner::readGzipFile(file.string(), corners);
+    corners = hdcalib::CornerCache::getInstance().getGZ(file.string());
     corners = hdcalib::Calib::purgeInvalidPages(corners, {page});
     std::cout << "File " << file.string() << " has " << corners.size() << " corners." << std::endl;
     if (corners.empty()) {
