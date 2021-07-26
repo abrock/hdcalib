@@ -87,6 +87,9 @@ int main(int argc, char* argv[]) {
     std::string grids_file;
 
     std::vector<hdcalib::GridDescription> descriptions;
+    TCLAP::ValueArg<double> scale_arg("s", "scale",
+                                           "Initial guess for the scale.",
+                                           false, -1, "float, > 0");
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
 
@@ -99,6 +102,8 @@ int main(int argc, char* argv[]) {
                                                "Filename of the grid decriptions file.",
                                                false, "", "Grid descriptions file.");
         cmd.add(grids_arg);
+
+        cmd.add(scale_arg);
 
         TCLAP::SwitchArg schilling_arg("", "schilling", "Use 3D points provided by Schilling");
         cmd.add(schilling_arg);
@@ -182,6 +187,10 @@ int main(int argc, char* argv[]) {
         clog::L(__func__, 2) << calib.printAllCameraMatrices() << std::endl;
         TIMELOG("Reading cached result");
     }
+    calib.autoScaleCornerIds();
+
+    calib.purgeInvalidPages();
+    TIMELOG("Purging invalid pages");
 
     calib.purgeUnlikelyByDetectedRectangles();
     TIMELOG("purgeUnlikelyByDetectedRectangles");
@@ -208,14 +217,18 @@ int main(int argc, char* argv[]) {
         if (!calib.hasCalibName(calibration_type)) {
             continue;
         }
+        calib.plotReprojectionErrors(calibration_type, calibration_type);
         clog::L(__func__, 2) << "Running fitGrid on calib " << calibration_type << std::endl;
 
         hdcalib::FitGrid fit;
         hdcalib::CalibResult & res = calib.getCalib(calibration_type);
         std::vector<double> const error_percentiles = res.getErrorPercentiles();
         assert(error_percentiles.size() >= 101);
-        double const median = error_percentiles[50];
+        double const median = res.getErrorMedian();
         res.name = calibration_type;
+        if (scale_arg.isSet()) {
+            fit.scale = scale_arg.getValue();
+        }
         msg << "Calib " << calibration_type << std::endl
             << fit.runFit(calib, res, descriptions) << std::endl;
 
@@ -225,7 +238,7 @@ int main(int argc, char* argv[]) {
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMean()) << " & "
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getStddev()) << " & "
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << " & "
-                       << std::setw(8) << std::right << round(1000.0 * median) << "\\\\"
+                       << std::setw(8) << std::right << round(median) << "\\\\"
                        << std::endl;
             merged.push_unsafe(fit.per_grid_type_stats_length[ii].getData());
         }
@@ -234,7 +247,7 @@ int main(int argc, char* argv[]) {
                    << std::setw(10) << std::left << round1(1000.0 * merged.getMean()) << " & "
                    << std::setw(10) << std::left << round1(1000.0 * merged.getStddev()) << " & "
                    << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << " & "
-                   << std::setw(8) << std::right << round(1000.0 * median) << " \\\\"
+                   << std::setw(8) << std::right << round(median) << " \\\\"
                    << std::endl;
 
         TIMELOG(std::string("Calib ") + calibration_type);
