@@ -778,6 +778,8 @@ public:
         cameraMatrix = t.cameraMatrix.clone();
         distCoeffs = t.distCoeffs.clone();
         distN = t.distN;
+        spline_x = t.spline_x;
+        spline_y = t.spline_y;
         name = t.name;
         x_factor = t.x_factor;
         errors = t.errors;
