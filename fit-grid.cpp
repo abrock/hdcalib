@@ -70,6 +70,10 @@ double round1(double x) {
     return std::round(x*100)/100;
 }
 
+double round3(double x) {
+    return std::round(x*1000)/1000;
+}
+
 int main(int argc, char* argv[]) {
     std::ofstream logfile("hdcalib.log", std::ofstream::out);
 
@@ -222,8 +226,6 @@ int main(int argc, char* argv[]) {
 
         hdcalib::FitGrid fit;
         hdcalib::CalibResult & res = calib.getCalib(calibration_type);
-        std::vector<double> const error_percentiles = res.getErrorPercentiles();
-        assert(error_percentiles.size() >= 101);
         double const median = res.getErrorMedian();
         res.name = calibration_type;
         if (scale_arg.isSet()) {
@@ -238,7 +240,7 @@ int main(int argc, char* argv[]) {
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMean()) << " & "
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getStddev()) << " & "
                        << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << " & "
-                       << std::setw(8) << std::right << round(median) << "\\\\"
+                       << std::setw(8) << std::right << round3(median) << "\\\\"
                        << std::endl;
             merged.push_unsafe(fit.per_grid_type_stats_length[ii].getData());
         }
@@ -247,9 +249,10 @@ int main(int argc, char* argv[]) {
                    << std::setw(10) << std::left << round1(1000.0 * merged.getMean()) << " & "
                    << std::setw(10) << std::left << round1(1000.0 * merged.getStddev()) << " & "
                    << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << " & "
-                   << std::setw(8) << std::right << round(median) << " \\\\"
+                   << std::setw(8) << std::right << round3(median) << " \\\\"
                    << std::endl;
 
+        std::cout << mean_table.str() << std::endl;
         TIMELOG(std::string("Calib ") + calibration_type);
     }
 
