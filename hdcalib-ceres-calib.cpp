@@ -1338,7 +1338,7 @@ double Calib::CeresCalibFlexibleTargetSpline(double const outlier_threshold) {
     for (double * val : {calib.spline_x.data(), calib.spline_y.data()}){
         ceres::CostFunction* cost_function =
                 new ceres::AutoDiffCostFunction<LocalCorrectionsSum<Func::n>, Func::n, Func::n>(
-                    new LocalCorrectionsSum<Func::n>(1));
+                    new LocalCorrectionsSum<Func::n>(.001));
         problem.AddResidualBlock(cost_function,
                                  nullptr, // Loss function (nullptr = L2)
                                  val // correction
