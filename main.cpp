@@ -276,9 +276,7 @@ int main(int argc, char* argv[]) {
             std::string line;
             while (std::getline(in, line)) {
                 trim(line);
-                if (fs::is_regular_file(line)) {
-                    input_files.push_back(line);
-                }
+                input_files.push_back(line);
             }
         }
 
