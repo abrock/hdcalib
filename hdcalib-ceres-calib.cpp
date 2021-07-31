@@ -51,10 +51,10 @@ void CornerStore::getPoints(
     objectPoints.clear();
     for (size_t ii = 0; ii < size(); ++ii) {
         hdmarker::Corner const& c = get(ii);
-        if (c.layer > 0) {
+        //if (c.layer > 0) {
             imagePoints.push_back(c.p);
             objectPoints.push_back(calib.getInitial3DCoord(c));
-        }
+        //}
     }
 }
 
