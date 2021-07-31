@@ -187,6 +187,45 @@ void Calib::combineImages(const string &out_file) {
     cv::imwrite(out_file, result);
 }
 
+std::vector<double> Calib::mat2vec(const cv::Mat_<double> &m) {
+    std::vector<double> result;
+    for (double const d : m) {
+        result.push_back(d);
+    }
+    return result;
+}
+
+cv::Mat_<double> Calib::vec2squaremat(const std::vector<double> &vec) {
+    int const n = std::round(std::sqrt(vec.size()));
+    assert(vec.size() == size_t(n*n));
+
+    cv::Mat_<double> m(n, n, 0.0);
+    for (int ii = 0; ii < n; ++ii) {
+        for (int jj = 0; jj < n; ++jj) {
+            m(ii, jj) = vec[n*ii+jj];
+        }
+    }
+    return m;
+}
+
+void Calib::scaleSquareMatVec(std::vector<double> &vec, int const N) {
+    if (vec.empty()) {
+        vec.resize(N*N, 0.0);
+        return;
+    }
+    int const N_old = std::round(std::sqrt(vec.size()));
+    assert(size_t(N_old * N_old) == vec.size());
+    if (N == N_old) {
+        return;
+    }
+    cv::Mat_<double> mat = vec2squaremat(vec);
+    assert(mat.rows == N_old);
+    assert(mat.cols == N_old);
+    cv::resize(mat, mat, cv::Size(N, N), 0, 0, cv::INTER_CUBIC);
+    vec = mat2vec(mat);
+    assert(vec.size() == size_t(N*N));
+}
+
 Calib::Calib() {
     //clog::L(__func__, 2) << "Number of concurrent threads: " << threads << std::endl;
 }
@@ -1679,6 +1718,21 @@ double Calib::runCalib(const string name, const double outlier_threshold) {
         case 16: return CeresCalibFlexibleTargetOdd<16>(outlier_threshold);
         }
     }
+    if ("Spline-" == name.substr(0, std::string("Spline-").size())) {
+        int const num = std::stoi(name.substr(std::string("Spline-").size()));
+        switch (num) {
+        case  3: return CeresCalibFlexibleTargetSpline< 3, 3>(outlier_threshold);
+        case  5: return CeresCalibFlexibleTargetSpline< 5, 3>(outlier_threshold);
+        case  7: return CeresCalibFlexibleTargetSpline< 7, 3>(outlier_threshold);
+        case  9: return CeresCalibFlexibleTargetSpline< 9, 3>(outlier_threshold);
+        case 11: return CeresCalibFlexibleTargetSpline<11, 3>(outlier_threshold);
+        case 13: return CeresCalibFlexibleTargetSpline<13, 3>(outlier_threshold);
+        case 15: return CeresCalibFlexibleTargetSpline<15, 3>(outlier_threshold);
+        case 17: return CeresCalibFlexibleTargetSpline<17, 3>(outlier_threshold);
+        case 19: return CeresCalibFlexibleTargetSpline<19, 3>(outlier_threshold);
+        case 21: return CeresCalibFlexibleTargetSpline<21, 3>(outlier_threshold);
+        }
+    }
     throw std::runtime_error(std::string("Calib type ") + name + " unknown");
 }
 
@@ -1705,6 +1759,10 @@ void Calib::setPlotSubMarkers(bool plot) {
 void Calib::setImageSize(const Mat &img) {
     imageSize = cv::Size(img.size());
     resolutionKnown = true;
+}
+
+Size Calib::getImageSize() const {
+    return imageSize;
 }
 
 Point2f Calib::meanResidual(const std::vector<std::pair<Point2f, Point2f> > &data) {

@@ -26,6 +26,15 @@ void fitDistortion(const std::string prefix,
         const double length_factor = 1,
         const cv::Scalar &color = {0,0,0,0});
 
+template<int NUM, int DEG>
+void fitSpline(
+        std::string const prefix,
+        const cv::Mat_<cv::Vec2f> &flow,
+        double factor = 1,
+        const double length_factor = 1,
+        const cv::Scalar &color = {0,0,0,0});
+
+
 cv::Mat_<cv::Vec3b> plotWithArrows(
         const cv::Mat_<cv::Vec2f> &flow,
         double factor = 1.0,

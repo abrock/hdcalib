@@ -55,7 +55,7 @@ std::vector<hdmarker::Corner> CornerCache::getGZ(const std::string &filename) {
     std::vector<hdm::Corner> corners;
     corners.reserve(_corners.size());
     for (hdm::Corner const& c : _corners) {
-        if (std::abs(c.snr * c.getSigma()) > snr_sigma_min) {
+        if (std::abs(c.snr * c.getSigma()) > snr_sigma_min || c.layer == 0) {
             corners.push_back(c);
         }
     }

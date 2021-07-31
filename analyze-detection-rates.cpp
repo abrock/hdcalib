@@ -54,6 +54,9 @@ struct Rates {
     runningstats::QuantileStats<float> homography_residuals_x;
     runningstats::QuantileStats<float> homography_residuals_y;
 
+    runningstats::QuantileStats<float> size_stats;
+    runningstats::QuantileStats<float> num_pixels_stats;
+
     double density = -1;
 
     /**
@@ -98,7 +101,9 @@ struct Rates {
                 + std::to_string(rates_by_color[0]) + "\t"
                 + std::to_string(rates_by_color[1]) + "\t"
                 + std::to_string(num_corners) + "\t"
-                + std::to_string(homography_errors.getMedian());
+                + std::to_string(homography_residuals.getStddev()) + "\t"
+                + std::to_string(num_pixels_stats.getMedian()) + "\t"
+                + std::to_string(size_stats.getMedian());
     }
 
     Rates() {
@@ -152,8 +157,7 @@ Rates analyzeRates(std::string file, int8_t const recursion, int const page) {
             }
         }
     }
-    std::vector<hdmarker::Corner> corners;
-    hdmarker::Corner::readGzipFile(file, corners);
+    std::vector<hdmarker::Corner> corners = hdcalib::CornerCache::getInstance().getGZ(file);
     size_t raw_corners = corners.size();
     corners = hdcalib::Calib::purgeInvalidPages(corners, {page});
     result.num_initial_corners = corners.size();
@@ -216,6 +220,8 @@ Rates analyzeRates(std::string file, int8_t const recursion, int const page) {
     return result;
 }
 
+
+
 double getDensity(fs::path const& file, Rates& rates, int const page) {
     std::vector<hdmarker::Corner> corners;
     corners = hdcalib::CornerCache::getInstance().getGZ(file.string());
@@ -245,6 +251,13 @@ double getDensity(fs::path const& file, Rates& rates, int const page) {
         areas.push_unsafe(area);
         total_pixels += area;
     }
+    rates.num_pixels_stats.clear();
+    rates.size_stats.clear();
+    std::map<int, size_t> counts = store.countLayers();
+    int min_layer = 1;
+    while (counts[min_layer+1] > counts[min_layer]) {
+        min_layer++;
+    }
     size_t in_square_count = 0;
     for (hdmarker::Corner const& c : corners) {
         size_t local_in_square_count = 0;
@@ -263,6 +276,8 @@ double getDensity(fs::path const& file, Rates& rates, int const page) {
             in_square_count++;
             homography_src.push_back(c.id);
             homography_dst.push_back(c.p);
+            rates.num_pixels_stats.push_unsafe(c.n_fit);
+            rates.size_stats.push_unsafe(c.size);
         }
     }
 
@@ -292,6 +307,7 @@ double getDensity(fs::path const& file, Rates& rates, int const page) {
 
     std::cout << "Mean dist: " << mean_dist << ", square: " << mean_dist * mean_dist << std::endl;
     std::cout << "Mean area: " << areas.getMean() << std::endl;
+    std::cout << "Median n_fit: " << rates.num_pixels_stats.getMedian() << std::endl;
 
     rates.mean_main_edge = mean_dist;
     double const megapixels = double(total_pixels) / 1'000'000;
@@ -307,13 +323,15 @@ void plotDensity(std::string prefix, std::map<double, Rates> & rates) {
     log << "# 1. mean main marker square edge length, 2. density in markers/megapixels" << std::endl;
     std::map<double, std::string> density_by_main_edge;
     for (auto const& it : rates) {
-        if (it.second.density > 0 && it.second.homography_errors.getCount() > 0) {
+        if (it.second.density > 0 && it.second.homography_residuals.getStddev() > 0) {
             density_by_main_edge[it.second.mean_main_edge] =
                     std::to_string(it.second.density) + "\t"
-                    + std::to_string(it.second.homography_errors.getMedian()) + "\t"
-                    + std::to_string(std::abs(it.second.homography_residuals.getMedian())) + "\t"
-                    + std::to_string(std::abs(it.second.homography_residuals_x.getMedian())) + "\t"
-                    + std::to_string(std::abs(it.second.homography_residuals_y.getMedian())) + "\t"
+                    + std::to_string(it.second.homography_residuals.getStddev()) + "\t"
+                    + std::to_string(std::abs(it.second.homography_residuals.getMean())) + "\t"
+                    + std::to_string(std::abs(it.second.homography_residuals_x.getMean())) + "\t"
+                    + std::to_string(std::abs(it.second.homography_residuals_y.getMean())) + "\t"
+                    + std::to_string(std::abs(it.second.num_pixels_stats.getMean())) + "\t"
+                    + std::to_string(std::abs(it.second.size_stats.getMean())) + "\t"
                     + it.second.filename;
         }
     }
@@ -544,9 +562,29 @@ int main(int argc, char ** argv) {
             << "set ylabel 'detection density [1/MP]';\n"
             << "set logscale x;\n"
             << "set key out horiz;\n"
-            << "plot '" << dir << pages[0] << "-density.data' u 1:2 w l title '" << pages[0] << "'";
+            << "set pointsize .5;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:2 w lp title '" << pages[0] << "'";
             for (size_t ii = 1; ii < pages.size(); ++ii) {
-                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:2 w l title '" << pages[ii] << "'";
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:2 w lp title '" << pages[ii] << "'";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-density-log.gpl");
+            gpl_file << cmd.str();
+        }
+        { // plot quality (detection rate divided by square root of density)
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-quality.svg';\n"
+            << "set title 'Homography errors divided by square root of marker density';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel 'normalized errors';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "set pointsize .5;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:($3/sqrt($2)) w lp title '" << pages[0] << "'";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:($3/sqrt($2)) w lp title '" << pages[ii] << "'";
             }
             plt << cmd.str();
             std::ofstream gpl_file(std::string("all-") + dir + "-density-log.gpl");
@@ -562,9 +600,10 @@ int main(int argc, char ** argv) {
             << "set ylabel 'errors[px]';\n"
             << "set logscale x;\n"
             << "set key out horiz;\n"
-            << "plot '" << dir << pages[0] << "-density.data' u 1:3 w l title '" << pages[0] << "'\\\n";
+            << "set pointsize .5;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:3 w lp title '" << pages[0] << "'\\\n";
             for (size_t ii = 1; ii < pages.size(); ++ii) {
-                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:3 w l title '" << pages[ii] << "'\\\n";
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:3 w lp title '" << pages[ii] << "'\\\n";
             }
             plt << cmd.str();
             std::ofstream gpl_file(std::string("all-") + dir + "-homography.gpl");
@@ -622,6 +661,44 @@ int main(int argc, char ** argv) {
             }
             plt << cmd.str();
             std::ofstream gpl_file(std::string("all-") + dir + "-homography-res-y.gpl");
+            gpl_file << cmd.str();
+        }
+        { // plot num_pixel stats
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-num-pixels.svg';\n"
+            << "set title 'Median number of pixels used in fit';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel '#pixels';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "set pointsize 0.5;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:7 w lp title '" << pages[0] << "'\\\n";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:7 w lp title '" << pages[ii] << "'\\\n";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-num-pixels.gpl");
+            gpl_file << cmd.str();
+        }
+        { // plot size stats
+            gnuplotio::Gnuplot plt;
+            std::stringstream cmd;
+            cmd << "set term svg enhanced background rgb 'white';\n"
+            << "set output 'all-" << dir << "-size.svg';\n"
+            << "set title 'Median size';\n"
+            << "set xlabel 'main marker edge [px]';\n"
+            << "set ylabel '#pixels';\n"
+            << "set logscale x;\n"
+            << "set key out horiz;\n"
+            << "set pointsize 0.5;\n"
+            << "plot '" << dir << pages[0] << "-density.data' u 1:8 w lp title '" << pages[0] << "'\\\n";
+            for (size_t ii = 1; ii < pages.size(); ++ii) {
+                cmd << ", '" << dir << pages[ii] << "-density.data' u 1:8 w lp title '" << pages[ii] << "'\\\n";
+            }
+            plt << cmd.str();
+            std::ofstream gpl_file(std::string("all-") + dir + "-size.gpl");
             gpl_file << cmd.str();
         }
     }

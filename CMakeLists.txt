@@ -89,6 +89,8 @@ add_executable(raw2png raw2png.cpp)
 
 add_executable(test-similarity2d test-similarity2d.cpp)
 
+add_executable(test-spline-model test-spline-model.cpp)
+
 add_executable(hdcalib-2dgauss 2dgauss.cpp)
 
 target_link_libraries(hdcalib-2dgauss
@@ -123,7 +125,7 @@ endforeach()
 find_package(GTest REQUIRED)
 add_executable(tests tests.cpp)
 
-foreach(program tests hdcalib-test-submarker-detection test-similarity2d)
+foreach(program tests hdcalib-test-submarker-detection test-similarity2d test-spline-model)
   target_link_libraries(${program}
     hdcalib
     ${GTEST_BOTH_LIBRARIES}
@@ -180,7 +182,7 @@ target_link_libraries(hdcalib-image-series-noise
     ${RUNNINGSTATS_LIBRARIES}
     )
 
-add_library(plotoptflow libplotoptflow.cpp)
+add_library(plotoptflow libplotoptflow.cpp libfitspline.cpp)
 target_link_libraries(plotoptflow PUBLIC
     ${OpenCV_LIBS}
     ${CERES_LIBRARIES}
@@ -212,6 +214,14 @@ target_link_libraries(hdcalib-fill-black PUBLIC
 
 add_executable(radial-models radial-models.cpp)
 target_link_libraries(radial-models
+    ${CERES_LIBRARIES}
+    ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
+    ${Boost_IOSTREAMS_LIBRARY}
+    )
+
+add_executable(spline-model spline-model.cpp)
+target_link_libraries(spline-model
     ${CERES_LIBRARIES}
     ${Boost_FILESYSTEM_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}

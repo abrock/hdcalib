@@ -355,6 +355,8 @@ public:
     void addConditional(const std::vector<Corner> &vec);
     static int getCornerIdFactorFromMainMarkers(const std::vector<Corner> &vec);
     int getCornerIdFactorFromMainMarkers() const;
+    static std::map<int, size_t> countLayers(const std::vector<Corner> &vec);
+    std::map<int, size_t> countLayers() const;
 };
 
 template<int LENGTH>
@@ -665,6 +667,12 @@ public:
      * @brief dist12 distortion coefficients for 16-parameter rational function
      */
     std::vector<double> distN;
+
+    /**
+     * @brief spline_x vector of coefficients for the spline interpolation method
+     */
+    std::vector<double> spline_x;
+    std::vector<double> spline_y;
 
     /**
      * @brief x_factor percentage of the calibration target non-uniformity (x-scale being different from y-scale)
@@ -1002,6 +1010,11 @@ public:
     void prepareCalibrationByName(std::string const& name);
 
     void combineImages(std::string const& out_file);
+
+    static std::vector<double> mat2vec(cv::Mat_<double> const& m);
+    static cv::Mat_<double> vec2squaremat(std::vector<double> const& vec);
+
+    static void scaleSquareMatVec(std::vector<double> & vec, const int N);
 
     Calib();
 
@@ -1437,6 +1450,8 @@ public:
      */
     void setImageSize(cv::Mat const& img);
 
+    cv::Size getImageSize() const;
+
     /**
      * @brief keepCommonCorners Removes all corners from the data which are not present
      * in all detected images. This is needed for the OpenCV calibration which assumes
@@ -1711,6 +1726,13 @@ public:
     std::vector<std::vector<cv::Point3f> > getObjectPoints() const;
 
     int getImageIndex(const string &filename);
+    template<int NUM, int DEG>
+    double CeresCalibFlexibleTargetSpline(const double outlier_threshold);
+
+    template<int NUM, int DEG, class F, class T>
+    static void projectSpline(const F p[], T result[], const T focal[], const T principal[], const T R[], const T t[], const T weights_x[], const T weights_y[], const cv::Size &size);
+    template<class T>
+    static T evaluateSpline(const T x, const int POS, const int DEG);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

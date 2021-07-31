@@ -1807,6 +1807,19 @@ TEST(Ordering, map) {
     }
 }
 
+TEST(vec2mat, random) {
+    for (int n = 1; n < 10; ++n) {
+        std::cout << "Testing size " << n << std::endl;
+        cv::Mat_<double> src(n, n, 0.0);
+        cv::randn(src, 0, 1);
+        ASSERT_GE(cv::norm(src), 1e-12);
+        std::vector<double> vec = hdcalib::Calib::mat2vec(src);
+        cv::Mat_<double> dst = hdcalib::Calib::vec2squaremat(vec);
+        ASSERT_EQ(src.size(), dst.size());
+        ASSERT_LE(cv::norm(src-dst), 1e-12);
+    }
+}
+
 
 std::string type2str(int type) {
     std::string r;

@@ -610,6 +610,8 @@ void CalibResult::write(FileStorage &fs) const {
        << "cameraMatrix" << cameraMatrix
        << "distCoeffs" << distCoeffs
        << "distN" << distN
+       << "spline_x" << spline_x
+       << "spline_y" << spline_y
        << "x_factor" << x_factor
        << "error_percentiles" << error_percentiles
        << "inverseDistCoeffs" << inverseDistCoeffs;
@@ -658,6 +660,8 @@ void CalibResult::read(const FileNode &node) {
     node["outlier_percentages"] >> outlier_percentages;
     node["inverseDistCoeffs"] >> inverseDistCoeffs;
     node["x_factor"] >> x_factor;
+    node["spline_x"] >> spline_x;
+    node["spline_y"] >> spline_y;
     node["error_percentiles"] >> error_percentiles;
     FileNode n = node["objectPointCorrections"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {

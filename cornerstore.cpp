@@ -86,6 +86,20 @@ void CornerStore::purgeRecursionDeeperThan(int level) {
     }
 }
 
+std::map<int, size_t> CornerStore::countLayers(std::vector<Corner> const& vec) {
+    std::map<int, size_t> result;
+    for (Corner const& c : vec) {
+        if (c.layer >= 0) {
+            result[c.layer]++;
+        }
+    }
+    return result;
+}
+
+std::map<int, size_t> CornerStore::countLayers() const  {
+    return countLayers(corners);
+}
+
 size_t CornerStore::countMainMarkers() const {
     return Calib::countMainMarkers(corners);
 }

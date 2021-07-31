@@ -104,6 +104,33 @@ struct RadialNewN {
     }
 };
 
+template<class T>
+T evaluateSpline(T const x, int const POS, int const DEG) {
+    T const pos(POS);
+    if (0 == DEG) {
+        return (x < pos || x > T(POS+1)) ? T(0) : T(1);
+    }
+    T const deg(DEG);
+    return (x-pos)/deg*evaluateSpline(x,POS,DEG-1) + (T(POS+DEG+1)-x)/deg*evaluateSpline(x, POS+1, DEG-1);
+}
+
+template<int N>
+struct SplineN {
+    double const x;
+    double const y;
+    static size_t const num = 2*N;
+
+    SplineN(double const _x, double const _y) : x(_x), y(_y) {}
+
+    template<class T>
+    bool operator ()(
+            T const * const data,
+            T * residuals) const {
+
+        return true;
+    }
+};
+
 struct Radial3_3 {
     double const x;
     double const y;
@@ -324,6 +351,17 @@ void run(std::string const& name, std::vector<std::pair<double, double> > const&
 
 }
 
+void plotSplines() {
+    std::ofstream out("splines.data");
+    for (double t = -3; t <= 4; t += 0.01) {
+        out << t;
+        for (int DEG = 0; DEG <= 5; ++DEG) {
+            out << "\t" << evaluateSpline(t, 0, DEG);
+        }
+        out << std::endl;
+    }
+}
+
 void runSim(std::string const& name) {
     std::vector<std::pair<double,double> > data;
     if ("pinhole" == name) {
@@ -350,6 +388,9 @@ void runSim(std::string const& name) {
         for (double x = 0; x <= 2; x += 1.0/(1024*16)) {
             data.push_back({x, std::sin(std::atan(x))});
         }
+    }
+    if ("spline" == name) {
+        plotSplines();
     }
     if (!data.empty()) {
         run(name, data);
