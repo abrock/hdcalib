@@ -1034,7 +1034,7 @@ vector<Corner> Calib::getMainMarkers(const std::string input_file,
         Corner::readFile(cv_gz_cache_file, result);
         int width = 0, height = 0;
         result = readCorners(cv_gz_cache_file, width, height);
-        if (0 != width && 0 != height) {
+        if (!resolutionKnown && width > 0 && height > 0) {
             imageSize.width = width;
             imageSize.height = height;
             resolutionKnown = true;
@@ -1174,7 +1174,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
         Corner::readFile(cv_gz_cache_file, result);
         int width = 0, height = 0;
         result = readCorners(cv_gz_cache_file, width, height);
-        if (0 != width && 0 != height) {
+        if (!resolutionKnown && width > 0 && height > 0) {
             imageSize.width = width;
             imageSize.height = height;
             resolutionKnown = true;
@@ -1306,7 +1306,7 @@ vector<Corner> Calib::getCorners(const std::string input_file,
     }
     if (!resolutionKnown || 0 == imageSize.width || 0 == imageSize.height) {
         if (raw) {
-            imageSize = read_raw_imagesize(input_file);
+            setImageSize(read_raw_imagesize(input_file));
         }
         else {
             img = getImageRaw(input_file);
@@ -1487,7 +1487,7 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
     }
 
     if (imageSize.width <= 0 || imageSize.height <= 0) {
-        imageSize = readImage(imageFiles[0], use_raw, use_raw, useOnlyGreen).size();
+        setImageSize(readImage(imageFiles[0], use_raw, use_raw, useOnlyGreen).size());
     }
 
     std::string const name = std::string(simple ? "Simple" : "") + "OpenCV" + (RO ? "RO" : "");
@@ -1757,12 +1757,14 @@ void Calib::setPlotSubMarkers(bool plot) {
 }
 
 void Calib::setImageSize(const Mat &img) {
-    imageSize = cv::Size(img.size());
-    resolutionKnown = true;
+    setImageSize(img.size());
 }
 
 void Calib::setImageSize(const Size &s) {
-    imageSize = s;
+    if (s.width > 0 && s.height > 0) {
+        imageSize = s;
+        resolutionKnown = true;
+    }
 }
 
 Size Calib::getImageSize() const {
