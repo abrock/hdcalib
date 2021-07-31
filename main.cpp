@@ -453,6 +453,7 @@ int main(int argc, char* argv[]) {
         calib.runCalib(calibration_type, outlier_threshold);
         calib_updated = true;
         TIMELOG(std::string("Calib ") + calibration_type);
+        time_log << "Median error: " << calib.getCalib(calibration_type).getErrorMedian() << std::endl;
         if (!cache_file_prefix.empty()) {
             calib.save(cache_file);
             TIMELOG("Writing cache file");
