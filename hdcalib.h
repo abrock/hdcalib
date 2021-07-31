@@ -359,6 +359,38 @@ public:
     std::map<int, size_t> countLayers() const;
 };
 
+template<int NUM, int DEG>
+struct SplineFunctor {
+    cv::Vec2f src, dst;
+    cv::Size size;
+    double factor_x, factor_y;
+
+    static const size_t n = (NUM+DEG)*(NUM+DEG);
+    static const size_t n_rows = (NUM+DEG);
+
+    SplineFunctor(cv::Vec2f const& _src, cv::Vec2f const& _dst, cv::Size const& _size);
+
+    cv::Vec2f apply(cv::Vec2f const& pt,
+                    cv::Mat_<float> const& weights_x,
+                    cv::Mat_<float> const& weights_y) const;
+
+    cv::Vec2f apply(cv::Vec2f const& pt,
+                    std::vector<double> const& weights_x,
+                    std::vector<double> weights_y) const;
+
+    template<class T>
+    bool operator()(T const * const weights_x, T const * const weights_y, T * residuals) const;
+
+    template<class T, class U>
+    void apply(T* pt, U const * const weights_x, U const * const weights_y) const;
+
+    template<class T, class U>
+    T applySingle(T const * const val, U const * const weights) const;
+
+    template<class T, class U>
+    T applyRow(T const& val, U const * const weights) const;
+};
+
 template<int LENGTH>
 struct VecLengthFunctor {
     double const target_square_length;

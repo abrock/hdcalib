@@ -1089,76 +1089,7 @@ template double Calib::evaluateSpline<double>(double const x, int const POS, int
 template float Calib::evaluateSpline<float>(float const x, int const POS, int const DEG);
 
 
-template<int NUM, int DEG>
-struct SplineFunctor {
-    cv::Vec2f src, dst;
-    cv::Size size;
-    double factor_x, factor_y;
 
-    static const size_t n = (NUM+DEG)*(NUM+DEG);
-    static const size_t n_rows = (NUM+DEG);
-
-    SplineFunctor(cv::Vec2f const& _src, cv::Vec2f const& _dst, cv::Size const& _size) :
-        src(_src),
-        dst(_dst),
-        size(_size),
-        factor_x(double(NUM)/size.width), factor_y(double(NUM)/size.height){}
-
-    cv::Vec2f apply(cv::Vec2f const& pt,
-                    cv::Mat_<float> const& weights_x,
-                    cv::Mat_<float> weights_y) const {
-        cv::Vec2f result(pt);
-        apply(result.val, weights_x.ptr<float>(), weights_y.ptr<float>());
-        return result;
-    }
-
-    cv::Vec2f apply(cv::Vec2f const& pt,
-                    std::vector<double> const& weights_x,
-                    std::vector<double> weights_y) const {
-        cv::Vec2f result(pt);
-        apply(result.val, weights_x.data(), weights_y.data());
-        return result;
-    }
-
-    template<class T>
-    bool operator()(T const * const weights_x, T const * const weights_y, T * residuals) const {
-        residuals[0] = T(src[0]);
-        residuals[1] = T(src[1]);
-        apply(residuals, weights_x, weights_y);
-        residuals[0] -= T(dst[0]);
-        residuals[1] -= T(dst[1]);
-        return true;
-    }
-
-    template<class T, class U>
-    void apply(T* pt, U const * const weights_x, U const * const weights_y) const {
-        T scaled_pt[2] = {pt[0]*T(factor_x), pt[1]*T(factor_y)};
-        T const dx = applySingle(scaled_pt, weights_x);
-        T const dy = applySingle(scaled_pt, weights_y);
-        pt[0] += dx;
-        pt[1] += dy;
-    }
-
-    template<class T, class U>
-    T applySingle(T const * const val, U const * const weights) const {
-        T col[n_rows];
-        for (size_t ii = 0; ii < n_rows; ++ii) {
-            col[ii] = applyRow(val[0], &weights[ii*n_rows]);
-        }
-        return applyRow(val[1], col);
-    }
-
-    template<class T, class U>
-    T applyRow(T const& val, U const * const weights) const {
-        T result(0);
-        for (int ii = 0; ii < int(n_rows); ++ii) {
-            int POS = ii - DEG;
-            result += weights[ii]*Calib::evaluateSpline(val, POS, DEG);
-        }
-        return result;
-    }
-
-};
 
 template<int NUM, int DEG, class F, class T>
 void Calib::projectSpline(
@@ -2691,5 +2622,71 @@ bool VecLengthFunctor<LENGTH>::operator()(const T * const vec, T *residual) cons
     return true;
 }
 
+template<int NUM, int DEG>
+SplineFunctor<NUM, DEG>::SplineFunctor(const Vec2f &_src, const Vec2f &_dst, const Size &_size) :
+    src(_src),
+    dst(_dst),
+    size(_size),
+    factor_x(double(NUM)/size.width), factor_y(double(NUM)/size.height){}
+
+template<int NUM, int DEG>
+Vec2f SplineFunctor<NUM, DEG>::apply(const Vec2f &pt, const cv::Mat_<float> &weights_x, cv::Mat_<float> const& weights_y) const {
+    cv::Vec2f result(pt);
+    apply(result.val, weights_x.ptr<float>(), weights_y.ptr<float>());
+    return result;
+}
+
+template struct SplineFunctor<3, 3>;
+template struct SplineFunctor<5, 3>;
+template struct SplineFunctor<7, 3>;
+
+template<int NUM, int DEG>
+Vec2f SplineFunctor<NUM, DEG>::apply(const Vec2f &pt, const std::vector<double> &weights_x, std::vector<double> weights_y) const {
+    cv::Vec2f result(pt);
+    apply(result.val, weights_x.data(), weights_y.data());
+    return result;
+}
+
+template<int NUM, int DEG>
+template<class T>
+bool SplineFunctor<NUM, DEG>::operator()(T const * const weights_x, T const * const weights_y, T * residuals) const {
+    residuals[0] = T(src[0]);
+    residuals[1] = T(src[1]);
+    apply(residuals, weights_x, weights_y);
+    residuals[0] -= T(dst[0]);
+    residuals[1] -= T(dst[1]);
+    return true;
+}
+
+template<int NUM, int DEG>
+template<class T, class U>
+void SplineFunctor<NUM, DEG>::apply(T* pt, U const * const weights_x, U const * const weights_y) const {
+    T scaled_pt[2] = {pt[0]*T(factor_x), pt[1]*T(factor_y)};
+    T const dx = applySingle(scaled_pt, weights_x);
+    T const dy = applySingle(scaled_pt, weights_y);
+    pt[0] += dx;
+    pt[1] += dy;
+}
+
+template<int NUM, int DEG>
+template<class T, class U>
+T SplineFunctor<NUM, DEG>::applySingle(T const * const val, U const * const weights) const {
+    T col[n_rows];
+    for (size_t ii = 0; ii < n_rows; ++ii) {
+        col[ii] = applyRow(val[0], &weights[ii*n_rows]);
+    }
+    return applyRow(val[1], col);
+}
+
+template<int NUM, int DEG>
+template<class T, class U>
+T SplineFunctor<NUM, DEG>::applyRow(T const& val, U const * const weights) const {
+    T result(0);
+    for (int ii = 0; ii < int(n_rows); ++ii) {
+        int POS = ii - DEG;
+        result += weights[ii]*Calib::evaluateSpline(val, POS, DEG);
+    }
+    return result;
+}
 
 } // namespace hdcalib
