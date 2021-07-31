@@ -1450,6 +1450,12 @@ public:
      */
     void setImageSize(cv::Mat const& img);
 
+    /**
+     * @brief setImageSize set the size of the captured images.
+     * @param img
+     */
+    void setImageSize(cv::Size const& s);
+
     cv::Size getImageSize() const;
 
     /**

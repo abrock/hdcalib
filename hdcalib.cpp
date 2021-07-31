@@ -1761,6 +1761,10 @@ void Calib::setImageSize(const Mat &img) {
     resolutionKnown = true;
 }
 
+void Calib::setImageSize(const Size &s) {
+    imageSize = s;
+}
+
 Size Calib::getImageSize() const {
     return imageSize;
 }

@@ -168,6 +168,16 @@ int main(int argc, char* argv[]) {
                                             false, 5, "Minimum SNR value.");
         cmd.add(min_snr_arg);
 
+        TCLAP::ValueArg<int> width_arg("", "width",
+                                            "Width of the sensor.",
+                                            false, 0, "px");
+        cmd.add(width_arg);
+
+        TCLAP::ValueArg<int> height_arg("", "height",
+                                            "Height of the sensor.",
+                                            false, 0, "px");
+        cmd.add(height_arg);
+
         TCLAP::ValueArg<double> max_iter_arg("", "max-iter",
                                              "Maximum number of iterations used in the calibrations using ceres.",
                                              false, 1000, "Max #iterations.");
@@ -267,6 +277,10 @@ int main(int argc, char* argv[]) {
         cauchy_param = cauchy_param_arg.getValue();
         min_snr = min_snr_arg.getValue();
         calib.setMaxIter(std::max<size_t>(1, max_iter_arg.getValue()));
+
+        if (width_arg.isSet() && height_arg.isSet() && width_arg.getValue() > 0 && height_arg.getValue() > 0) {
+            calib.setImageSize(cv::Size(width_arg.getValue(), height_arg.getValue()));
+        }
 
         for (std::string const& file : textfiles) {
             if (!fs::is_regular_file(file)) {
