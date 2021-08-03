@@ -5,11 +5,11 @@
 
 double const resolution = 1;
 
-template<int N>
+template<int NUM>
 struct PolyN {
     double const x;
     double const y;
-    static size_t const num = N;
+    static size_t const num = NUM;
 
     PolyN(double const _x, double const _y) : x(_x), y(_y) {}
 
@@ -19,7 +19,7 @@ struct PolyN {
             T * residuals) const {
         T val(x);
         T current_x(x*x);
-        for (size_t ii = 0; ii < N; ++ii) {
+        for (size_t ii = 0; ii < NUM; ++ii) {
             val += current_x * data[ii];
             current_x *= x;
         }
@@ -53,11 +53,11 @@ struct RadialOrig {
     }
 };
 
-template<int N>
+template<int NUM>
 struct RadialOrigN {
     double const x;
     double const y;
-    static size_t const num = 2*N;
+    static size_t const num = 2*NUM;
 
     RadialOrigN(double const _x, double const _y) : x(_x), y(_y) {}
 
@@ -69,9 +69,9 @@ struct RadialOrigN {
         T bottom(1);
         T x2 = T(x*x);
         T current_x = x2;
-        for (size_t ii = 0; ii < N; ++ii) {
+        for (size_t ii = 0; ii < NUM; ++ii) {
             top += current_x * data[ii];
-            bottom += current_x * data[N+ii];
+            bottom += current_x * data[NUM+ii];
             current_x *= x2;
         }
         residuals[0] = y - x*top/bottom;
@@ -79,11 +79,11 @@ struct RadialOrigN {
     }
 };
 
-template<int N>
+template<int NUM>
 struct RadialNewN {
     double const x;
     double const y;
-    static size_t const num = 2*N;
+    static size_t const num = 2*NUM;
 
     RadialNewN(double const _x, double const _y) : x(_x), y(_y) {}
 
@@ -94,9 +94,9 @@ struct RadialNewN {
         T top(1);
         T bottom(1);
         T current_x(x);
-        for (size_t ii = 0; ii < N; ++ii) {
+        for (size_t ii = 0; ii < NUM; ++ii) {
             top += current_x * data[ii];
-            bottom += current_x * data[N+ii];
+            bottom += current_x * data[NUM+ii];
             current_x *= x;
         }
         residuals[0] = y - x*top/bottom;
@@ -114,11 +114,11 @@ T evaluateSpline(T const x, int const POS, int const DEG) {
     return (x-pos)/deg*evaluateSpline(x,POS,DEG-1) + (T(POS+DEG+1)-x)/deg*evaluateSpline(x, POS+1, DEG-1);
 }
 
-template<int N>
+template<int NUM, int DEG>
 struct SplineN {
     double const x;
     double const y;
-    static size_t const num = 2*N;
+    static size_t const num = NUM+DEG;
 
     SplineN(double const _x, double const _y) : x(_x), y(_y) {}
 

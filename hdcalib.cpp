@@ -102,6 +102,24 @@ char Calib::color(const int ii, const int jj) {
     return 'B'; // Second row, second pixel (bottom right pixel)
 }
 
+void Calib::setMarkerCountLimit(int limit) {
+    if (markerCountLimit != limit) {
+        markerCountLimit = limit;
+        preparedCalib = preparedOpenCVCalib = preparedOpenCVROCalib = false;
+    }
+}
+
+int Calib::getMarkerCountLimit() const {
+    return markerCountLimit;
+}
+
+bool Calib::isSelected(const Corner &c) const {
+    if (markerCountLimit <= 0) {
+        return true;
+    }
+    return markerSelection.find(c.getSimpleIdLayer()) != markerSelection.end();
+}
+
 void Calib::purgeRecursionDeeperThan(int level) {
     for (auto& it : data) {
         it.second.purgeRecursionDeeperThan(level);
@@ -1963,5 +1981,14 @@ return true;
 }
 return false;
 }
+
+FixedValues::FixedValues(const bool all):
+focal(all),
+principal(all),
+dist(all),
+objCorr(all),
+rvecs(all),
+tvecs(all),
+x_factor(all){}
 
 } // namespace hdcalib

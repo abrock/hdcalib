@@ -342,10 +342,11 @@ public:
      */
     void add(std::vector<hdcalib::Corner> const& vec);
 
-    void getPoints(
-            std::vector<cv::Point2f>& imagePoints,
-            std::vector<cv::Point3f> & objectPoints,
-            hdcalib::Calib const& calib) const;
+    void getPoints(std::vector<Point2f> &imagePoints,
+                   std::vector<Point3f> &objectPoints,
+                   std::vector<cv::Scalar_<int> > &ids,
+                   const hdcalib::Calib &calib) const;
+
 
     void getMajorPoints(std::vector<Point2f> &imagePoints,
                         std::vector<Point3f> &objectPoints,
@@ -385,10 +386,29 @@ struct SplineFunctor {
     void apply(T* pt, U const * const weights_x, U const * const weights_y) const;
 
     template<class T, class U>
-    T applySingle(T const * const val, U const * const weights) const;
+    static T applySingle(T const * const val, U const * const weights);
 
     template<class T, class U>
-    T applyRow(T const& val, U const * const weights) const;
+    static T applyRow(T const& val, U const * const weights);
+
+public:
+    template<class T, class U>
+    static T applyRowDerivative(const T &val, const U * const weights);
+
+    template<class T, class U>
+    static T applySingleDy(const T * const val, const U * const weights);
+
+    template<class T, class U>
+    static T applySingleDx(const T * const val, const U * const weights);
+
+    template<class T, class U>
+    static T apply_Dx(const T * const pt, const U * const weights, const cv::Size &size);
+
+    template<class T, class U>
+    static void apply(T *pt, const U * const weights_x, const U * const weights_y, const cv::Size &size);
+
+    template<class T, class U>
+    static T apply_Dy(const T * const pt, const U * const weights, const cv::Size &size);
 };
 
 template<int LENGTH>
@@ -670,6 +690,18 @@ struct cmpScalar {
     bool operator()(const cv::Scalar_<T> &a, const cv::Scalar_<T> b) const;
 };
 
+struct FixedValues {
+    bool focal = false;
+    bool principal = false;
+    bool dist = false;
+    bool objCorr = false;
+    bool rvecs = false;
+    bool tvecs = false;
+    bool x_factor = false;
+
+    FixedValues(bool const all = false);
+};
+
 class CalibResult {
 public:
     Calib * calib;
@@ -774,6 +806,7 @@ public:
 
     CalibResult& operator = (const CalibResult &t)
     {
+        calib = t.calib;
         objectPointCorrections = t.objectPointCorrections;
         cameraMatrix = t.cameraMatrix.clone();
         distCoeffs = t.distCoeffs.clone();
@@ -856,6 +889,40 @@ public:
 void write(cv::FileStorage& fs, const std::string&, const CalibResult& x);
 void read(const cv::FileNode& node, CalibResult& x, const CalibResult& default_value = CalibResult());
 
+template<int NUM, int DEG>
+struct SplineRegularizer {
+    cv::Size const size;
+    SplineRegularizer(cv::Size const& _size);
+
+    static int const n=6;
+
+    template<class T>
+    bool operator()(T const * const weights_x, T const * const weights_y, T * residuals) const;
+};
+
+template<int N>
+struct LocalCorrectionsSum {
+    /**
+    std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& local_corrections;
+    LocalCorrectionsSum(std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& _local_corrections) :
+        local_corrections(_local_corrections) {}
+    **/
+
+    float const weight;
+
+    LocalCorrectionsSum(const float _weight) : weight(_weight) {}
+
+    template<class T>
+    bool operator () (
+            T const * const correction,
+            T *residuals) const {
+        for (size_t ii = 0; ii < N; ++ii) {
+            residuals[ii] = T(weight) * correction[ii];
+        }
+        return true;
+    }
+};
+
 
 class Calib {
     /**
@@ -873,6 +940,11 @@ class Calib {
      * @brief objectPoints storage for 3D points of Corners on the target.
      */
     std::vector<std::vector<cv::Point3f> > objectPoints;
+
+    /**
+     * @brief ids stores the marker IDs corresponding to the imagePoints
+     */
+    std::vector<std::vector<cv::Scalar_<int> > > ids;
 
     std::vector<std::vector<cv::Scalar_<int> > > reduced_marker_references;
 
@@ -989,6 +1061,10 @@ class Calib {
     bool preparedOpenCVCalib = false;
     bool preparedOpenCVROCalib = false;
     bool preparedCalib = false;
+    int preparedMarkerCountLimit = -1;
+    int markerCountLimit = -1;
+
+    std::set<cv::Scalar_<int>, cmpScalar> markerSelection;
 
     std::vector<cv::Scalar> const color_circle = {
         cv::Scalar(255,255,255,255),
@@ -1034,6 +1110,12 @@ class Calib {
 public:
     typedef std::map<std::string, CornerStore> Store_T;
     Store_T data;
+
+    void setMarkerCountLimit(int limit);
+
+    int getMarkerCountLimit() const;
+
+    bool isSelected(hdmarker::Corner const& c) const;
 
     void purgeRecursionDeeperThan(int level);
 
@@ -1364,13 +1446,34 @@ public:
      */
     cv::Vec3d get3DPoint(CalibResult & calib, hdmarker::Corner const& c, cv::Mat const& _rvec, cv::Mat const& _tvec);
 
-    template<class T>
     /**
      * @brief rot_vec2mat converts a Rodriguez rotation vector (with 3 entries) to a 3x3 rotation matrix.
      * @param vec
      * @param mat
      */
-    static void rot_vec2mat(T const vec[3], T mat[9]);
+    template<class T>
+    static void rot_vec2mat(T const vec[3], T mat[9]) {
+        T const theta = ceres::sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
+        T const c = ceres::cos(theta);
+        T const s = ceres::sin(theta);
+        T const c1 = T(1) - c;
+
+        // Calculate normalized vector.
+        T const factor = (ceres::abs(theta) < std::numeric_limits<double>::epsilon() ? T(1) : T(1)/theta);
+        T const vec_norm[3] = {factor * vec[0], factor * vec[1], factor * vec[2]};
+
+        mat[0] = c + c1*vec_norm[0]*vec_norm[0];
+        mat[1] = c1*vec_norm[0]*vec_norm[1] - s*vec_norm[2];
+        mat[2] = c1*vec_norm[0]*vec_norm[2] + s*vec_norm[1];
+
+        mat[3] = c1*vec_norm[0]*vec_norm[1] + s*vec_norm[2];
+        mat[4] = c + c1*vec_norm[1]*vec_norm[1];
+        mat[5] = c1*vec_norm[1]*vec_norm[2] - s*vec_norm[0];
+
+        mat[6] = c1*vec_norm[0]*vec_norm[2] - s*vec_norm[1];
+        mat[7] = c1*vec_norm[1]*vec_norm[2] + s*vec_norm[0];
+        mat[8] = c + c1*vec_norm[2]*vec_norm[2];
+    }
 
     template<class T>
     /**
@@ -1773,6 +1876,17 @@ public:
     static void projectSpline(const F p[], T result[], const T focal[], const T principal[], const T R[], const T t[], const T weights_x[], const T weights_y[], const cv::Size &size);
     template<class T>
     static T evaluateSpline(const T x, const int POS, const int DEG);
+    template<class T>
+    static T evaluateSplineDerivative(T const x, int const POS, int const DEG);
+
+    template<int NUM, int DEG>
+    void transformModel2Spline(CalibResult &calib, std::vector<double> &weights_x, std::vector<double> &weights_y);
+
+    template<int NUM, int DEG>
+    void transformSpline2Spline(CalibResult &calib, std::vector<double> &weights_x, std::vector<double> &weights_y);
+
+    template<int NUM, int DEG>
+    double CeresCalibFlexibleTargetSplineSub(const double outlier_threshold, FixedValues fixed);
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(

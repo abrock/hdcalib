@@ -102,6 +102,7 @@ int main(int argc, char* argv[]) {
     double cauchy_param = 1;
     double marker_size = 1;
     double min_snr = 5;
+    int initial_count_limit = 300;
 
     TCLAP::ValueArg<std::string> combine_arg("", "combine",
                                              "Combine image parts where markers were detected into large image. ",
@@ -450,6 +451,12 @@ int main(int argc, char* argv[]) {
 
     for (std::string const& calibration_type : calibration_types) {
         clog::L(__func__, 2) << "Running calib " << calibration_type << std::endl;
+        if (initial_count_limit > 0) {
+            calib.setMarkerCountLimit(initial_count_limit);
+            calib.runCalib(calibration_type, outlier_threshold);
+            calib.setMarkerCountLimit(0);
+            TIMELOG(std::string("Calib initial ") + calibration_type);
+        }
         calib.runCalib(calibration_type, outlier_threshold);
         calib_updated = true;
         TIMELOG(std::string("Calib ") + calibration_type);

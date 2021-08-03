@@ -21,21 +21,40 @@ void vec2arr(T arr[2], cv::Point2d const& p) {
 namespace hdcalib {
 
 void Calib::prepareCalibration() {
-    if (preparedCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size()) {
+    if (preparedCalib && imagePoints.size() == data.size() && objectPoints.size() == data.size() && preparedMarkerCountLimit == markerCountLimit) {
         return;
     }
     preparedOpenCVCalib = false;
     preparedOpenCVROCalib = false;
     preparedCalib = true;
+    preparedMarkerCountLimit = markerCountLimit;
+
+    if (markerCountLimit > 0) {
+        markerSelection.clear();
+        for (auto& it : data) {
+            for (size_t ii = 0; ii < it.second.size(); ++ii) {
+                markerSelection.insert(it.second.get(ii).getSimpleIdLayer());
+            }
+        }
+        std::vector<cv::Scalar_<int> > tmp(markerSelection.begin(), markerSelection.end());
+        if (int(tmp.size()) > markerCountLimit) {
+            randutils::mt19937_rng rng;
+            rng.sample(markerCountLimit, tmp);
+            tmp.resize(markerCountLimit);
+            markerSelection.clear();
+            markerSelection.insert(tmp.begin(), tmp.end());
+        }
+    }
 
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
+    ids = std::vector<std::vector<cv::Scalar_<int> > >(data.size());
     imageFiles.resize(data.size());
 
     runningstats::RunningStats points_stats;
     size_t ii = 0;
     for (std::pair<const std::string, CornerStore> const& it : data) {
-        it.second.getPoints(imagePoints[ii], objectPoints[ii], *this);
+        it.second.getPoints(imagePoints[ii], objectPoints[ii], ids[ii], *this);
         imageFiles[ii] = it.first;
         points_stats.push_unsafe(imagePoints[ii].size());
         ++ii;
@@ -46,14 +65,22 @@ void Calib::prepareCalibration() {
 void CornerStore::getPoints(
         std::vector<Point2f> &imagePoints,
         std::vector<Point3f> &objectPoints,
+        std::vector<cv::Scalar_<int> > &ids,
         hdcalib::Calib const& calib) const {
     imagePoints.clear();
     objectPoints.clear();
+    ids.clear();
     for (size_t ii = 0; ii < size(); ++ii) {
         hdmarker::Corner const& c = get(ii);
+        if (calib.getMarkerCountLimit() > 0) {
+            if (!calib.isSelected(c)) {
+                continue;
+            }
+        }
         //if (c.layer > 0) {
-            imagePoints.push_back(c.p);
-            objectPoints.push_back(calib.getInitial3DCoord(c));
+        imagePoints.push_back(c.p);
+        objectPoints.push_back(calib.getInitial3DCoord(c));
+        ids.push_back(c.getSimpleIdLayer());
         //}
     }
 }
@@ -240,8 +267,8 @@ double Calib::CeresCalibKnownCorrections(double const outlier_threshold,
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
         runningstats::QuantileStats<float> error_stats;
-        for (size_t jj = 0; jj < sub_data.size(); ++jj) {
-            cv::Scalar_<int> const c = getSimpleIdLayer(sub_data.get(jj));
+        for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
+            cv::Scalar_<int> const c = this->ids[ii][jj];
             {
                 SingleProjectionFunctor loss (
                             imagePoints[ii][jj],
@@ -437,30 +464,6 @@ void Calib::setCeresTolerance(const double new_tol) {
     ceres_tolerance = std::abs(new_tol);
 }
 
-template<int N>
-struct LocalCorrectionsSum {
-    /**
-    std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& local_corrections;
-    LocalCorrectionsSum(std::map<cv::Point3i, std::vector<double>, cmpSimpleIndex3<cv::Point3i> > const& _local_corrections) :
-        local_corrections(_local_corrections) {}
-    **/
-
-    float const weight;
-
-    LocalCorrectionsSum(float const _weight = 1) : weight(_weight) {}
-    template<class T>
-    bool operator () (
-            T const * const correction,
-            T *residuals) const {
-        for (size_t ii = 0; ii < N; ++ii) {
-            residuals[ii] = T(weight) * correction[ii];
-        }
-        return true;
-    }
-};
-
-
-
 double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
     // Build the problem.
     ceres::Problem problem;
@@ -517,8 +520,8 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
         runningstats::QuantileStats<float> error_stats;
-        for (size_t jj = 0; jj < sub_data.size(); ++jj) {
-            cv::Scalar_<int> const c = getSimpleIdLayer(sub_data.get(jj));
+        for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
+            cv::Scalar_<int> const c = this->ids[ii][jj];
             ids.insert(c);
             {
                 FlexibleTargetProjectionFunctor loss (
@@ -719,8 +722,8 @@ double Calib::CeresCalibFlexibleTargetN(double const outlier_threshold) {
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
         runningstats::QuantileStats<float> error_stats;
-        for (size_t jj = 0; jj < sub_data.size(); ++jj) {
-            cv::Scalar_<int> const c = getSimpleIdLayer(sub_data.get(jj));
+        for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
+            cv::Scalar_<int> const c = this->ids[ii][jj];
             ids.insert(c);
             {
                 FlexibleTargetProjectionFunctorN<N> loss (
@@ -926,8 +929,8 @@ double Calib::CeresCalibFlexibleTargetOdd(double const outlier_threshold) {
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
         runningstats::QuantileStats<float> error_stats;
-        for (size_t jj = 0; jj < sub_data.size(); ++jj) {
-            cv::Scalar_<int> const c = getSimpleIdLayer(sub_data.get(jj));
+        for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
+            cv::Scalar_<int> const c = this->ids[ii][jj];
             ids.insert(c);
             {
                 FlexibleTargetProjectionFunctorOdd<N> loss (
@@ -1061,338 +1064,6 @@ template double Calib::CeresCalibFlexibleTargetOdd<12>(double const outlier_thre
 template double Calib::CeresCalibFlexibleTargetOdd<14>(double const outlier_threshold);
 template double Calib::CeresCalibFlexibleTargetOdd<16>(double const outlier_threshold);
 
-template<class T>
-T Calib::evaluateSpline(T const x, int const POS, int const DEG) {
-    T const pos(POS);
-    if (x < T(POS) || x > T(POS+DEG+1)) {
-        return T(0);
-    }
-    if (0 == DEG) {
-        return T(1);
-    }
-    if (1 == DEG) {
-        if (x < T(POS+1)) {
-            return x - T(POS);
-        }
-        return T(POS+2) - x;
-    }
-    if (2 == DEG) {
-        if (x < T(POS+1)) {
-            return (x - T(POS))*(x-T(POS))/2.0;
-        }
-    }
-    T const deg(DEG);
-    return (x-pos)/deg*evaluateSpline(x,POS,DEG-1) + (T(POS+DEG+1)-x)/deg*evaluateSpline(x, POS+1, DEG-1);
-}
-
-template double Calib::evaluateSpline<double>(double const x, int const POS, int const DEG);
-template float Calib::evaluateSpline<float>(float const x, int const POS, int const DEG);
-
-
-
-
-template<int NUM, int DEG, class F, class T>
-void Calib::projectSpline(
-        F const p[3],
-T result[2],
-const T focal[2],
-const T principal[2],
-const T R[9],
-const T t[3],
-const T weights_x[(NUM+DEG)*(NUM+DEG)],
-const T weights_y[(NUM+DEG)*(NUM+DEG)],
-cv::Size const& size
-) {
-    T const X(p[0]), Y(p[1]), Z(p[2]);
-    T& x = result[0];
-    T& y = result[1];
-    T z;
-    z = R[6]*X + R[7]*Y + R[8]*Z + t[2];
-    if (std::numeric_limits<double>::min() > ceres::abs(z)) {
-        z = T(1);
-    }
-    x = (R[0]*X + R[1]*Y + R[2]*Z + t[0])/z;
-    y = (R[3]*X + R[4]*Y + R[5]*Z + t[1])/z;
-
-    x = x * focal[0] + principal[0];
-    y = y * focal[1] + principal[1];
-
-    SplineFunctor<NUM, DEG> spline({}, {}, size);
-    spline.apply(result, weights_x, weights_y);
-}
-
-template<int NUM, int DEG>
-class SplineProjectionFunctor {
-    cv::Point2f const marker;
-    cv::Point3f const point;
-    cv::Size const size;
-public:
-    static const int n = (NUM+DEG)*(NUM+DEG);
-    static const int n_rows = (NUM+DEG);
-    double weight = 1;
-    SplineProjectionFunctor(cv::Point2f const& _marker,
-                            cv::Point3f const& _point,
-                            cv::Size const& _size) : marker(_marker), point(_point), size(_size) {}
-    /*
-    1, // focal length x
-    1, // focal length y
-    1, // principal point x
-    1, // principal point y
-    3, // rotation vector for the target
-    3, // translation vector for the target
-    3, // correction vector for the 3d marker position
-    (NUM+DEG)² // distortion coefficients for x
-    (NUM+DEG)² // distortion coefficients for y
-    */
-    template<class T>
-    bool operator()(
-            T const* const f_x,
-            T const* const f_y,
-            T const* const c_x,
-            T const* const c_y,
-            T const* const rvec,
-            T const* const tvec,
-            T const* const correction,
-            T const* const x_factor,
-            T const* const weights_x,
-            T const* const weights_y,
-            T* residuals) const {
-        T rot_mat[9];
-        Calib::rot_vec2mat(rvec, rot_mat);
-        T const f[2] = {f_x[0], f_y[0]};
-        T const c[2] = {c_x[0], c_y[0]};
-        T result[2] = {T(0), T(0)};
-        T const src[3] = {T(point.x)*(T(1) + x_factor[0]/100.0) + correction[0],
-                          T(point.y) + correction[1],
-                          T(point.z) + correction[2]};
-        Calib::projectSpline<NUM, DEG>(src, result, f, c, rot_mat, tvec, weights_x, weights_y, size);
-        residuals[0] = T(weight) * (result[0] - T(marker.x));
-        residuals[1] = T(weight) * (result[1] - T(marker.y));
-        return true;
-    }
-};
-
-
-template<int NUM, int DEG>
-double Calib::CeresCalibFlexibleTargetSpline(double const outlier_threshold) {
-    // Build the problem.
-    ceres::Problem problem;
-
-    prepareCalibration();
-
-    std::string const name = std::string("Spline-") + std::to_string(NUM) + "-" + std::to_string(DEG);
-
-    if (!hasCalibName(name)) {
-        for (int N = NUM-2; N >= 3; N -= 2) {
-            std::string const n = std::string("Spline-") + std::to_string(N) + "-" + std::to_string(DEG);
-            if (!hasCalibName(name) && hasCalibName(n)) {
-                calibrations[name] = calibrations[n];
-                break;
-            }
-        }
-        for (std::string const& n : {"Flexible", "SemiFlexible", "Ceres", "OpenCV", "SimpleCeres", "SimpleOpenCV"}) {
-            if (!hasCalibName(name) && hasCalibName(n)) {
-                calibrations[name] = calibrations[n];
-                break;
-            }
-        }
-    }
-
-    CalibResult & calib = calibrations[name];
-    calib.calib = this;
-    calib.name = name;
-
-    typedef SplineProjectionFunctor<NUM, DEG> Func;
-
-    // Initialize spline parameter vectors if necessary or scale version with lower resolution if available.
-    scaleSquareMatVec(calib.spline_x, Func::n_rows);
-    scaleSquareMatVec(calib.spline_y, Func::n_rows);
-
-    std::vector<std::vector<double> > local_rvecs(data.size()), local_tvecs(data.size());
-
-    cv::Mat_<double> old_cam = calib.cameraMatrix.clone();
-    std::vector<double> old_dist = calib.distN;
-
-
-    std::map<cv::Scalar_<int>, std::vector<double>, cmpScalar > local_corrections;
-
-    for (const auto& it: data) {
-        for (size_t ii = 0; ii < it.second.size(); ++ii) {
-            cv::Scalar_<int> const c = getSimpleIdLayer(it.second.get(ii));
-            local_corrections[c] = point2vec3f(calib.objectPointCorrections[c]);
-        }
-    }
-
-    std::set<cv::Scalar_<int>, cmpScalar> ids;
-
-    if (calib.outlier_percentages.size() != data.size()) {
-        calib.outlier_percentages = std::vector<double>(data.size(), 0.0);
-    }
-    size_t ignored_files_counter = 0;
-    std::multimap<double, std::string> outlier_ranking;
-    runningstats::RunningStats outlier_percentages;
-    for (size_t ii = 0; ii < data.size(); ++ii) {
-        local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
-        local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
-        bool ignore_current_file = false;
-        if (calib.outlier_percentages[ii] > max_outlier_percentage) {
-            ignore_current_file = true;
-            ignored_files_counter++;
-        }
-
-        auto const & sub_data = data[imageFiles[ii]];
-        size_t outlier_counter = 0;
-        runningstats::QuantileStats<float> error_stats;
-        for (size_t jj = 0; jj < sub_data.size(); ++jj) {
-            cv::Scalar_<int> const c = getSimpleIdLayer(sub_data.get(jj));
-            ids.insert(c);
-            {
-                Func loss (
-                            imagePoints[ii][jj],
-                            objectPoints[ii][jj],
-                            imageSize
-                            );
-                double residuals[2] = {0,0};
-                if (outlier_threshold > 0) {
-                    loss(&calib.cameraMatrix(0,0), // focal length x
-                         &calib.cameraMatrix(1,1), // focal length y
-                         &calib.cameraMatrix(0,2), // principal point x
-                         &calib.cameraMatrix(1,2), // principal point y
-                         local_rvecs[ii].data(), // rotation vector for the target
-                         local_tvecs[ii].data(), // translation vector for the target
-                         local_corrections[c].data(), // 3d point correction
-                         &calib.x_factor,
-                         calib.spline_x.data(),
-                         calib.spline_y.data(),
-                         residuals);
-                    double const error = std::sqrt(residuals[0] * residuals[0] + residuals[1] * residuals[1]);
-                    if (error > outlier_threshold) {
-                        outlier_counter++;
-                        continue;
-                    }
-                    else {
-                        error_stats.push_unsafe(error);
-                    }
-                }
-                if (ignore_current_file) {
-                    continue;
-                }
-                ceres::CostFunction * cost_function =
-                        new ceres::AutoDiffCostFunction<
-                        Func,
-                        2, // Number of residuals
-                        1, // focal length x
-                        1, // focal length y
-                        1, // principal point x
-                        1, // principal point y
-                        3, // rotation vector for the target
-                        3, // translation vector for the target
-                        3, // correction vector for the 3d marker position
-                        1, // x-factor
-                        Func::n, // spline distortion coefficients x
-                        Func::n // spline distortion coefficients y
-
-                        >(new Func (
-                              imagePoints[ii][jj],
-                              objectPoints[ii][jj],
-                              imageSize
-                              ));
-                problem.AddResidualBlock(cost_function,
-                                         cauchy_param > 0 ? new ceres::CauchyLoss(cauchy_param) : nullptr, // Loss function (nullptr = L2)
-                                         &calib.cameraMatrix(0,0), // focal length x
-                                         &calib.cameraMatrix(1,1), // focal length y
-                                         &calib.cameraMatrix(0,2), // principal point x
-                                         &calib.cameraMatrix(1,2), // principal point y
-                                         local_rvecs[ii].data(), // rotation vector for the target
-                                         local_tvecs[ii].data(), // translation vector for the target
-                                         local_corrections[c].data(), // 3d point correction
-                                         &calib.x_factor,
-                                         calib.spline_x.data(), // distortion coefficients
-                                         calib.spline_y.data() // distortion coefficients
-                                         );
-            }
-        }
-        double const outlier_percentage = 100.0 * double(outlier_counter) / sub_data.size();
-        outlier_percentages.push_unsafe(outlier_percentage);
-        outlier_ranking.insert({outlier_percentage, imageFiles[ii] + " median: " + std::to_string(error_stats.getMedian())});
-        calib.outlier_percentages[ii] = outlier_percentage;
-    }
-    clog::L(name, 2) << "Outlier ranking:" << std::endl;
-    for (auto const& it : outlier_ranking) {
-        clog::L(name, 2) << it.second << ": \t" << it.first << std::endl;
-    }
-    std::cout << "Ignored " << 100.0 * double(ignored_files_counter) / data.size() << "% of files" << std::endl;
-    if (outlier_threshold > 0) {
-        clog::L(name, 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
-    }
-
-    for (cv::Scalar_<int> const& it : ids) {
-        ceres::CostFunction* cost_function =
-                new ceres::AutoDiffCostFunction<LocalCorrectionsSum<3>, 3, 3>(
-                    new LocalCorrectionsSum<3>(1));
-        problem.AddResidualBlock(cost_function,
-                                 nullptr, // Loss function (nullptr = L2)
-                                 local_corrections[it].data() // correction
-                                 );
-    }
-    for (double * val : {calib.spline_x.data(), calib.spline_y.data()}){
-        ceres::CostFunction* cost_function =
-                new ceres::AutoDiffCostFunction<LocalCorrectionsSum<Func::n>, Func::n, Func::n>(
-                    new LocalCorrectionsSum<Func::n>(.001));
-        problem.AddResidualBlock(cost_function,
-                                 nullptr, // Loss function (nullptr = L2)
-                                 val // correction
-                                 );
-    }
-
-    // Run the solver!
-    ceres::Solver::Options options;
-    options.num_threads = int(threads);
-    options.linear_solver_type = ceres::SPARSE_SCHUR;
-    options.max_num_iterations = max_iter;
-    options.minimizer_progress_to_stdout = verbose;
-    options.function_tolerance = ceres_tolerance;
-    options.gradient_tolerance = ceres_tolerance;
-    options.parameter_tolerance = ceres_tolerance;
-    ceres::Solver::Summary summary;
-    Solve(options, &problem, &summary);
-
-    clog::L(name, 1) << summary.BriefReport() << "\n";
-    clog::L(name, 1) << summary.FullReport() << "\n";
-
-    for (auto const& it : local_corrections) {
-        calib.objectPointCorrections[it.first] = vec2point3f(it.second);
-    }
-
-    for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
-        calib.rvecs[ii] = vec2mat(local_rvecs[ii]);
-        calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
-    }
-
-    clog::L(name, 1) << "Parameters before: " << std::endl
-                     << "Camera matrix: " << old_cam << std::endl
-                        ;//<< "Distortion: " << old_dist << std::endl;
-    clog::L(name, 1) << "Parameters after: " << std::endl
-                     << "Camera matrix: " << calib.cameraMatrix << std::endl
-                        ;//<< "Distortion: " << calib.distCoeffs << std::endl;
-    clog::L(name, 1) << "Difference: old - new" << std::endl
-                     << "Camera matrix: " << (old_cam - calib.cameraMatrix) << std::endl
-                        ;//<< "Distortion: " << (old_dist - calib.distCoeffs) << std::endl;
-    clog::L(name, 1) << "x_factor: " << calib.x_factor;
-    //CeresCalibKnownCorrections(outlier_threshold, calib);
-    return 0;
-}
-
-template double Calib::CeresCalibFlexibleTargetSpline< 3,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline< 5,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline< 7,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline< 9,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline<11,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline<13,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline<15,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline<17,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline<19,3>(double const outlier_threshold);
-template double Calib::CeresCalibFlexibleTargetSpline<21,3>(double const outlier_threshold);
 
 
 void Calib::minMaxPoint3f(cv::Point3f const& val, cv::Point3f& min, cv::Point3f& max) {
@@ -1494,8 +1165,8 @@ double Calib::CeresCalibSemiFlexibleTarget(double const outlier_threshold) {
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
         runningstats::QuantileStats<float> error_stats;
-        for (size_t jj = 0; jj < sub_data.size(); ++jj) {
-            cv::Scalar_<int> const c = getSimpleIdLayer(sub_data.get(jj));
+        for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
+            cv::Scalar_<int> const c = this->ids[ii][jj];
             ids.insert(c);
             {
                 SemiFlexibleTargetProjectionFunctor loss (
@@ -1809,6 +1480,11 @@ const T t[3]) {
             case  7: Calib::projectSpline< 7, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
             case  9: Calib::projectSpline< 9, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
             case 11: Calib::projectSpline<11, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
+            case 13: Calib::projectSpline<13, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
+            case 15: Calib::projectSpline<15, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
+            case 17: Calib::projectSpline<17, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
+            case 19: Calib::projectSpline<19, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
+            case 21: Calib::projectSpline<21, 3>(p, result, focal, principal, R, t, spline_x.data(), spline_y.data(), calib->getImageSize()); return;
             }
         }
     }
@@ -2115,33 +1791,6 @@ const double R[9],
 const double t[3],
 const double dist[14]
 );
-
-template<class T>
-void Calib::rot_vec2mat(const T vec[], T mat[]) {
-    T const theta = ceres::sqrt(vec[0]*vec[0] + vec[1]*vec[1] + vec[2]*vec[2]);
-    T const c = ceres::cos(theta);
-    T const s = ceres::sin(theta);
-    T const c1 = T(1) - c;
-
-    // Calculate normalized vector.
-    T const factor = (ceres::abs(theta) < std::numeric_limits<double>::epsilon() ? T(1) : T(1)/theta);
-    T const vec_norm[3] = {factor * vec[0], factor * vec[1], factor * vec[2]};
-
-    mat[0] = c + c1*vec_norm[0]*vec_norm[0];
-    mat[1] = c1*vec_norm[0]*vec_norm[1] - s*vec_norm[2];
-    mat[2] = c1*vec_norm[0]*vec_norm[2] + s*vec_norm[1];
-
-    mat[3] = c1*vec_norm[0]*vec_norm[1] + s*vec_norm[2];
-    mat[4] = c + c1*vec_norm[1]*vec_norm[1];
-    mat[5] = c1*vec_norm[1]*vec_norm[2] - s*vec_norm[0];
-
-    mat[6] = c1*vec_norm[0]*vec_norm[2] - s*vec_norm[1];
-    mat[7] = c1*vec_norm[1]*vec_norm[2] + s*vec_norm[0];
-    mat[8] = c + c1*vec_norm[2]*vec_norm[2];
-}
-
-template void Calib::rot_vec2mat(const double vec[], double mat[]);
-template void Calib::rot_vec2mat(const ceres::Jet<double, 3> vec[], ceres::Jet<double, 3> mat[]);
 
 template<class T, class U>
 void Calib::normalize_rot4(T const in[4], U out[4]) {
@@ -2620,73 +2269,6 @@ bool VecLengthFunctor<LENGTH>::operator()(const T * const vec, T *residual) cons
         residual[0] += vec[ii] * vec[ii];
     }
     return true;
-}
-
-template<int NUM, int DEG>
-SplineFunctor<NUM, DEG>::SplineFunctor(const Vec2f &_src, const Vec2f &_dst, const Size &_size) :
-    src(_src),
-    dst(_dst),
-    size(_size),
-    factor_x(double(NUM)/size.width), factor_y(double(NUM)/size.height){}
-
-template<int NUM, int DEG>
-Vec2f SplineFunctor<NUM, DEG>::apply(const Vec2f &pt, const cv::Mat_<float> &weights_x, cv::Mat_<float> const& weights_y) const {
-    cv::Vec2f result(pt);
-    apply(result.val, weights_x.ptr<float>(), weights_y.ptr<float>());
-    return result;
-}
-
-template struct SplineFunctor<3, 3>;
-template struct SplineFunctor<5, 3>;
-template struct SplineFunctor<7, 3>;
-
-template<int NUM, int DEG>
-Vec2f SplineFunctor<NUM, DEG>::apply(const Vec2f &pt, const std::vector<double> &weights_x, std::vector<double> weights_y) const {
-    cv::Vec2f result(pt);
-    apply(result.val, weights_x.data(), weights_y.data());
-    return result;
-}
-
-template<int NUM, int DEG>
-template<class T>
-bool SplineFunctor<NUM, DEG>::operator()(T const * const weights_x, T const * const weights_y, T * residuals) const {
-    residuals[0] = T(src[0]);
-    residuals[1] = T(src[1]);
-    apply(residuals, weights_x, weights_y);
-    residuals[0] -= T(dst[0]);
-    residuals[1] -= T(dst[1]);
-    return true;
-}
-
-template<int NUM, int DEG>
-template<class T, class U>
-void SplineFunctor<NUM, DEG>::apply(T* pt, U const * const weights_x, U const * const weights_y) const {
-    T scaled_pt[2] = {pt[0]*T(factor_x), pt[1]*T(factor_y)};
-    T const dx = applySingle(scaled_pt, weights_x);
-    T const dy = applySingle(scaled_pt, weights_y);
-    pt[0] += dx;
-    pt[1] += dy;
-}
-
-template<int NUM, int DEG>
-template<class T, class U>
-T SplineFunctor<NUM, DEG>::applySingle(T const * const val, U const * const weights) const {
-    T col[n_rows];
-    for (size_t ii = 0; ii < n_rows; ++ii) {
-        col[ii] = applyRow(val[0], &weights[ii*n_rows]);
-    }
-    return applyRow(val[1], col);
-}
-
-template<int NUM, int DEG>
-template<class T, class U>
-T SplineFunctor<NUM, DEG>::applyRow(T const& val, U const * const weights) const {
-    T result(0);
-    for (int ii = 0; ii < int(n_rows); ++ii) {
-        int POS = ii - DEG;
-        result += weights[ii]*Calib::evaluateSpline(val, POS, DEG);
-    }
-    return result;
 }
 
 } // namespace hdcalib

@@ -23,6 +23,7 @@ add_library(hdcalib
     cornerstore.cpp
     fitgrid-lib.cpp
     griddescription.cpp
+    hdcalib-spline-calib.cpp
     hdcalib-analyze-grid.cpp
     hdcalib-ceres-calib.cpp
     hdcalib-lensfun.cpp
@@ -90,6 +91,9 @@ add_executable(raw2png raw2png.cpp)
 add_executable(test-similarity2d test-similarity2d.cpp)
 
 add_executable(test-spline-model test-spline-model.cpp)
+target_link_libraries(test-spline-model
+    ${CERES_LIBRARIES}
+    )
 
 add_executable(hdcalib-2dgauss 2dgauss.cpp)
 
