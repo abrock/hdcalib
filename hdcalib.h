@@ -160,6 +160,8 @@ private:
 public:
     CornerStore();
 
+    size_t purgeUnlikelyByImageSize(cv::Size const& size);
+
     void purgeRecursionDeeperThan(int level);
 
     size_t countMainMarkers() const;
@@ -170,6 +172,10 @@ public:
 
     std::vector<hdmarker::Corner> getSquaresTopLeft(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
     std::vector<hdmarker::Corner> getMainMarkers(int const cornerIdFactor = 10) const;
+
+    std::vector<hdmarker::Corner> getMainMarkerAdjacent(int const offset_x, int const offset_y) const;
+
+    std::vector<hdmarker::Corner> getMainMarkerAdjacent() const;
 
     std::vector<std::vector<hdmarker::Corner> > getSquares(int const cornerIdFactor, runningstats::QuantileStats<float> *distances = nullptr) const;
 
@@ -345,6 +351,7 @@ public:
     void getPoints(std::vector<Point2f> &imagePoints,
                    std::vector<Point3f> &objectPoints,
                    std::vector<cv::Scalar_<int> > &ids,
+                   std::vector<Corner> &corners,
                    const hdcalib::Calib &calib) const;
 
 
@@ -358,6 +365,16 @@ public:
     int getCornerIdFactorFromMainMarkers() const;
     static std::map<int, size_t> countLayers(const std::vector<Corner> &vec);
     std::map<int, size_t> countLayers() const;
+    void getPointsMinLayer(std::vector<Point2f> &imagePoints, std::vector<Point3f> &objectPoints, std::vector<cv::Scalar_<int> > &ids, const hdcalib::Calib &calib, const int min_layer) const;
+
+    /**
+     * @brief distanceID calculates the l1-distance between two Corner ids, without considering page.
+     * @param a
+     * @param b
+     * @return
+     */
+    static size_t distanceID(const Corner &a, const Corner &b);
+    void getPointsMainMarkerAdjacent(std::vector<Point2f> &imagePoints, std::vector<Point3f> &objectPoints, std::vector<cv::Scalar_<int> > &ids, const hdcalib::Calib &calib) const;
 };
 
 template<int NUM, int DEG>
@@ -527,6 +544,7 @@ public:
             T const* const rvec,
             T const* const tvec,
             T const* const correction,
+            T const* const x_factor,
             T const* const dist,
             T* residuals) const;
 };
@@ -667,6 +685,7 @@ public:
             T const* const rvec,
             T const* const tvec,
             T const* const correction,
+            T const* const x_factor,
             T const* const dist,
             T const* const inverse_dist,
             T* residuals) const;
@@ -741,7 +760,7 @@ public:
     /**
      * @brief x_factor percentage of the calibration target non-uniformity (x-scale being different from y-scale)
      */
-    double x_factor = 0;
+    double x_factor = .23;
 
     /**
      * @brief error_quantiles is a vector containing 101 elements, one for each error percentile.
@@ -816,6 +835,7 @@ public:
         name = t.name;
         x_factor = t.x_factor;
         errors = t.errors;
+        error_median = t.error_median;
         error_percentiles = t.error_percentiles;
         stdDevIntrinsics = t.stdDevIntrinsics.clone();
         stdDevExtrinsics = t.stdDevExtrinsics.clone();
@@ -872,13 +892,12 @@ public:
             const T t[]);
     std::vector<double> getDistCoeffsVector();
 
-    void getReprojections(
-            const size_t ii,
-            std::vector<Point2d> &markers,
+    void getReprojections(const size_t ii,
+            std::vector<Corner> &markers,
             std::vector<Point2d> &reprojections);
 
     void getAllReprojections(
-            std::vector<Point2d> &markers,
+            std::vector<Corner> &markers,
             std::vector<Point2d> &reprojections);
 
     double getErrorMedian();
@@ -945,6 +964,11 @@ class Calib {
      * @brief ids stores the marker IDs corresponding to the imagePoints
      */
     std::vector<std::vector<cv::Scalar_<int> > > ids;
+
+    /**
+     * @brief corners stores the hdmarker::Corner objects corresponding to the imagePoints.
+     */
+    std::vector<std::vector<Corner> > corners;
 
     std::vector<std::vector<cv::Scalar_<int> > > reduced_marker_references;
 
@@ -1107,9 +1131,57 @@ class Calib {
 
     double x_factor = 0;
 
+    /**
+     * @brief use_three if this is set to true the 3x3 variant of the targets is detected.
+     */
+    bool use_three = false;
+
+    bool use_robust_main_marker_detection = false;
+
+    int restrict_factor_x = 0;
+    int restrict_mod_x = 0;
+
+    int restrict_factor_y = 0;
+    int restrict_mod_y = 0;
+
+    std::string cache_prefix;
 public:
     typedef std::map<std::string, CornerStore> Store_T;
     Store_T data;
+
+    void setCachePrefix(std::string const& val);
+
+    void saveReprojectionsJson(std::string const& filename,
+                               std::vector<cv::Vec2f> const& features,
+                               std::vector<cv::Vec2f> const& errors) const;
+
+    void setIdRestriction(int const factor, int const mod);
+
+    int getRestrictFactorX() const;
+    int getRestrictModX() const;
+
+    int getRestrictFactorY() const;
+    int getRestrictModY() const;
+
+    /**
+     * @brief saveStarsDataset saves the dataset as datset.bin file for Schoeps Star-based calibration.
+     * @param filename
+     */
+    bool saveStarsDataset(std::string const& filename, const int offset_x = 1, const int offset_y = 1);
+
+    /**
+     * @brief saveStarsDatasets saves 25 different subsets of the dataset as <prefix>-<offset x>-<offset y>.bin file for Schoeps Star-based calibration.
+     * @param prefix
+     */
+    bool saveStarsDatasets(std::string const& prefix);
+
+    void purgeUnlikelyByImageSize();
+
+    void useRobustMainMarkerDetection(bool val = true);
+
+    void useThree(bool val) {
+        use_three = val;
+    }
 
     void setMarkerCountLimit(int limit);
 
@@ -1238,13 +1310,6 @@ public:
     static void scaleCornerIds(std::vector<hdmarker::Corner>& corners, int factor);
 
     static void piecewiseRefinement(cv::Mat &img, std::vector<hdmarker::Corner> const& in, std::vector<hdmarker::Corner> & out, int recursion_depth, double & markerSize);
-
-    static void refineRecursiveByPage(
-            cv::Mat &img,
-            std::vector<hdmarker::Corner> const& in,
-            std::vector<hdmarker::Corner> & out,
-            const int recursion_depth,
-            double & markerSize);
 
     /**
      * @brief prepareCalibration fills the containers imagePoints, objectPoints and imageFiles.
@@ -1825,7 +1890,11 @@ public:
      * @param prefix
      * @param suffix
      */
-    void plotObjectPointCorrections(const std::map<cv::Scalar_<int>, Point3f, cmpScalar> &data, const std::string &calibName, string prefix, const string suffix);
+    void plotObjectPointCorrections(const std::map<cv::Scalar_<int>, Point3f, cmpScalar> &data,
+                                    const std::string &calibName,
+                                    string prefix,
+                                    const string suffix,
+                                    cv::Mat_<cv::Vec2f> & flow_centered_filled);
 
     /**
      * @brief plotObjectPointCorrections plots objectPointCorrection into optical-flow files
@@ -1833,7 +1902,9 @@ public:
      * @param prefix
      * @param suffix
      */
-    void plotObjectPointCorrections(const std::string &calibName, string prefix, const string suffix);
+    void plotObjectPointCorrections(const std::string &calibName,
+                                    string prefix,
+                                    const string suffix);
 
     template<class T>
     /**
@@ -1887,6 +1958,14 @@ public:
 
     template<int NUM, int DEG>
     double CeresCalibFlexibleTargetSplineSub(const double outlier_threshold, FixedValues fixed);
+    static void refineRecursiveByPage(Mat &img, const std::vector<Corner> &in, std::vector<Corner> &out, const int recursion_depth, double &markerSize, bool use_three);
+    bool saveStarsDatasetDense(const string &filename);
+    bool saveStarsDatasetPartial(const string &filename, const int factor, const int mod);
+    void setIdRestrictionY(const int factor, const int mod);
+    void setIdRestrictionX(const int factor, const int mod);
+    void CreateReprojectionErrorDirectionVisualization(const std::vector<cv::Vec2f> &points, const std::vector<cv::Vec2f> &residuals, cv::Mat_<cv::Vec3b> &visualization);
+    void CreateReprojectionErrorMagnitudeVisualization(const std::vector<cv::Vec2f> &points, const std::vector<cv::Vec2f> &residuals, cv::Mat_<cv::Vec3b> &visualization);
+    void saveReprojectionsJsons(const string &prefix, const std::vector<Corner> &features, const std::vector<Vec2f> &errors) const;
 private:
     template<class RCOST>
     void addImagePairToRectificationProblem(
@@ -1903,7 +1982,6 @@ private:
     template<class T>
     void ignore_unused(T&) {}
 };
-
 
 class Similarity2D {
 public:
@@ -1994,6 +2072,22 @@ public:
     void print(std::ostream &out) const;
 };
 
+class StarPoint {
+    int id = 1;
+    cv::Point3f point;
+
+public:
+    cv::Scalar_<int> getScalar() const;
+
+    cv::Point3f getInitialPt() const;
+
+    cv::Point3f getPt() const;
+
+    void write(cv::FileStorage& fs) const;
+
+    void read(cv::FileNode const& node);
+};
+
 struct FitGrid {
     std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_x;
     std::vector<runningstats::QuantileStats<float> > per_grid_type_stats_y;
@@ -2011,6 +2105,9 @@ public:
     string runFit(Calib &calib, CalibResult &calib_result, const std::vector<GridDescription> &desc);
     void runSchilling(const std::vector<GridDescription> &desc);
     void plotOffsetCorrectionSchilling(const std::vector<cv::Scalar_<int> > &_ids, const std::vector<cv::Point3f> &pts);
+    void findGridsStars(std::map<string, std::map<string, std::vector<hdcalib::StarPoint> > > &detected_grids, const GridDescription &desc);
+    void runStars(const std::vector<GridDescription> &desc);
+    void plotOffsetCorrectionStars(const std::vector<StarPoint> &input);
 };
 
 void write(cv::FileStorage& fs, const std::string&, const Calib& x);

@@ -695,6 +695,8 @@ double Calib::CeresCalibFlexibleTargetSplineSub(double const outlier_threshold, 
         calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
     }
 
+    std::vector<Corner> all_corners;
+    std::vector<cv::Vec2f> all_residuals;
     runningstats::QuantileStats<float> error_stats;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         auto const & sub_data = imagePoints[ii];
@@ -707,7 +709,7 @@ double Calib::CeresCalibFlexibleTargetSplineSub(double const outlier_threshold, 
                             objectPoints[ii][jj],
                             imageSize
                             );
-                double residuals[2] = {0,0};
+                cv::Vec2d residuals;
                 loss(&calib.cameraMatrix(0,0), // focal length x
                      &calib.cameraMatrix(1,1), // focal length y
                      &calib.cameraMatrix(0,2), // principal point x
@@ -718,9 +720,11 @@ double Calib::CeresCalibFlexibleTargetSplineSub(double const outlier_threshold, 
                      &calib.x_factor,
                      calib.spline_x.data(),
                      calib.spline_y.data(),
-                     residuals);
-                double const error = std::sqrt(residuals[0] * residuals[0] + residuals[1] * residuals[1]);
+                     residuals.val);
+                double const error = cv::norm(residuals);
                 error_stats.push_unsafe(error);
+                all_residuals.push_back(residuals);
+                all_corners.push_back(corners[ii][jj]);
             }
         }
         double const outlier_percentage = 100.0 * double(outlier_counter) / sub_data.size();
@@ -728,8 +732,9 @@ double Calib::CeresCalibFlexibleTargetSplineSub(double const outlier_threshold, 
         outlier_ranking.insert({outlier_percentage, imageFiles[ii] + " median: " + std::to_string(error_stats.getMedian())});
         calib.outlier_percentages[ii] = outlier_percentage;
     }
+    saveReprojectionsJsons(cache_prefix + "-" + calib.name + "-reprojection-errors", all_corners, all_residuals);
     clog::L(name, 1) << "Error stats: " << error_stats.print();
-    clog::L(name, 1) << "Median error: " << error_stats.getMedian();
+    clog::L(name, 1) << "Median error: " << error_stats.getMedian() << ", IQR: [" << error_stats.getQuantile(.25) << ", " << error_stats.getQuantile(.75) << "]";
     clog::L(name, 1) << "Parameters before: " << std::endl
                      << "Camera matrix: " << old_cam << std::endl
                         ;//<< "Distortion: " << old_dist << std::endl;
@@ -753,7 +758,7 @@ double Calib::CeresCalibFlexibleTargetSpline(double const outlier_threshold) {
 
     std::string const name = std::string("Spline-") + std::to_string(NUM) + "-" + std::to_string(DEG);
     if (!hasCalibName(name)) {
-        //*
+        /*
         for (int N = NUM-2; N >= 3; N -= 2) {
             std::string const n = std::string("Spline-") + std::to_string(N) + "-" + std::to_string(DEG);
             if (!hasCalibName(name) && hasCalibName(n)) {

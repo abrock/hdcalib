@@ -71,7 +71,9 @@ void Calib::plotReprojectionErrors(
 
     runningstats::QuantileStats<double> error_stats;
 
-    std::vector<cv::Point2d> markers, reprojections;
+    std::vector<cv::Point2d> reprojections;
+    std::vector<Corner> markers;
+
 
     runningstats::Stats2D<float> reprojection_residuals;
 
@@ -82,7 +84,7 @@ void Calib::plotReprojectionErrors(
         calib.getReprojections(image_index, markers, reprojections);
 
         for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
-            cv::Point2d const& marker = markers[ii];
+            cv::Point2d const& marker = markers[ii].p;
             cv::Point2d const& reprojection = reprojections[ii];
             double const error = distance(marker, reprojection);
             data.push_back({marker.x, marker.y,
@@ -355,13 +357,15 @@ cv::Mat_<cv::Vec3b> Calib::fillHoles(cv::Mat_<Vec3b> const& _src, int const max_
 
 void Calib::plotObjectPointCorrections(std::string const& calibName, string prefix, const string suffix) {
     std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> const& data = getCalib(calibName).objectPointCorrections;
-    plotObjectPointCorrections(data, calibName, prefix, suffix);
+    cv::Mat_<cv::Vec2f> flow_centered_filled;
+    plotObjectPointCorrections(data, calibName, prefix, suffix, flow_centered_filled);
 }
 
 void Calib::plotObjectPointCorrections(std::map<cv::Scalar_<int>, cv::Point3f, cmpScalar> const& data,
                                        std::string const& calibName,
                                        string prefix,
-                                       const string suffix) {
+                                       const string suffix,
+                                       cv::Mat_<cv::Vec2f> & flow_centered_filled) {
     clog::L(__FUNCTION__, 2) << "Calib: " << calibName;
     fs::create_directories("plots/obj-corr/", ignore_error_code);
     prefix = std::string("plots/obj-corr/") + prefix;
@@ -471,6 +475,16 @@ void Calib::plotObjectPointCorrections(std::map<cv::Scalar_<int>, cv::Point3f, c
         cv::resize(flow_centered, flow_centered, cv::Size(), gcd, gcd, cv::INTER_NEAREST);
         cv::resize(z_centered, z_centered, cv::Size(), gcd, gcd, cv::INTER_NEAREST);
     }
+
+    if (flow.rows < 200 && flow.cols < 240) {
+        size_t scale = 4;
+        cv::resize(flow, flow, cv::Size(), scale, scale, cv::INTER_NEAREST);
+        cv::resize(z, z, cv::Size(), scale, scale, cv::INTER_NEAREST);
+        cv::resize(flow_centered, flow_centered, cv::Size(), scale, scale, cv::INTER_NEAREST);
+        cv::resize(z_centered, z_centered, cv::Size(), scale, scale, cv::INTER_NEAREST);
+    }
+
+    flow_centered_filled = flow_centered;
 
     cv::writeOpticalFlow(prefix + "-object-xy-filled" + suffix + ".flo", flow);
     cv::imwrite(prefix + "-object-z-filled" + suffix + ".tif", z);

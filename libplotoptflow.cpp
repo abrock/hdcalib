@@ -208,12 +208,12 @@ cv::Mat_<cv::Vec3b> colorFlow(const cv::Mat_<cv::Vec2f>& flow,
     return result;
 }
 
-void fitDistortion(
-        std::string const prefix,
-        const cv::Mat_<cv::Vec2f> &flow,
-        double factor,
-        const double length_factor,
-        const cv::Scalar &color) {
+void run(std::string const prefix,
+         const cv::Mat_<cv::Vec2f> &flow,
+         double factor,
+         const double length_factor,
+         const cv::Scalar &color,
+         const bool run_fit) {
 
     runningstats::QuantileStats<float> motion_stats, abs_motion_stats, length_stats;
     for (cv::Vec2f const& it : flow) {
@@ -231,74 +231,75 @@ void fitDistortion(
     std::cout << "Factor: " << factor << std::endl;
     cv::Mat_<cv::Vec3b> result = colorFlow(flow, factor, 1);
 
-    ceres::Problem problem;
+    if (run_fit) {
+        ceres::Problem problem;
 
-    std::vector<double> dist(14, 0.0);
+        std::vector<double> dist(14, 0.0);
 
-    try {
-        cv::FileStorage input(prefix + "-dist.yaml", cv::FileStorage::READ);
-        input["dist"] >> dist;
-        if (dist.size() < 14) {
-            dist.resize(14);
-        }
-    }
-    catch (...) {
-
-    }
-
-    cv::Vec2f const center{float(result.cols-1)/2, float(result.rows-1)/2};
-    for (int row = 0; row < result.rows; row++) {
-        for (int col = 0; col < result.cols; col++) {
-            cv::Vec2f dst{float(col), float(row)};
-            cv::Vec2f src = dst + flow(row, col);
-            problem.AddResidualBlock(
-                        new ceres::AutoDiffCostFunction<DistortionFunctor, 2, 14>(
-                            new DistortionFunctor(src, dst, center)
-                            ),
-                        nullptr,
-                        dist.data()
-                        );
-        }
-    }
-
-
-    // Run the solver!
-    ceres::Solver::Options options;
-    options.num_threads = int(8);
-    options.max_num_iterations = 500;
-    double const ceres_tolerance = 1e-12;
-    options.function_tolerance = ceres_tolerance;
-    options.gradient_tolerance = ceres_tolerance;
-    options.parameter_tolerance = ceres_tolerance;
-    options.linear_solver_type = ceres::DENSE_NORMAL_CHOLESKY;
-    options.minimizer_progress_to_stdout = true;
-    ceres::Solver::Summary summary;
-    Solve(options, &problem, &summary);
-
-    cv::FileStorage output(prefix + "-dist.yaml", cv::FileStorage::WRITE);
-    output << "dist" << dist;
-
-    std::cout << summary.BriefReport() << "\n";
-    std::cout << summary.FullReport() << "\n";
-
-    cv::Mat_<cv::Vec2f> corrected(flow.size());
-    for (int row = 0; row < result.rows; row++) {
-        for (int col = 0; col < result.cols; col++) {
-            if (!std::isfinite(flow(row,col)[0]) || !std::isfinite(flow(row,col)[1])) {
-                continue;
+        try {
+            cv::FileStorage input(prefix + "-dist.yaml", cv::FileStorage::READ);
+            input["dist"] >> dist;
+            if (dist.size() < 14) {
+                dist.resize(14);
             }
-            cv::Vec2f dst{float(col), float(row)};
-            cv::Vec2f src = dst + flow(row, col);
-            DistortionFunctor func(src, dst, center);
-            corrected(row, col) = func.apply(dist.data()) - dst;
         }
-    }
+        catch (...) {
 
-    cv::imwrite(prefix + "-orig.png", plotWithArrows(flow, factor, length_factor, color));
-    cv::imwrite(prefix + "-corrected.png", plotWithArrows(corrected, factor, length_factor, color));
+        }
+
+        cv::Vec2f const center{float(result.cols-1)/2, float(result.rows-1)/2};
+        for (int row = 0; row < result.rows; row++) {
+            for (int col = 0; col < result.cols; col++) {
+                cv::Vec2f dst{float(col), float(row)};
+                cv::Vec2f src = dst + flow(row, col);
+                problem.AddResidualBlock(
+                            new ceres::AutoDiffCostFunction<DistortionFunctor, 2, 14>(
+                                new DistortionFunctor(src, dst, center)
+                                ),
+                            nullptr,
+                            dist.data()
+                            );
+            }
+        }
+
+
+        // Run the solver!
+        ceres::Solver::Options options;
+        options.num_threads = int(8);
+        options.max_num_iterations = 500;
+        double const ceres_tolerance = 1e-12;
+        options.function_tolerance = ceres_tolerance;
+        options.gradient_tolerance = ceres_tolerance;
+        options.parameter_tolerance = ceres_tolerance;
+        options.linear_solver_type = ceres::DENSE_NORMAL_CHOLESKY;
+        options.minimizer_progress_to_stdout = true;
+        ceres::Solver::Summary summary;
+        Solve(options, &problem, &summary);
+
+        cv::FileStorage output(prefix + "-dist.yaml", cv::FileStorage::WRITE);
+        output << "dist" << dist;
+
+        std::cout << summary.BriefReport() << "\n";
+        std::cout << summary.FullReport() << "\n";
+
+        cv::Mat_<cv::Vec2f> corrected(flow.size());
+        for (int row = 0; row < result.rows; row++) {
+            for (int col = 0; col < result.cols; col++) {
+                if (!std::isfinite(flow(row,col)[0]) || !std::isfinite(flow(row,col)[1])) {
+                    continue;
+                }
+                cv::Vec2f dst{float(col), float(row)};
+                cv::Vec2f src = dst + flow(row, col);
+                DistortionFunctor func(src, dst, center);
+                corrected(row, col) = func.apply(dist.data()) - dst;
+            }
+        }
+
+        cv::imwrite(prefix + "-corrected.png", plotWithArrows(corrected, factor, length_factor, color));
+        gnuplotWithArrows(prefix + "-corrected-gpl", corrected, factor, length_factor);
+    }
 
     gnuplotWithArrows(prefix + "-orig-gpl", flow, factor, length_factor);
-    gnuplotWithArrows(prefix + "-corrected-gpl", corrected, factor, length_factor);
 }
 
 cv::Mat_<cv::Vec3b> plotWithArrows(
@@ -404,7 +405,7 @@ void gnuplotWithArrows(const std::string& prefix,
              << "set size ratio -1;\n";
     if (factor <= 0) {
         runningstats::QuantileStats<float> length_stats = getLengthStats(flow);
-        factor = length_stats.getQuantile(.999);
+        factor = length_stats.getQuantile(.99);
     }
     image2txtfile(flow2length(flow), prefix + "-flowlength.data");
     factor = adaptiveRound(factor);

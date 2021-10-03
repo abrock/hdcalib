@@ -96,6 +96,9 @@ int main(int argc, char* argv[]) {
         TCLAP::SwitchArg plot_markers_arg("p", "plot", "Use this flag if the detected markers should be painted into the input images", false);
         cmd.add(plot_markers_arg);
 
+        TCLAP::SwitchArg three_arg("3", "three", "Use this flag if the 3x3 variant should be detected.", false);
+        cmd.add(three_arg);
+
         TCLAP::SwitchArg plot_submarkers_arg("s", "submarker-plot", "Use this flag if the detected sub-markers should be painted into scaled versions of the input images", false);
         cmd.add(plot_submarkers_arg);
 
@@ -163,6 +166,8 @@ int main(int argc, char* argv[]) {
             }
             std::cout << std::endl;
         }
+
+        calib.useThree(three_arg.getValue());
 
         std::cout << "Parameters: " << std::endl
                   << "Number of input files: " << input_files.size() << std::endl

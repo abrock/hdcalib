@@ -20,11 +20,12 @@ cv::Mat_<cv::Vec3b> addArrows(cv::Mat_<cv::Vec3b> const& src,
                               cv::Scalar const& color = {0,0,255,0}
         );
 
-void fitDistortion(const std::string prefix,
+void run(const std::string prefix,
         const cv::Mat_<cv::Vec2f> &flow,
         double factor = 1,
         const double length_factor = 1,
-        const cv::Scalar &color = {0,0,0,0});
+        const cv::Scalar &color = {0,0,0,0},
+         const bool run_fit = false);
 
 template<int NUM, int DEG>
 void fitSpline(

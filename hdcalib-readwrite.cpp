@@ -1,5 +1,5 @@
 #include "hdcalib.h"
-
+#include <hdmarker/subpattern3.hpp>
 #include <runningstats/runningstats.h>
 
 #include <ParallelTime/paralleltime.h>
@@ -40,6 +40,8 @@ void Calib::addInputImage(const string filename, const std::vector<Corner> &corn
     CornerStore & ref = data[filename];
     ref.replaceCorners(corners);
     ref.clean(cornerIdFactor);
+    imageFiles.push_back(filename);
+    std::sort(imageFiles.begin(), imageFiles.end());
 }
 
 void Calib::addInputImageAfterwards(const string filename, const std::vector<Corner> &corners) {
@@ -588,7 +590,8 @@ std::vector<double> CalibResult::getErrorPercentiles() {
     if (error_percentiles.size() >= 101) {
         return error_percentiles;
     }
-    std::vector<cv::Point2d> markers, reprojections;
+    std::vector<cv::Point2d> reprojections;
+    std::vector<Corner> markers;
     getAllReprojections(markers, reprojections);
     assert(error_percentiles.size() >= 101);
     return error_percentiles;
@@ -614,6 +617,7 @@ void CalibResult::write(FileStorage &fs) const {
        << "spline_y" << spline_y
        << "x_factor" << x_factor
        << "error_percentiles" << error_percentiles
+       << "error_median" << error_median
        << "inverseDistCoeffs" << inverseDistCoeffs;
     fs << "outlier_percentages" << outlier_percentages;
     fs << "rectification" << rectification;
@@ -663,6 +667,7 @@ void CalibResult::read(const FileNode &node) {
     node["spline_x"] >> spline_x;
     node["spline_y"] >> spline_y;
     node["error_percentiles"] >> error_percentiles;
+    node["error_median"] >> error_median;
     FileNode n = node["objectPointCorrections"]; // Read string sequence - Get node
     if (n.type() != FileNode::SEQ) {
         throw std::runtime_error("Error while reading cached calibration result: objectPointCorrections is not a sequence. Aborting.");
@@ -797,7 +802,8 @@ void Calib::refineRecursiveByPage(Mat &img,
                                   const std::vector<Corner> &in,
                                   std::vector<Corner> &out,
                                   int const recursion_depth,
-                                  double &markerSize) {
+                                  double &markerSize,
+                                  bool use_three) {
     std::map<int, std::vector<hdmarker::Corner> > pages;
     for (const hdmarker::Corner& c : in) {
         pages[c.page].push_back(c);
@@ -812,7 +818,12 @@ void Calib::refineRecursiveByPage(Mat &img,
         _markerSize = markerSize;
         std::vector<hdmarker::Corner> _out, _rejected;
         std::vector<cv::Rect> limits = {{0, 0, 31, 31}};
-        hdmarker::refine_recursive(clone, in, _out, _rejected, recursion_depth, &_markerSize, nullptr, nullptr, it.first, limits);
+        if (use_three) {
+            hdmarker::refine_recursive_3(clone, in, _out, _rejected, recursion_depth, &_markerSize, nullptr, nullptr, it.first, limits);
+        }
+        else {
+            hdmarker::refine_recursive(clone, in, _out, _rejected, recursion_depth, &_markerSize, nullptr, nullptr, it.first, limits);
+        }
         out.insert(out.end(), _out.begin(), _out.end());
         clog::L(__func__, 2) << "Refining page " << it.first
                              << ", recursion depth " << recursion_depth

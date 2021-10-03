@@ -10,6 +10,11 @@
 #include <catlogger/catlogger.h>
 #include "gnuplot-iostream.h"
 
+
+#include <rapidjson/document.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/stringbuffer.h>
+
 namespace  {
 template<class T>
 void vec2arr(T arr[3], cv::Point3d const& p) {
@@ -102,6 +107,134 @@ char Calib::color(const int ii, const int jj) {
     return 'B'; // Second row, second pixel (bottom right pixel)
 }
 
+void Calib::setCachePrefix(const string &val) {
+    cache_prefix = val;
+}
+
+void Calib::saveReprojectionsJson(
+        const string &filename,
+        const std::vector<Vec2f> &features,
+        const std::vector<Vec2f> &errors) const {
+    namespace rs = rapidjson;
+    rs::Document document_j;
+    document_j.SetObject();
+    rs::Document::AllocatorType& allocator = document_j.GetAllocator();
+    document_j.AddMember("width", rs::Value().SetInt(imageSize.width), allocator);
+    document_j.AddMember("height", rs::Value().SetInt(imageSize.height), allocator);
+
+    document_j.AddMember("errors", rs::Value().SetArray(), allocator);
+    document_j.AddMember("features", rs::Value().SetArray(), allocator);
+
+    rs::Value errors_j(rs::kArrayType);
+    for (size_t ii = 0; ii < errors.size(); ++ii) {
+        rs::Value err;
+        err.SetArray();
+        err.PushBack(rs::Value().SetDouble(errors[ii][0]), allocator);
+        err.PushBack(rs::Value().SetDouble(errors[ii][1]), allocator);
+        document_j["errors"].PushBack(err, allocator);
+
+        rs::Value feat;
+        feat.SetArray();
+        feat.PushBack(rs::Value().SetDouble(features[ii][0]), allocator);
+        feat.PushBack(rs::Value().SetDouble(features[ii][1]), allocator);
+        document_j["features"].PushBack(feat, allocator);
+    }
+
+    // 3. Stringify the DOM
+    rs::StringBuffer buffer;
+    rs::Writer<rs::StringBuffer> writer(buffer);
+    document_j.Accept(writer);
+
+    // Output
+    std::ofstream out(filename);
+    out << buffer.GetString() << std::endl;
+}
+
+void Calib::saveReprojectionsJsons(
+        const string &prefix,
+        const std::vector<Corner> &features,
+        const std::vector<Vec2f> &errors) const {
+    //       layer         color
+    std::map<int, std::map<int, std::vector<cv::Vec2f> > > part_features, part_errors;
+    std::map<int, std::vector<cv::Vec2f> > layer_features, layer_errors;
+    std::map<int, std::map<int, runningstats::QuantileStats<float> > > part_stats;
+    std::map<int, runningstats::QuantileStats<float> > layer_stats;
+    runningstats::QuantileStats<float> all_stats;
+    std::vector<cv::Vec2f> all_features;
+
+    assert(features.size() == errors.size());
+    for (size_t ii = 0; ii < errors.size(); ++ii) {
+        int const layer = features[ii].layer;
+        int const color = features[ii].color;
+        all_features.push_back(features[ii].p);
+        double const length = cv::norm(errors[ii]);
+        all_stats.push_unsafe(length);
+        part_stats[layer][color].push_unsafe(length);
+        layer_stats[layer].push_unsafe(length);
+
+        part_features[layer][color].push_back(cv::Vec2f(features[ii].p.x, features[ii].p.y));
+        part_errors[layer][color].push_back(errors[ii]);
+
+        layer_features[layer].push_back(cv::Vec2f(features[ii].p.x, features[ii].p.y));
+        layer_errors[layer].push_back(errors[ii]);
+    }
+
+    saveReprojectionsJson(prefix + "-all.json", all_features, errors);
+    clog::L("saveReprojections", 2) << "File: " << prefix << "-all.json median error: " << all_stats.getMedian() << " / " << all_stats.getCount();
+
+    for (auto const& layer : part_features) {
+        {
+            std::string const filename = prefix + "-l" + std::to_string(layer.first) + ".json";
+            saveReprojectionsJson(filename, layer_features[layer.first], layer_errors[layer.first]);
+            clog::L("saveReprojections", 2) << "File: " << filename << " median error: " << layer_stats[layer.first].getMedian()
+                                            << " / " << layer_stats[layer.first].getCount();
+        }
+        for (auto const& color : layer.second) {
+            std::string const filename = prefix + "-l" + std::to_string(layer.first) + "-c" + std::to_string(color.first) + ".json";
+            saveReprojectionsJson(filename, color.second, part_errors[layer.first][color.first]);
+            clog::L("saveReprojections", 2) << "File: " << filename << " median error: " << part_stats[layer.first][color.first].getMedian()
+                    << " / " << part_stats[layer.first][color.first].getCount();
+        }
+    }
+}
+
+void Calib::setIdRestriction(const int factor, const int mod) {
+    restrict_factor_x = restrict_factor_y = factor;
+    restrict_mod_x = restrict_mod_y = mod;
+}
+
+void Calib::setIdRestrictionX(const int factor, const int mod) {
+    restrict_factor_x = factor;
+    restrict_mod_x = mod;
+}
+
+void Calib::setIdRestrictionY(const int factor, const int mod) {
+    restrict_factor_y = factor;
+    restrict_mod_y = mod;
+}
+
+int Calib::getRestrictFactorX() const {
+    return restrict_factor_x;
+}
+
+int Calib::getRestrictModX() const {
+    return restrict_mod_x;
+}
+
+int Calib::getRestrictFactorY() const {
+    return restrict_factor_y;
+}
+
+int Calib::getRestrictModY() const {
+    return restrict_mod_y;
+}
+
+
+
+void Calib::useRobustMainMarkerDetection(bool val) {
+    use_robust_main_marker_detection = val;
+}
+
 void Calib::setMarkerCountLimit(int limit) {
     if (markerCountLimit != limit) {
         markerCountLimit = limit;
@@ -145,6 +278,18 @@ void Calib::autoScaleCornerIds() {
             it.second.scaleIDs(factor);
         }
     }
+    cornerIdFactor = max_main_marker_scale;
+}
+
+void Calib::purgeUnlikelyByImageSize() {
+    size_t removed = 0;
+    runningstats::RunningStats removed_stats;
+    for (auto& it : data) {
+        size_t const local_removed = it.second.purgeUnlikelyByImageSize(imageSize);
+        removed += local_removed;
+        removed_stats.push_unsafe(local_removed);
+    }
+    clog::L("Calib::purgeUnlikelyByImageSize", 2) << "Removed: " << removed << ", stats: " << removed_stats.print();
 }
 
 size_t Calib::countMainMarkers(const std::vector<Corner> &vec) {
@@ -427,7 +572,8 @@ void Calib::plotResidualsIntoImages(const string calib_name) {
     std::cout << std::string(imageFiles.size(), '-') << std::endl;
 #pragma omp parallel for schedule(dynamic)
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
-        std::vector<cv::Point2d> markers, reprojections;
+        std::vector<cv::Point2d> reprojections;
+        std::vector<Corner> markers;
         calib.getReprojections(ii, markers, reprojections);
         cv::Mat img = readImage(imageFiles[ii], demosaic, libraw, useOnlyGreen);
         if (1 == img.channels()) {
@@ -435,7 +581,7 @@ void Calib::plotResidualsIntoImages(const string calib_name) {
             cv::merge(_img, 3, img);
         }
         for (size_t jj = 0; jj < markers.size(); ++jj) {
-            cv::Point2d const & marker = markers[jj];
+            cv::Point2d const & marker = markers[jj].p;
             cv::Point2d const & repr = reprojections[jj];
             cv::Point2d const residual = marker - repr;
             double const err_sq = residual.dot(residual);
@@ -551,7 +697,8 @@ void Calib::exportPointClouds(const string &calib_name, double const outlier_thr
     prepareCalibration();
     CalibResult & calib = calibrations[calib_name];
 
-    std::vector<cv::Point2d> markers, reprojections;
+    std::vector<cv::Point2d> reprojections;
+    std::vector<Corner> markers;
     for (size_t ii = 0; ii < imageFiles.size(); ++ii) {
         std::string const& filename = imageFiles[ii];
         std::ofstream out(filename + "-" + calib_name + "-target-points.txt", std::ofstream::out);
@@ -566,7 +713,7 @@ void Calib::exportPointClouds(const string &calib_name, double const outlier_thr
         }
         */
         for (size_t jj = 0; jj < store.size(); ++jj) {
-            if (outlier_threshold <= 0 || distance(markers[jj], reprojections[jj]) < outlier_threshold) {
+            if (outlier_threshold <= 0 || distance<cv::Point2d>(markers[jj].p, reprojections[jj]) < outlier_threshold) {
                 cv::Vec3d p = get3DPoint(calib, store.get(jj), calib.rvecs[ii], calib.tvecs[ii]);
                 out << p[0] << "\t" << p[1] << "\t" << p[2] << std::endl;
             }
@@ -835,11 +982,12 @@ void Calib::prepareOpenCVROCalibration() {
     preparedOpenCVCalib = false;
     preparedCalib = false;
 
-    CornerStore intersection = data.begin()->second.getMainMarkers();
+    CornerStore intersection = data.begin()->second.getMainMarkerAdjacent();
     for (std::pair<const std::string, CornerStore> const& it : data) {
         intersection.intersect(it.second);
     }
 
+    corners = std::vector<std::vector<Corner> >(data.size());
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
     reduced_marker_references = std::vector<std::vector<cv::Scalar_<int> > >(data.size());
@@ -850,7 +998,7 @@ void Calib::prepareOpenCVROCalibration() {
         CornerStore copy = it.second;
         copy.intersect(intersection);
         copy.sort();
-        copy.getMajorPoints(imagePoints[ii], objectPoints[ii], reduced_marker_references[ii], *this);
+        copy.getPoints(imagePoints[ii], objectPoints[ii], reduced_marker_references[ii], corners[ii], *this);
         imageFiles[ii] = it.first;
         ++ii;
     }
@@ -1069,7 +1217,12 @@ vector<Corner> Calib::getMainMarkers(const std::string input_file,
     cv::imwrite("debug.png", img_raw);
 
     Marker::init();
-    detect_robust(img_raw, result, use_rgb, 0, 10, effort);
+    if (use_robust_main_marker_detection) {
+        detect_robust(img_raw, result, use_rgb, 0, 10, effort);
+    }
+    else {
+        detect(img_raw, result, use_rgb, 0, 10, effort);
+    }
     std::map<int, int> counter;
     for (auto const& it : result) {
         counter[it.page]++;
@@ -1208,7 +1361,7 @@ vector<Corner> Calib::getSubMarkers(const std::string input_file,
     cv::Mat img = getImageRaw(input_file);
 
     double msize = 1.0;
-    refineRecursiveByPage(img, main_markers, result, recursionDepth, msize);
+    refineRecursiveByPage(img, main_markers, result, recursionDepth, msize, use_three);
     clog::L(__func__, 1) << "Number of detected submarkers: " << result.size() << std::endl;
     if (!validPages.empty()) {
         result = purgeInvalidPages(result, validPages);
@@ -1562,6 +1715,8 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
     }
     clog::L(__func__, 1) << "Initial camera matrix: " << std::endl << res.cameraMatrix << std::endl;
 
+    runningstats::QuantileStats<float> correction_stats;
+
     double result_err = -1;
     if (RO) {
         //swapPointsForRO(imagePoints[0], objectPoints[0], reduced_marker_references[0]);
@@ -1577,6 +1732,24 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
                 pt += it->second;
             }
             new_object_points.push_back(pt);
+        }
+        {
+            runningstats::QuantileStats<float> reprojection_errors;
+            for (size_t ii = 0; ii < objectPoints.size(); ++ii) {
+                std::vector<cv::Point2f> img_pts_out;
+                cv::projectPoints (objectPoints[ii],
+                                   res.rvecs[ii],
+                                   res.tvecs[ii],
+                                   res.cameraMatrix,
+                                   res.distCoeffs,
+                                   img_pts_out
+                                   );
+                assert(img_pts_out.size() == imagePoints[ii].size());
+                for (size_t jj = 0; jj < img_pts_out.size(); ++jj) {
+                    reprojection_errors.push_unsafe(cv::norm(img_pts_out[jj] - imagePoints[ii][jj]));
+                }
+            }
+            clog::L(__FUNCTION__, 2) << "Errors pre-optimization: " << reprojection_errors.print() << ", median: " << reprojection_errors.getMedian();
         }
         clog::L(__FUNCTION__, 2) << "Third fixed point index: " << third_fixed_point_index;
         result_err = cv::calibrateCameraRO (
@@ -1601,6 +1774,24 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
             assert(objectPoints[ii].size() == reduced_marker_references[0].size());
             assert(objectPoints[0].size() == reduced_marker_references[0].size());
         }
+        {
+            runningstats::QuantileStats<float> reprojection_errors;
+            for (size_t ii = 0; ii < objectPoints.size(); ++ii) {
+                std::vector<cv::Point2f> img_pts_out;
+                cv::projectPoints (new_object_points,
+                                   res.rvecs[ii],
+                                   res.tvecs[ii],
+                                   res.cameraMatrix,
+                                   res.distCoeffs,
+                                   img_pts_out
+                                   );
+                assert(img_pts_out.size() == imagePoints[ii].size());
+                for (size_t jj = 0; jj < img_pts_out.size(); ++jj) {
+                    reprojection_errors.push_unsafe(cv::norm(img_pts_out[jj] - imagePoints[ii][jj]));
+                }
+            }
+            clog::L(__FUNCTION__, 2) << "Errors post-optimization: " << reprojection_errors.print() << ", median: " << reprojection_errors.getMedian();
+        }
         // Transfer the new object point locations to objectPointCorrections map.
         for (size_t ii = 0; ii < new_object_points.size(); ++ii) {
             hdmarker::Corner c;
@@ -1613,6 +1804,7 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
             assert(std::abs(init_pt.z - init_compare_pt.z) < 1e-4);
             cv::Point3f correction = new_object_points[ii] - init_compare_pt;
             res.objectPointCorrections[getSimpleIdLayer(c)] = correction;
+            correction_stats.push_unsafe(cv::norm(correction));
         }
     }
     else {
@@ -1631,8 +1823,10 @@ double Calib::openCVCalib(bool const simple, bool const RO) {
                     );
     }
 
+    clog::L(__func__, 1) << "Median correction: " << correction_stats.print();
     clog::L(__func__, 1) << "RMSE: " << result_err << std::endl
                          << "Camera Matrix: " << std::endl << res.cameraMatrix << std::endl;
+    clog::L(__func__, 1) << "per-view-errors: " << res.perViewErrors;
     //<< "distCoeffs: " << std::endl << res.distCoeffs << std::endl;
 
     /*
@@ -1818,12 +2012,13 @@ void Calib::findOutliers(
         const double threshold,
         const size_t image_index,
         std::vector<hdmarker::Corner> & outliers) {
-    std::vector<cv::Point2d> markers, projections;
+    std::vector<cv::Point2d> projections;
+    std::vector<Corner> markers;
     calibrations[calib_name].getReprojections(image_index, markers, projections);
 
     runningstats::RunningStats inlier_stats, outlier_stats;
     for (size_t ii = 0; ii < markers.size(); ++ii) {
-        double const error = distance(markers[ii], projections[ii]);
+        double const error = distance<cv::Point2d>(markers[ii].p, projections[ii]);
         if (error < threshold) {
             inlier_stats.push_unsafe(error);
             continue;

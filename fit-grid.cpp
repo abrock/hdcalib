@@ -84,6 +84,7 @@ int main(int argc, char* argv[]) {
     std::stringstream time_log;
 
     bool schilling = false;
+    bool stars = false;
 
     hdcalib::Calib calib;
     std::vector<std::string> calibration_types;
@@ -112,6 +113,9 @@ int main(int argc, char* argv[]) {
         TCLAP::SwitchArg schilling_arg("", "schilling", "Use 3D points provided by Schilling");
         cmd.add(schilling_arg);
 
+        TCLAP::SwitchArg stars_arg("", "stars", "Use 3D points provided by Schoeps (Star pattern)");
+        cmd.add(stars_arg);
+
         TCLAP::MultiArg<std::string> type_arg("t", "type",
                                               "Type of the calibration(s) to run. "
                                               "Possibilities in increasing order of computational complexity:"
@@ -122,6 +126,12 @@ int main(int argc, char* argv[]) {
         cmd.parse(argc, argv);
 
         schilling = schilling_arg.getValue();
+
+        stars = stars_arg.getValue();
+
+        if (schilling && stars) {
+            throw std::runtime_error("Fatal: --schilling and --stars at the same time makes no sense");
+        }
 
         cache_file = cache_arg.getValue() + ".yaml.gz";
         calibration_types = commaSeparate<std::string>(type_arg.getValue());
@@ -156,6 +166,29 @@ int main(int argc, char* argv[]) {
     if (schilling) {
         hdcalib::FitGrid fit;
         fit.runSchilling(descriptions);
+
+        runningstats::QuantileStats<float> merged;
+        for (size_t ii = 0; ii < descriptions.size(); ++ii) {
+            std::cout << "Grid:" << descriptions[ii].name << std::endl;
+            std::cout << std::setw(12) << std::left << "Schilling" << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMean()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getStddev()) << " & "
+                       << std::setw(10) << std::left << round1(1000.0 * fit.per_grid_type_stats_length[ii].getMax()) << "\\\\"
+                       << std::endl;
+            merged.push_unsafe(fit.per_grid_type_stats_length[ii].getData());
+        }
+        std::cout << "All grids " << std::endl;
+        std::cout << std::setw(12) << std::left << "Schilling" << " & "
+                  << std::setw(10) << std::left << round1(1000.0 * merged.getMean()) << " & "
+                  << std::setw(10) << std::left << round1(1000.0 * merged.getStddev()) << " & "
+                  << std::setw(10) << std::left << round1(1000.0 * merged.getMax()) << "\\\\"
+                  << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    if (stars) {
+        hdcalib::FitGrid fit;
+        fit.runStars(descriptions);
 
         runningstats::QuantileStats<float> merged;
         for (size_t ii = 0; ii < descriptions.size(); ++ii) {

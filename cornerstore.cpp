@@ -47,12 +47,10 @@ void CornerStore::getMajorPoints(std::vector<Point2f> &imagePoints,
     imagePoints.clear();
     objectPoints.clear();
     marker_references.clear();
-    for (size_t ii = 0; ii < size(); ++ii) {
-        hdmarker::Corner const& c = get(ii);
-        if (calib.isValidPage(c)
-                && 0 == c.layer) {
-            imagePoints.push_back(get(ii).p);
-            objectPoints.push_back(calib.getInitial3DCoord(get(ii)));
+    for (hdmarker::Corner const& c : getMainMarkerAdjacent()) {
+        if (calib.isValidPage(c)) {
+            imagePoints.push_back(c.p);
+            objectPoints.push_back(calib.getInitial3DCoord(c));
             marker_references.push_back(calib.getSimpleIdLayer(c));
         }
     }
@@ -72,6 +70,21 @@ CornerStore::CornerStore() :
                  nanoflann::KDTreeSingleIndexAdaptorParams(16 /* max leaf */)
                  )) {
 
+}
+
+size_t CornerStore::purgeUnlikelyByImageSize(const Size &size) {
+    std::vector<Corner> replacement;
+    replacement.reserve(corners.size());
+    for (Corner const& it : corners) {
+        if (it.p.x > 0 && it.p.y > 0 && it.p.x < size.width && it.p.y < size.height) {
+            replacement.push_back(it);
+        }
+    }
+    size_t const diff = corners.size() - replacement.size();
+    if (diff > 0) {
+        replaceCorners(replacement);
+    }
+    return diff;
 }
 
 void CornerStore::purgeRecursionDeeperThan(int level) {
@@ -188,6 +201,45 @@ std::vector<hdmarker::Corner> CornerStore::getMainMarkers(const int cornerIdFact
             result.push_back(c);
         }
     }
+    return result;
+}
+
+size_t CornerStore::distanceID(Corner const& a, Corner const& b) {
+    return std::abs(a.id.x - b.id.x) + std::abs(a.id.y - b.id.y);
+}
+
+std::vector<Corner> CornerStore::getMainMarkerAdjacent(int const offset_x, int const offset_y) const {
+    std::vector<Corner> const main_markers = getMainMarkers();
+
+    std::vector<Corner> result;
+
+    for (Corner const & main : main_markers) {
+        cv::Point3i search(main.id.x + offset_x, main.id.y + offset_y, main.page);
+        Corner found;
+        if (hasID(search, found)) {
+            result.push_back(found);
+        }
+    }
+
+    return result;
+}
+
+std::vector<Corner> CornerStore::getMainMarkerAdjacent() const {
+    std::vector<Corner> const main_markers = getMainMarkers();
+
+    std::vector<Corner> result;
+
+    for (Corner const & main : main_markers) {
+        for (int offset : {1,3,5,15,25}){
+            cv::Point3i search(main.id.x + offset, main.id.y + offset, main.page);
+            Corner found;
+            if (hasID(search, found)) {
+                result.push_back(found);
+                break;
+            }
+        }
+    }
+
     return result;
 }
 

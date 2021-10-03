@@ -1,5 +1,5 @@
 #include "hdcalib.h"
-
+#include "libplotoptflow.h"
 #undef NDEBUG
 #include <assert.h>
 
@@ -46,6 +46,7 @@ void Calib::prepareCalibration() {
         }
     }
 
+    corners = std::vector<std::vector<Corner> >(data.size());
     imagePoints = std::vector<std::vector<cv::Point2f> >(data.size());
     objectPoints = std::vector<std::vector<cv::Point3f> >(data.size());
     ids = std::vector<std::vector<cv::Scalar_<int> > >(data.size());
@@ -54,7 +55,8 @@ void Calib::prepareCalibration() {
     runningstats::RunningStats points_stats;
     size_t ii = 0;
     for (std::pair<const std::string, CornerStore> const& it : data) {
-        it.second.getPoints(imagePoints[ii], objectPoints[ii], ids[ii], *this);
+        //it.second.getPointsMainMarkerAdjacent(imagePoints[ii], objectPoints[ii], ids[ii], *this);
+        it.second.getPoints(imagePoints[ii], objectPoints[ii], ids[ii], corners[ii], *this);
         imageFiles[ii] = it.first;
         points_stats.push_unsafe(imagePoints[ii].size());
         ++ii;
@@ -66,7 +68,61 @@ void CornerStore::getPoints(
         std::vector<Point2f> &imagePoints,
         std::vector<Point3f> &objectPoints,
         std::vector<cv::Scalar_<int> > &ids,
+        std::vector<Corner> &corners,
         hdcalib::Calib const& calib) const {
+    imagePoints.clear();
+    objectPoints.clear();
+    ids.clear();
+    corners.clear();
+    int const factor_x = calib.getRestrictFactorX();
+    int const mod_x = calib.getRestrictModX();
+
+    int const factor_y = calib.getRestrictFactorY();
+    int const mod_y = calib.getRestrictModY();
+
+    for (size_t ii = 0; ii < size(); ++ii) {
+        hdmarker::Corner const& c = get(ii);
+        if (calib.getMarkerCountLimit() > 0) {
+            if (!calib.isSelected(c)) {
+                continue;
+            }
+        }
+        if (factor_x > 0 && mod_x >= 0 && mod_x < factor_x && mod_x != (c.id.x % factor_x)) {
+            continue;
+        }
+        if (factor_y > 0 && mod_y >= 0 && mod_y < factor_y && mod_y != (c.id.y % factor_y)) {
+            continue;
+        }
+        corners.push_back(c);
+        imagePoints.push_back(c.p);
+        objectPoints.push_back(calib.getInitial3DCoord(c));
+        ids.push_back(c.getSimpleIdLayer());
+    }
+}
+
+void CornerStore::getPointsMainMarkerAdjacent(
+        std::vector<Point2f> &imagePoints,
+        std::vector<Point3f> &objectPoints,
+        std::vector<cv::Scalar_<int> > &ids,
+        hdcalib::Calib const& calib) const {
+    imagePoints.clear();
+    objectPoints.clear();
+    ids.clear();
+    std::vector<Corner> const pts = getMainMarkerAdjacent();
+    for (size_t ii = 0; ii < pts.size(); ++ii) {
+        hdmarker::Corner const& c = pts[ii];
+        imagePoints.push_back(c.p);
+        objectPoints.push_back(calib.getInitial3DCoord(c));
+        ids.push_back(c.getSimpleIdLayer());
+    }
+}
+
+void CornerStore::getPointsMinLayer(
+        std::vector<Point2f> &imagePoints,
+        std::vector<Point3f> &objectPoints,
+        std::vector<cv::Scalar_<int> > &ids,
+        hdcalib::Calib const& calib,
+        int const min_layer) const {
     imagePoints.clear();
     objectPoints.clear();
     ids.clear();
@@ -77,11 +133,11 @@ void CornerStore::getPoints(
                 continue;
             }
         }
-        //if (c.layer > 0) {
-        imagePoints.push_back(c.p);
-        objectPoints.push_back(calib.getInitial3DCoord(c));
-        ids.push_back(c.getSimpleIdLayer());
-        //}
+        if (c.layer >= min_layer) {
+            imagePoints.push_back(c.p);
+            objectPoints.push_back(calib.getInitial3DCoord(c));
+            ids.push_back(c.getSimpleIdLayer());
+        }
     }
 }
 
@@ -128,7 +184,8 @@ double Calib::CeresCalib(double const outlier_threshold) {
         local_rvecs[image_index] = mat2vec(calib.rvecs[image_index]);
         local_tvecs[image_index] = mat2vec(calib.tvecs[image_index]);
 
-        std::vector<cv::Point2d> markers, reprojections;
+        std::vector<cv::Point2d> reprojections;
+        std::vector<Corner> markers;
         calib.getReprojections(image_index, markers, reprojections);
         std::vector<cv::Point2f> local_image_points;
         std::vector<cv::Point3f> local_object_points;
@@ -138,7 +195,7 @@ double Calib::CeresCalib(double const outlier_threshold) {
         }
         else {
             for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
-                cv::Point2d const& marker = markers[ii];
+                cv::Point2d const& marker = markers[ii].p;
                 cv::Point2d const& reprojection = reprojections[ii];
                 double const error = distance(marker, reprojection);
                 if (error < outlier_threshold) {
@@ -222,6 +279,37 @@ double Calib::CeresCalib(double const outlier_threshold) {
     }
     calib.imageFiles = imageFiles;
 
+    runningstats::QuantileStats<float> error_stats;
+
+    std::vector<cv::Vec2f> all_residuals;
+    std::vector<Corner> all_features;
+    for (size_t image_index = 0; image_index < data.size(); ++image_index) {
+        local_rvecs[image_index] = mat2vec(calib.rvecs[image_index]);
+        local_tvecs[image_index] = mat2vec(calib.tvecs[image_index]);
+
+        std::vector<cv::Point2d> reprojections;
+        std::vector<Corner> markers;
+        calib.getReprojections(image_index, markers, reprojections);
+        std::vector<cv::Point2f> local_image_points;
+        std::vector<cv::Point3f> local_object_points;
+        for (size_t ii = 0; ii < markers.size() && ii < reprojections.size(); ++ii) {
+            Corner const& marker = markers[ii];
+            cv::Point2d const& reprojection = reprojections[ii];
+            double const error = distance<cv::Point2d>(marker.p, reprojection);
+            error_stats.push_unsafe(error);
+            all_features.push_back(marker);
+            all_residuals.push_back(cv::Vec2f(reprojection.x - marker.p.x, reprojection.y - marker.p.y));
+        }
+    }
+    saveReprojectionsJsons(cache_prefix + "-" + calib.name + "-reprojection-errors", all_features, all_residuals);
+
+    calib.error_percentiles.clear();
+    for (int ii = 0; ii <= 100; ++ii) {
+        calib.error_percentiles.push_back(error_stats.getQuantile(double(ii/100)));
+    }
+    calib.error_median = error_stats.getMedian();
+
+    clog::L(__func__, 1) << "Median error: " << calib.error_median << ", IQR: [" << error_stats.getQuantile(.25) << ", " << error_stats.getQuantile(.75) << "]";
     clog::L(__func__, 1) << "Parameters before: " << std::endl
                          << "Camera matrix: " << old_cam << std::endl
                          << "Distortion: " << old_dist << std::endl;
@@ -508,6 +596,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
     size_t ignored_files_counter = 0;
     std::multimap<double, std::string> outlier_ranking;
     runningstats::RunningStats outlier_percentages;
+    runningstats::QuantileStats<float> markers_per_image;
     for (size_t ii = 0; ii < data.size(); ++ii) {
         local_rvecs[ii] = mat2vec(calib.rvecs[ii]);
         local_tvecs[ii] = mat2vec(calib.tvecs[ii]);
@@ -520,6 +609,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
         auto const & sub_data = data[imageFiles[ii]];
         size_t outlier_counter = 0;
         runningstats::QuantileStats<float> error_stats;
+        size_t marker_count = 0;
         for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
             cv::Scalar_<int> const c = this->ids[ii][jj];
             ids.insert(c);
@@ -537,6 +627,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
                          local_rvecs[ii].data(), // rotation vector for the target
                          local_tvecs[ii].data(), // translation vector for the target
                          local_corrections[c].data(),
+                         &calib.x_factor,
                          local_dist.data(),
                          residuals);
                     double const error = std::sqrt(residuals[0] * residuals[0] + residuals[1] * residuals[1]);
@@ -562,6 +653,7 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
                         3, // rotation vector for the target
                         3, // translation vector for the target
                         3, // correction vector for the 3d marker position
+                        1, // x_factor
                         14 // distortion coefficients
 
                         >(new FlexibleTargetProjectionFunctor (
@@ -577,15 +669,19 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
                                          local_rvecs[ii].data(), // rotation vector for the target
                                          local_tvecs[ii].data(), // translation vector for the target
                                          local_corrections[c].data(),
+                                         &calib.x_factor,
                                          local_dist.data() // distortion coefficients
                                          );
+                marker_count++;
             }
         }
+        markers_per_image.push_unsafe(marker_count);
         double const outlier_percentage = 100.0 * double(outlier_counter) / sub_data.size();
         outlier_percentages.push_unsafe(outlier_percentage);
         outlier_ranking.insert({outlier_percentage, imageFiles[ii] + " median: " + std::to_string(error_stats.getMedian())});
         calib.outlier_percentages[ii] = outlier_percentage;
     }
+    clog::L(__func__, 2) << "Markers per image: " << markers_per_image.print();
     clog::L(__func__, 2) << "Outlier ranking:" << std::endl;
     for (auto const& it : outlier_ranking) {
         clog::L(__func__, 2) << it.second << ": \t" << it.first << std::endl;
@@ -620,6 +716,54 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
     clog::L(__func__, 1) << summary.BriefReport() << "\n";
     clog::L(__func__, 1) << summary.FullReport() << "\n";
 
+    std::vector<cv::Vec2f> all_residuals;
+    std::vector<Corner> all_features;
+    size_t downscale_factor = 50;
+    cv::Size downscaled_size(imageSize.width/downscale_factor+1, imageSize.height/downscale_factor+1);
+    cv::Mat_<cv::Vec2f> residuals_image(downscaled_size, cv::Vec2f(0,0));
+    cv::Mat_<int> residuals_count(downscaled_size, int(0));
+    runningstats::QuantileStats<float> error_stats;
+    for (size_t ii = 0; ii < data.size(); ++ii) {
+        for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
+            cv::Scalar_<int> const c = this->ids[ii][jj];
+            {
+                FlexibleTargetProjectionFunctor loss (
+                            imagePoints[ii][jj],
+                            objectPoints[ii][jj]
+                            );
+                cv::Vec2d residuals(0,0);
+                loss(&calib.cameraMatrix(0,0), // focal length x
+                     &calib.cameraMatrix(1,1), // focal length y
+                     &calib.cameraMatrix(0,2), // principal point x
+                     &calib.cameraMatrix(1,2), // principal point y
+                     local_rvecs[ii].data(), // rotation vector for the target
+                     local_tvecs[ii].data(), // translation vector for the target
+                     local_corrections[c].data(),
+                     &calib.x_factor,
+                     local_dist.data(),
+                     residuals.val);
+                double const error = cv::norm(residuals);
+                error_stats.push_unsafe(cv::norm(residuals));
+                cv::Point2i pt(std::round(imagePoints[ii][jj].x/downscale_factor), std::round(imagePoints[ii][jj].y/downscale_factor));
+                residuals_image(pt) += residuals;
+                residuals_count(pt)++;
+                all_features.push_back(corners[ii][jj]);
+                all_residuals.push_back(residuals);            }
+        }
+    }
+    for (int ii = 0; ii < residuals_image.rows; ++ii) {
+        for (int jj = 0; jj < residuals_image.cols; ++jj) {
+            if (residuals_count(ii, jj) > 0) {
+                residuals_image(ii, jj) /= residuals_count(ii, jj);
+            }
+            else {
+                residuals_image(ii, jj)[0] = residuals_image(ii, jj)[1] = std::numeric_limits<float>::quiet_NaN();
+            }
+        }
+    }
+    saveReprojectionsJsons(cache_prefix + "-" + calib.name + "-reprojection-errors", all_features, all_residuals);
+    hdflow::gnuplotWithArrows("FlexibleAfterCalib-residuals", residuals_image, -1, 100);
+
     size_t counter = 0;
     for (auto & it : calib.distCoeffs) {
         it = local_dist[counter];
@@ -635,6 +779,13 @@ double Calib::CeresCalibFlexibleTarget(double const outlier_threshold) {
         calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
     }
 
+    calib.error_percentiles.clear();
+    for (int ii = 0; ii <= 100; ++ii) {
+        calib.error_percentiles.push_back(error_stats.getQuantile(double(ii/100)));
+    }
+    calib.error_median = error_stats.getMedian();
+
+    clog::L(__func__, 1) << "Median error: " << calib.error_median << ", IQR: [" << error_stats.getQuantile(.25) << ", " << error_stats.getQuantile(.75) << "]";
     clog::L(__func__, 1) << "Parameters before: " << std::endl
                          << "Camera matrix: " << old_cam << std::endl
                          << "Distortion: " << old_dist << std::endl;
@@ -998,13 +1149,15 @@ double Calib::CeresCalibFlexibleTargetOdd(double const outlier_threshold) {
         outlier_ranking.insert({outlier_percentage, imageFiles[ii] + " median: " + std::to_string(error_stats.getMedian())});
         calib.outlier_percentages[ii] = outlier_percentage;
     }
-    clog::L(std::string(__func__) + std::to_string(N), 2) << "Outlier ranking:" << std::endl;
-    for (auto const& it : outlier_ranking) {
-        clog::L(std::string(__func__) + std::to_string(N), 2) << it.second << ": \t" << it.first << std::endl;
-    }
-    std::cout << "Ignored " << 100.0 * double(ignored_files_counter) / data.size() << "% of files" << std::endl;
     if (outlier_threshold > 0) {
-        clog::L(std::string(__func__) + std::to_string(N), 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
+        clog::L(std::string(__func__) + std::to_string(N), 2) << "Outlier ranking:" << std::endl;
+        for (auto const& it : outlier_ranking) {
+            clog::L(std::string(__func__) + std::to_string(N), 2) << it.second << ": \t" << it.first << std::endl;
+        }
+        std::cout << "Ignored " << 100.0 * double(ignored_files_counter) / data.size() << "% of files" << std::endl;
+        if (outlier_threshold > 0) {
+            clog::L(std::string(__func__) + std::to_string(N), 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
+        }
     }
 
     for (cv::Scalar_<int> const& it : ids) {
@@ -1183,6 +1336,7 @@ double Calib::CeresCalibSemiFlexibleTarget(double const outlier_threshold) {
                          local_rvecs[ii].data(), // rotation vector for the target
                          local_tvecs[ii].data(), // translation vector for the target
                          local_corrections[c].data(),
+                         &calib.x_factor,
                          local_dist.data(),
                          local_inverseDistCoeffs.data(),
                          residuals);
@@ -1209,6 +1363,7 @@ double Calib::CeresCalibSemiFlexibleTarget(double const outlier_threshold) {
                         3, // rotation vector for the target
                         3, // translation vector for the target
                         3, // correction vector for the 3d marker position
+                        1, // x_factor
                         14, // distortion coefficients
                         14 // inverse target distortion correction
 
@@ -1226,6 +1381,7 @@ double Calib::CeresCalibSemiFlexibleTarget(double const outlier_threshold) {
                                          local_rvecs[ii].data(), // rotation vector for the target
                                          local_tvecs[ii].data(), // translation vector for the target
                                          local_corrections[c].data(),
+                                         &calib.x_factor,
                                          local_dist.data(), // distortion coefficients
                                          local_inverseDistCoeffs.data() // inverse target distortion correction
                                          );
@@ -1236,13 +1392,15 @@ double Calib::CeresCalibSemiFlexibleTarget(double const outlier_threshold) {
         outlier_ranking.insert({outlier_percentage, imageFiles[ii] + " median: " + std::to_string(error_stats.getMedian())});
         calib.outlier_percentages[ii] = outlier_percentage;
     }
-    clog::L(__func__, 2) << "Outlier ranking:" << std::endl;
-    for (auto const& it : outlier_ranking) {
-        clog::L(__func__, 2) << it.second << ": \t" << it.first << std::endl;
-    }
-    std::cout << "Ignored " << 100.0 * double(ignored_files_counter) / data.size() << "% of files" << std::endl;
     if (outlier_threshold > 0) {
-        clog::L(__func__, 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
+        clog::L(__func__, 2) << "Outlier ranking:" << std::endl;
+        for (auto const& it : outlier_ranking) {
+            clog::L(__func__, 2) << it.second << ": \t" << it.first << std::endl;
+        }
+        std::cout << "Ignored " << 100.0 * double(ignored_files_counter) / data.size() << "% of files" << std::endl;
+        if (outlier_threshold > 0) {
+            clog::L(__func__, 2) << "Outlier percentage stats: " << outlier_percentages.print() << std::endl;
+        }
     }
 
 
@@ -1296,6 +1454,60 @@ double Calib::CeresCalibSemiFlexibleTarget(double const outlier_threshold) {
         clog::L(__func__, 1) << summary.BriefReport() << "\n";
         clog::L(__func__, 1) << summary.FullReport() << "\n";
     }
+
+    std::vector<cv::Vec2f> all_residuals;
+    std::vector<Corner> all_features;
+    size_t downscale_factor = 50;
+    cv::Size downscaled_size(imageSize.width/downscale_factor+1, imageSize.height/downscale_factor+1);
+    cv::Mat_<cv::Vec2f> residuals_image(downscaled_size, cv::Vec2f(0,0));
+    cv::Mat_<int> residuals_count(downscaled_size, int(0));
+    runningstats::QuantileStats<float> error_stats;
+    for (size_t ii = 0; ii < data.size(); ++ii) {
+        for (size_t jj = 0; jj < imagePoints[ii].size(); ++jj) {
+            cv::Scalar_<int> const c = this->ids[ii][jj];
+            {
+                cv::Vec2d residuals(0,0);
+                SemiFlexibleTargetProjectionFunctor functor(
+                            imagePoints[ii][jj],
+                            objectPoints[ii][jj],
+                            target_center
+                            );
+                functor(&calib.cameraMatrix(0,0), // focal length x
+                        &calib.cameraMatrix(1,1), // focal length y
+                        &calib.cameraMatrix(0,2), // principal point x
+                        &calib.cameraMatrix(1,2), // principal point y
+                        local_rvecs[ii].data(), // rotation vector for the target
+                        local_tvecs[ii].data(), // translation vector for the target
+                        local_corrections[c].data(),
+                        &calib.x_factor,
+                        local_dist.data(), // distortion coefficients
+                        local_inverseDistCoeffs.data(), // inverse target distortion correction
+                        residuals.val
+                        );
+                error_stats.push_unsafe(cv::norm(residuals));
+                cv::Point2i pt(std::round(imagePoints[ii][jj].x/downscale_factor), std::round(imagePoints[ii][jj].y/downscale_factor));
+                residuals_image(pt) += residuals;
+                residuals_count(pt)++;
+                all_features.push_back(corners[ii][jj]);
+                all_residuals.push_back(residuals);
+            }
+        }
+    }
+    saveReprojectionsJsons(cache_prefix + "-" + calib.name + "-reprojection-errors", all_features, all_residuals);
+    for (int ii = 0; ii < residuals_image.rows; ++ii) {
+        for (int jj = 0; jj < residuals_image.cols; ++jj) {
+            if (residuals_count(ii, jj) > 0) {
+                residuals_image(ii, jj) /= residuals_count(ii, jj);
+            }
+            else {
+                residuals_image(ii, jj)[0] = residuals_image(ii, jj)[1] = std::numeric_limits<float>::quiet_NaN();
+            }
+        }
+    }
+    hdflow::gnuplotWithArrows("SemiFlexibleAfterCalib-residuals", residuals_image, -1, 100);
+    clog::L(__func__, 2) << "Error stats: " << error_stats.print();
+    clog::L(__func__, 2) << "Error median: " << error_stats.getMedian() << ", IQR: [" << error_stats.getQuantile(.25) << ", " << error_stats.getQuantile(.75) << "]";;
+
 #if 0
     {
         ceres::Solver::Summary summary;
@@ -1330,12 +1542,15 @@ double Calib::CeresCalibSemiFlexibleTarget(double const outlier_threshold) {
         func(src.val, local_inverseDistCoeffs.data(), dst.val);
         calib.objectPointCorrections[it.first] = dst;
     }
+    printObjectPointCorrectionsStats("SemiFlexibleRaw", calib.raw_objectPointCorrections);
+    printObjectPointCorrectionsStats("SemiFlexibleCorrected", calib.objectPointCorrections);
 
     for (size_t ii = 0; ii < local_rvecs.size(); ++ii) {
         calib.rvecs[ii] = vec2mat(local_rvecs[ii]);
         calib.tvecs[ii] = vec2mat(local_tvecs[ii]);
     }
 
+    clog::L(__func__, 1) << "x-factor: " << calib.x_factor;
     clog::L(__func__, 1) << "Parameters before: " << std::endl
                          << "Camera matrix: " << old_cam << std::endl
                          << "Distortion: " << old_dist << std::endl
@@ -1494,7 +1709,7 @@ const T t[3]) {
 
 void CalibResult::getReprojections(
         const size_t ii,
-        std::vector<Point2d> &markers,
+        std::vector<Corner> &markers,
         std::vector<Point2d> &reprojections) {
     if (nullptr == calib) {
         throw std::runtime_error("Calib " + name + " doesn't have a pointer to the corresponding calibration data object (of class Calib)");
@@ -1546,20 +1761,18 @@ void CalibResult::getReprojections(
         cv::Point3f current_objPoint = objPoints[jj] + correction;
 
         vec2arr(p, current_objPoint);
-        cv::Point2d marker_pos(imgPoints[jj]);
         projectByCalibName(p, result, focal, principal, R, t);
         cv::Point2d res(result[0], result[1]);
-        markers.push_back(marker_pos);
+        markers.push_back(current_corner);
         reprojections.push_back(res);
     }
 }
 
-void CalibResult::getAllReprojections(
-        std::vector<Point2d> &markers,
-        std::vector<Point2d> &reprojections) {
+void CalibResult::getAllReprojections(std::vector<Corner> &markers,
+                                      std::vector<Point2d> &reprojections) {
     assert(markers.size() == reprojections.size());
     for (size_t ii = 0; ii < calib->data.size(); ++ii) {
-        std::vector<Point2d> local_markers;
+        std::vector<Corner> local_markers;
         std::vector<Point2d> local_reprojections;
         getReprojections(ii, local_markers, local_reprojections);
         assert(local_markers.size() == local_reprojections.size());
@@ -1571,7 +1784,7 @@ void CalibResult::getAllReprojections(
     assert(markers.size() == reprojections.size());
     errors.clear();
     for (size_t ii = 0; ii < markers.size(); ++ii) {
-        double dist = cv::norm(markers[ii] - reprojections[ii]);
+        double dist = cv::norm(cv::Point2d(markers[ii].p) - reprojections[ii]);
         errors.push_unsafe(dist);
     }
     error_percentiles.clear();
@@ -1583,7 +1796,8 @@ void CalibResult::getAllReprojections(
 
 double CalibResult::getErrorMedian() {
     if (error_median <= 0) {
-        std::vector<cv::Point2d> markers, reprojections;
+        std::vector<cv::Point2d> reprojections;
+        std::vector<Corner> markers;
         getAllReprojections(markers, reprojections);
     }
     assert(error_median >= 0);
@@ -2049,23 +2263,23 @@ FlexibleTargetProjectionFunctorOdd<N>::FlexibleTargetProjectionFunctorOdd(
 {}
 
 template<class T>
-bool FlexibleTargetProjectionFunctor::operator()(
-        const T * const f_x,
-        const T * const f_y,
-        const T * const c_x,
-        const T * const c_y,
-        const T * const rvec,
-        const T * const tvec,
-        const T * const correction,
-        const T * const dist,
-        T *residuals) const
+bool FlexibleTargetProjectionFunctor::operator()(const T * const f_x,
+                                                 const T * const f_y,
+                                                 const T * const c_x,
+                                                 const T * const c_y,
+                                                 const T * const rvec,
+                                                 const T * const tvec,
+                                                 const T * const correction,
+                                                 const T * const x_factor,
+                                                 const T * const dist,
+                                                 T *residuals) const
 {
     T rot_mat[9];
     Calib::rot_vec2mat(rvec, rot_mat);
     T const f[2] = {f_x[0], f_y[0]};
     T const c[2] = {c_x[0], c_y[0]};
     T result[2] = {T(0), T(0)};
-    T const src[3] = {T(point.x) + correction[0],
+    T const src[3] = {T(point.x)*(T(1) + x_factor[0]/100.0) + correction[0],
                       T(point.y) + correction[1],
                       T(point.z) + correction[2]};
     Calib::project(src, result, f, c, rot_mat, tvec, dist);
@@ -2217,6 +2431,7 @@ bool SemiFlexibleTargetProjectionFunctor::operator()(
         const T * const rvec,
         const T * const tvec,
         const T * const correction,
+        const T * const x_factor,
         const T * const dist,
         const T * const inverse_dist,
         T *residuals) const
@@ -2226,7 +2441,7 @@ bool SemiFlexibleTargetProjectionFunctor::operator()(
     T const f[2] = {f_x[0], f_y[0]};
     T const c[2] = {c_x[0], c_y[0]};
     T result[2] = {T(0), T(0)};
-    T const src[3] = {T(point.x) + correction[0],
+    T const src[3] = {T(point.x)*(T(1) + x_factor[0]/100.0) + correction[0],
                       T(point.y) + correction[1],
                       T(point.z) + correction[2]};
     T dst[3] = {T(point.x) + correction[0],

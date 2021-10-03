@@ -30,8 +30,11 @@ add_library(hdcalib
     hdcalib-readwrite.cpp
     hdcalib-rectify.cpp
     hdcalib-stats.cpp
+    hdcalib-export-stars.cpp
     hdcalib.cpp
     similarity2d.cpp
+    libplotoptflow.cpp
+    libfitspline.cpp
     )
 
 include_directories("/usr/local/include/hdmarker")
@@ -186,15 +189,9 @@ target_link_libraries(hdcalib-image-series-noise
     ${RUNNINGSTATS_LIBRARIES}
     )
 
-add_library(plotoptflow libplotoptflow.cpp libfitspline.cpp)
-target_link_libraries(plotoptflow PUBLIC
-    ${OpenCV_LIBS}
-    ${CERES_LIBRARIES}
-    )
-
 add_executable(hdcalib-plot-flow plot-flow.cpp)
 target_link_libraries(hdcalib-plot-flow PUBLIC
-    plotoptflow
+    hdcalib
     ${RUNNINGSTATS_LIBRARIES}
     )
 

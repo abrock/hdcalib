@@ -114,6 +114,9 @@ int main(int argc, char* argv[]) {
     TCLAP::ValueArg<std::string> grid_types_arg("", "grid-types",
                                           "Calibration types for evaluation. ",
                                           false, "", "OpenCV,Ceres, etc.");
+    TCLAP::ValueArg<std::string> export_star_arg("", "export-stars",
+                                         "Export filename for star-based calibration.",
+                                         false, "", "filename.");
 
     try {
         TCLAP::CmdLine cmd("hdcalib calibration tool", ' ', "0.1");
@@ -145,6 +148,21 @@ int main(int argc, char* argv[]) {
                                                "Maximum outlier percentage for an image to be included in the calibration.",
                                                false, 105, "max. outlier percentage");
         cmd.add(max_outlier_arg);
+
+        TCLAP::ValueArg<std::string> restrict_mod_arg("", "restrict-mod",
+                                               "Restrict usage of markers by specifing a divisor and a modulo. For example, specifying '10,3' only allows markers with id.x % 10 == 3 and id.y % 10 == 3.",
+                                               false, "", "max. outlier percentage");
+        cmd.add(restrict_mod_arg);
+
+        TCLAP::ValueArg<std::string> restrict_mod_x_arg("", "restrict-mod-x",
+                                               "Restrict usage of markers by specifing a divisor and a modulo. For example, specifying '10,3' only allows markers with id.x % 10 == 3.",
+                                               false, "", "max. outlier percentage");
+        cmd.add(restrict_mod_x_arg);
+
+        TCLAP::ValueArg<std::string> restrict_mod_y_arg("", "restrict-mod-y",
+                                               "Restrict usage of markers by specifing a divisor and a modulo. For example, specifying '10,3' only allows markers with id.y % 10 == 3.",
+                                               false, "", "max. outlier percentage");
+        cmd.add(restrict_mod_y_arg);
 
         TCLAP::ValueArg<double> ceres_tolerance_arg("", "ceres-tol",
                                                     "Value to be used for function, gradient- and parameter tolerance by the Ceres solver.",
@@ -184,6 +202,8 @@ int main(int argc, char* argv[]) {
                                              false, 1000, "Max #iterations.");
         cmd.add(max_iter_arg);
 
+        cmd.add(export_star_arg);
+
         TCLAP::ValueArg<std::string> delete_arg("", "delete",
                                                 "Specify a calibration result to delete from the cached calibration. ",
                                                 false, "", "Calibration type.");
@@ -218,6 +238,11 @@ int main(int argc, char* argv[]) {
                                       "Use this flag if the input images are raw images and demosaicing should be used.",
                                       false);
         cmd.add(demosaic_arg);
+
+        TCLAP::SwitchArg three_arg("", "three",
+                                      "Use this flag if 3x3 patterns should be detected.",
+                                      false);
+        cmd.add(three_arg);
 
         TCLAP::SwitchArg read_raw_arg("", "raw",
                                       "Use this flag if the input images are raw images "
@@ -279,6 +304,50 @@ int main(int argc, char* argv[]) {
         min_snr = min_snr_arg.getValue();
         calib.setMaxIter(std::max<size_t>(1, max_iter_arg.getValue()));
 
+        if (restrict_mod_arg.isSet()) {
+            std::vector<int> restrict = commaSeparate<int>({restrict_mod_arg.getValue()});
+            if (restrict.size() > 2 || restrict.size() < 1) {
+                throw std::runtime_error("Invalid marker id restriction");
+            }
+            if (restrict.size() == 1) {
+                restrict.push_back(0);
+            }
+            if (restrict[1] >= restrict[0]) {
+                throw std::runtime_error("Invalid marker id restriction, second argument must be lower than first");
+            }
+            calib.setIdRestriction(restrict[0], restrict[1]);
+        }
+
+        if (restrict_mod_x_arg.isSet()) {
+            std::vector<int> restrict = commaSeparate<int>({restrict_mod_x_arg.getValue()});
+            if (restrict.size() > 2 || restrict.size() < 1) {
+                throw std::runtime_error("Invalid marker id restriction");
+            }
+            if (restrict.size() == 1) {
+                restrict.push_back(0);
+            }
+            if (restrict[1] >= restrict[0]) {
+                throw std::runtime_error("Invalid marker id restriction, second argument must be lower than first");
+            }
+            calib.setIdRestrictionX(restrict[0], restrict[1]);
+        }
+
+        if (restrict_mod_y_arg.isSet()) {
+            std::vector<int> restrict = commaSeparate<int>({restrict_mod_y_arg.getValue()});
+            if (restrict.size() > 2 || restrict.size() < 1) {
+                throw std::runtime_error("Invalid marker id restriction");
+            }
+            if (restrict.size() == 1) {
+                restrict.push_back(0);
+            }
+            if (restrict[1] >= restrict[0]) {
+                throw std::runtime_error("Invalid marker id restriction, second argument must be lower than first");
+            }
+            calib.setIdRestrictionY(restrict[0], restrict[1]);
+        }
+
+        calib.useThree(three_arg.getValue());
+
         if (width_arg.isSet() && height_arg.isSet() && width_arg.getValue() > 0 && height_arg.getValue() > 0) {
             calib.setImageSize(cv::Size(width_arg.getValue(), height_arg.getValue()));
         }
@@ -333,6 +402,8 @@ int main(int argc, char* argv[]) {
         calib.setRecursionDepth(recursion_depth);
         calib.setMaxOutlierPercentage(max_outlier_percentage);
         calib.setUseRaw(libraw);
+
+        calib.setCachePrefix(cache_file);
     }
     catch (TCLAP::ArgException const & e) {
         std::cerr << e.what() << std::endl;
@@ -449,14 +520,24 @@ int main(int argc, char* argv[]) {
     calib.purgeUnlikelyByDetectedRectangles();
     TIMELOG("purgeUnlikelyByDetectedRectangles");
 
+    calib.purgeUnlikelyByImageSize();
+    TIMELOG("purgeUnlikelyByImageSize");
+
+    if (export_star_arg.isSet()) {
+        calib.saveStarsDatasets(export_star_arg.getValue());
+        TIMELOG("saveStarsDatasets");
+    }
+
     for (std::string const& calibration_type : calibration_types) {
         clog::L(__func__, 2) << "Running calib " << calibration_type << std::endl;
+        /*
         if (initial_count_limit > 0) {
             calib.setMarkerCountLimit(initial_count_limit);
             calib.runCalib(calibration_type, outlier_threshold);
             calib.setMarkerCountLimit(0);
             TIMELOG(std::string("Calib initial ") + calibration_type);
         }
+        // */
         calib.runCalib(calibration_type, outlier_threshold);
         calib_updated = true;
         TIMELOG(std::string("Calib ") + calibration_type);

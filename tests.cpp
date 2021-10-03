@@ -1845,6 +1845,20 @@ std::string type2str(int type) {
 }
 
 int main(int argc, char** argv) {
+    cv::Mat_<float> test_scharr(15, 15, float(0));
+    cv::Mat_<float> test_scharr_x(15, 15, float(0));
+    cv::Mat_<float> test_scharr_y(15, 15, float(0));
+    test_scharr(7,7) = 1;
+
+    int const scale = 1;
+    int const delta = 0;
+    cv::Scharr(test_scharr, test_scharr_x, CV_32F, 1, 0, scale, delta, cv::BORDER_DEFAULT);
+    cv::Scharr(test_scharr, test_scharr_y, CV_32F, 0, 1, scale, delta, cv::BORDER_DEFAULT);
+
+    cv::imwrite("scharr-src.tif", test_scharr);
+    cv::imwrite("scharr-x.tif", test_scharr_x);
+    cv::imwrite("scharr-y.tif", test_scharr_y);
+
     testing::InitGoogleTest(&argc, argv);
     std::cout << "RUN_ALL_TESTS return value: " << RUN_ALL_TESTS() << std::endl;
 }
